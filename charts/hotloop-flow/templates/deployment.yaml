@@ -24,6 +24,9 @@ spec:
         # values change appears to apply and the running process never sees it.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with (include "hotloop-flow.appIcon" .) }}
+        embernet.ai/app-icon: {{ . | quote }}
+        {{- end }}
         {{- if eq $mode "macvlan" }}
         k8s.v1.cni.cncf.io/networks: {{ include "hotloop-flow.macvlanNetwork" . | quote }}
         {{- end }}

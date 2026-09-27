@@ -69,8 +69,28 @@ in node detail but not in Running Apps.
 {{- define "hotloop-flow.storeLabels" -}}
 embernet.ai/store-app: "true"
 embernet.ai/gui-type: {{ .Values.gui.type | default "web" | quote }}
-embernet.ai/app-name: {{ include "hotloop-flow.name" . | quote }}
+{{- /* The product, not the release. The dashboard writes the chart name into
+       app-name on everything it deploys itself, matches store icons on it
+       lowercased, and keys features like the Ignition gateway list on it. The
+       release name ("hotloop-flow-embernet001") matched none of that, so the tile
+       fell back to guessing. Which instance it is lives in
+       app.kubernetes.io/instance and the Service name. */}}
+embernet.ai/app-name: {{ .Chart.Name | quote }}
 embernet.ai/gui-port: {{ .Values.gui.port | default .Values.service.port | quote }}
+{{- end }}
+
+{{/*
+Icon for the dashboard's deployed tile, on the pod and the Service.
+
+The dashboard reads embernet.ai/app-icon off the pod first, then the Service.
+Without it the tile went looking in the store catalog by name, which works only
+while the catalog is reachable and the names happen to line up. Defaults to the
+chart's own icon, which sends Access-Control-Allow-Origin: * and so renders in
+the dashboard's crossorigin img. An annotation, because a URL is not a legal
+label value.
+*/}}
+{{- define "hotloop-flow.appIcon" -}}
+{{- .Values.embernet.appIcon | default .Chart.Icon }}
 {{- end }}
 
 {{/*
@@ -86,6 +106,9 @@ every node card shows the raw release name — the bug fixed in nodered-pod 2.2.
 {{- if not $dn }}{{- $dn = .Values.gui.displayName -}}{{- end }}
 {{- if $dn }}
 embernet.ai/display-name: {{ $dn | quote }}
+{{- end }}
+{{- with (include "hotloop-flow.appIcon" .) }}
+embernet.ai/app-icon: {{ . | quote }}
 {{- end }}
 {{- end }}
 

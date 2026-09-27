@@ -60,6 +60,10 @@ tenantLabels: {}
 
 embernet:
   displayName: ""
+  # URL for the embernet.ai/app-icon annotation on the pod and the Service, which
+  # is what the dashboard draws on the deployed tile. Empty uses the chart icon.
+  # Whatever goes here has to send Access-Control-Allow-Origin, or the tile is blank.
+  appIcon: ""
 
 
 # ── Networking ───────────────────────────────────────────────────────────────

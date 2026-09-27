@@ -13,7 +13,7 @@ metadata:
   {{- $ann := include "hotloop-flow.storeAnnotations" . }}
   {{- if trim $ann }}
   annotations:
-    {{- $ann | nindent 4 }}
+    {{- $ann | trim | nindent 4 }}
   {{- end }}
 spec:
   type: {{ .Values.service.type }}
