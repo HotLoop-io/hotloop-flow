@@ -818,6 +818,19 @@ count it, announce it, and let it show up in the metrics above. Every place wher
 this codebase deliberately diverges from Node-RED has a comment explaining why,
 not what. Keep that up.
 
+## The rest of HotLoop
+
+Flow is its own product. The rest of HotLoop is one codebase shipped as four
+more: **IoT** (Home Assistant, rewritten in Go for OT), **Edge** (IoT plus the
+machine layer), the **Gateway** (everything, plus fleet, multi-site and reports)
+and the **Edge Relay** (headless, forwards over Sparkplug B). Gateway and Edge
+Relay 4.16.0 are out and pull with no login. IoT and Edge arrive in an upcoming
+release. [hotloop.io/products](https://hotloop.io/products/) has the lineup.
+
+Those four are under the HotLoop Community License, where business use goes
+through EmberNET. Flow isn't. It's Apache 2.0, the same for a business as for
+anyone else, and nothing about the lineup's license touches it.
+
 ## Licence
 
 Apache 2.0. HotLoop Flow is an independent implementation and contains no Node-RED
