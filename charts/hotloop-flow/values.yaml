@@ -121,14 +121,12 @@ network:
 # The scan nodes. Off by default: this is a plant-floor inventory tool, not a
 # scanner anybody with edit access can aim anywhere. Enabling it without listing
 # the networks it may probe is a startup error, not a licence to scan the world.
+#
+# It needs no extra capability: scan only makes TCP connections and netinfo only
+# reads the interface list, so the pod keeps every capability dropped either way.
 discovery:
   enabled: false
   allowedCIDRs: []
-  # Raw sockets need these. Without them the scan nodes fall back to TCP
-  # connect probing rather than failing.
-  addCapabilities:
-    - NET_RAW
-    - NET_ADMIN
 
 # ── The exec node ────────────────────────────────────────────────────────────
 # Off by default, and enabling it without listing the commands is a startup

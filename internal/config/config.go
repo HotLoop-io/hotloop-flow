@@ -82,6 +82,14 @@ type Auth struct {
 	// in designs#81 and has not shipped it.
 	Enabled bool `yaml:"enabled"`
 
+	// Insecure is the explicit opt-out: set only by HOTLOOP_FLOW_INSECURE=true,
+	// never by the file, so a ConfigMap that says enabled: false still refuses
+	// to start until somebody makes that decision on purpose. Until this field
+	// existed Validate could not tell a deliberate opt-out from an accident,
+	// refused both, and the variable its own refusal told you to set did
+	// nothing.
+	Insecure bool `yaml:"-"`
+
 	Users []User `yaml:"users"`
 
 	// SessionTTL bounds how long an issued token is good for.
@@ -257,6 +265,7 @@ func applyEnv(cfg *Config) {
 
 	if envBool("HOTLOOP_FLOW_INSECURE") {
 		cfg.Auth.Enabled = false
+		cfg.Auth.Insecure = true
 	}
 	if envBool("HOTLOOP_FLOW_ALLOW_PLAINTEXT_CREDENTIALS") {
 		cfg.Data.AllowPlaintextCredentials = true
@@ -364,12 +373,12 @@ func (c *Config) Validate() error {
 	// Authentication. This is the check that exists because Node-RED does not
 	// have it: CVE-2025-41656 is a vendor shipping Node-RED at that default,
 	// and anyone who could reach the device could run commands on it.
-	if !c.Auth.Enabled {
+	if !c.Auth.Enabled && !c.Auth.Insecure {
 		return &ErrInsecure{Reason: "authentication is disabled. " +
 			"Anyone who can reach this port can deploy a flow, and a flow can run commands. " +
 			"Set HOTLOOP_FLOW_INSECURE=true to override this on a trusted, isolated network."}
 	}
-	if len(c.Auth.Users) == 0 {
+	if c.Auth.Enabled && len(c.Auth.Users) == 0 {
 		return &ErrInsecure{Reason: "authentication is enabled but no users are configured. " +
 			"Set auth.users in the config file, or HOTLOOP_FLOW_ADMIN_USER and " +
 			"HOTLOOP_FLOW_ADMIN_PASSWORD_HASH in the environment. " +

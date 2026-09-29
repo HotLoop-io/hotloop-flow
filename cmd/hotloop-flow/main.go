@@ -83,6 +83,13 @@ func cmdServe(args []string) error {
 
 	log := newLogger(cfg.Logging)
 	log.Info("starting", "version", version, "addr", cfg.Addr(), "dataDir", cfg.Data.Dir)
+	if !cfg.Auth.Enabled {
+		// Config.Validate only lets this through when HOTLOOP_FLOW_INSECURE was
+		// set on purpose. It still gets said at boot, every boot, because the
+		// next person to read this log may not be the one who set it.
+		log.Warn("authentication is disabled by HOTLOOP_FLOW_INSECURE: anyone who can reach "+
+			"this port can deploy a flow, and a flow can run commands", "addr", cfg.Addr())
+	}
 
 	// Install the discovery scope before any flow starts, so a scan node can
 	// never run against an unbounded scope even for one message.

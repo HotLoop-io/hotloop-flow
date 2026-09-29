@@ -121,6 +121,21 @@ jobs:
           N=$(grep -c 'embernet.ai/tenant: "acme"' tenant.yaml || true)
           [ "$N" = 7 ] || { echo "::error::expected the tenant label in 7 places, found $N"; exit 1; }
 
+      - name: Discovery adds no capabilities
+        # Up to 2.0.4 turning discovery on handed the pod NET_RAW and NET_ADMIN
+        # for ARP sweeps that were never written: scan only makes TCP
+        # connections. A capability nothing uses is attack surface, so every
+        # render keeps them all dropped, and adding one back fails here.
+        run: |
+          for args in "" "--set discovery.enabled=true --set discovery.allowedCIDRs={10.0.0.0/24}"; do
+            helm template t charts/hotloop-flow $args > caps.yaml
+            if awk '/capabilities:/{c=1} c&&/add:/{f=1} /^ *[a-zA-Z]+:/&&!/capabilities:|drop:|add:/{c=0} END{exit !f}' caps.yaml; then
+              echo "::error::the chart adds a capability ($args)"; exit 1
+            fi
+            grep -q 'NET_RAW\|NET_ADMIN' caps.yaml && { echo "::error::NET_RAW or NET_ADMIN in the render ($args)"; exit 1; }
+            grep -A2 'capabilities:' caps.yaml | grep -q -- '- ALL' || { echo "::error::capabilities no longer drop ALL ($args)"; exit 1; }
+          done
+
   static-build:
     name: Static build
     runs-on: ubuntu-latest

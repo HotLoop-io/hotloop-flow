@@ -256,8 +256,10 @@ who owns the box".
 not a default you're trusted to change: a startup error with the fix printed
 next to it. CVE-2025-41656 happened because a device maker shipped Node-RED with
 authentication at its default, which is off. Flow doesn't have that default, so
-there's nothing to forget. Right now there's no way to switch it off at all,
-not even on purpose; see [When it refuses to start](#when-it-refuses-to-start).
+there's nothing to forget. Turning it off takes `HOTLOOP_FLOW_INSECURE=true` in
+the environment, on purpose, because a config file can't do it on its own: the
+file is where a copy-paste lands. Do it and the log warns on every boot and the
+editor wears a **no login** badge, so the next person knows the door is open.
 
 **The `exec` node ships disabled.** An operator names the commands a flow may
 run, and an enabled node with an empty allowlist is a startup error, not a
@@ -533,7 +535,7 @@ data:
   backupGenerations: 3
 
 auth:
-  enabled: true             # it will not start with this off
+  enabled: true             # off refuses to start unless HOTLOOP_FLOW_INSECURE=true
   sessionTTL: 168h
   users:
     - username: admin
@@ -602,7 +604,7 @@ Secret.
 | `HOTLOOP_FLOW_DISCOVERY_ENABLED`, `HOTLOOP_FLOW_DISCOVERY_CIDRS` | Discovery nodes. Comma-separated CIDRs. |
 | `HOTLOOP_FLOW_EXEC_ENABLED`, `HOTLOOP_FLOW_EXEC_ALLOWED_COMMANDS` | The exec node. Comma-separated commands. |
 | `HOTLOOP_FLOW_FILE_ALLOWED_PATHS` | Extra file node roots. Comma-separated. |
-| `HOTLOOP_FLOW_INSECURE` | Meant to allow running without authentication. It doesn't yet: set it and startup refuses anyway. See [When it refuses to start](#when-it-refuses-to-start). |
+| `HOTLOOP_FLOW_INSECURE` | `true` runs with authentication off, and nothing else does. Only `1`, `true`, `yes` and `on` count, so `false` or `0` can't turn it off by accident. For an isolated network you've decided to own. It doesn't waive the credential secret. |
 | `HOTLOOP_FLOW_ALLOW_PLAINTEXT_CREDENTIALS` | Permits unencrypted credentials at rest. |
 
 The on/off variables accept only `1`, `true`, `yes` and `on`, in any case.
@@ -730,11 +732,12 @@ with no port collisions whatsoever because every instance carries its own
 address. It needs Multus on the cluster. No other App Store chart ships this yet.
 
 The pod runs distroless nonroot as uid 65532 with a read-only root filesystem, no
-privilege escalation, and `RuntimeDefault` seccomp. With discovery on, the
-chart also adds `NET_RAW` and `NET_ADMIN`, and nothing in this build uses them:
-`scan` only ever does TCP connect probes, which need no capability and finish
-the handshake instead of leaving half-open connections on a PLC. You get the
-same inventory with or without them.
+privilege escalation, `RuntimeDefault` seccomp, and every capability dropped,
+discovery included. `scan` only ever does TCP connect probes, which need no
+capability and finish the handshake instead of leaving half-open connections on
+a PLC. The chart used to hand the pod `NET_RAW` and `NET_ADMIN` when discovery
+was on, for ARP sweeps nobody ever wrote. That's gone: a capability nothing uses
+is just attack surface with a comment on it.
 
 The chart generates the admin password and the credential secret on first install
 and **reads both back off the existing Secret on upgrade**. (The generated password did
@@ -758,7 +761,7 @@ doesn't need my Go paths.
 
 | Refusal | Fix |
 |---|---|
-| Authentication is disabled | Configure a user. There is no override that works today. `HOTLOOP_FLOW_INSECURE=true` is meant to be one, and the refusal message still tells you to set it, but the check ignores it: set it and you get the same refusal back. |
+| Authentication is disabled | Configure a user. Or, if the network really is isolated and you've decided to own that, set `HOTLOOP_FLOW_INSECURE=true` in the environment. `auth.enabled: false` in the file isn't enough on its own. (Up to and including 2.0.4 the variable did nothing and you got this refusal back regardless. Fixed on main.) |
 | Authentication is on with no users | Set `auth.users`, or `HOTLOOP_FLOW_ADMIN_USER` and `HOTLOOP_FLOW_ADMIN_PASSWORD_HASH`. |
 | A `passwordHash` that is not bcrypt | Run `hotloop-flow hash-password`. This check exists so a plaintext password can never end up in a ConfigMap by accident. |
 | No credential secret | Set `HOTLOOP_FLOW_CREDENTIAL_SECRET`. Or `HOTLOOP_FLOW_ALLOW_PLAINTEXT_CREDENTIALS=true` if this instance holds no secrets at all. |
