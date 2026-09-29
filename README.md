@@ -82,8 +82,8 @@ serving [the bench flow](docs/bench/bench-flow.json), set up exactly as in
 [docs/bench/](docs/bench/README.md#memory). It reads `VmRSS` two seconds after
 the flow answers, then samples it through the load and keeps the peak. Built
 from `main` with `CGO_ENABLED=0 -trimpath -ldflags="-s -w"`, run on Linux under
-WSL2, 24 CPUs, 2026-09-28. The same 2.0.4 container that `podman stats` put at 2.6 MB had an
-RSS of 14.7 MB, which is the whole reason the old rows had to go.
+WSL2, 24 CPUs, 2026-09-28. The same 2.0.4 container that `podman stats` put at
+2.6 MB had an RSS of 14.7 MB, which is the whole reason the old rows had to go.
 
 Produced by `hotloop-flow bench`, which is in this repository, so you can go
 disagree with me on your own hardware. Method, flow file, exact commands, and

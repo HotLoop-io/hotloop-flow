@@ -139,8 +139,8 @@ discovery:
 # (CERT@VDE VDE-2025-045): anyone on the network could run commands on it. That
 # is Pilz's CVE, not Node-RED's. HotLoop Flow will not start without
 # authentication, and this list is the second lock: anyone who does get edit
-# access still cannot run a command that is not named here. There is no shell either, so an allowed command cannot be
-# chained into an arbitrary one.
+# access still cannot run a command that is not named here. There is no shell
+# either, so an allowed command cannot be chained into an arbitrary one.
 #
 # Entries are matched on the resolved absolute path. A command that is not on
 # the PATH yet is kept and resolved again when a flow uses it, so an init
