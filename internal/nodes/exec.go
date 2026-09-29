@@ -71,9 +71,11 @@ func registerExec() {
 				"command line is split on quoting rules only, and an unquoted shell " +
 				"metacharacter is refused rather than run, so one allowed command " +
 				"cannot become an arbitrary one. And the node is disabled until an " +
-				"operator names the commands a flow may run — Node-RED's exec node " +
-				"against a default configuration is CVE-2025-41656, unauthenticated " +
-				"remote code execution. Output is capped per stream; a command that " +
+				"operator names the commands a flow may run. Node-RED's exec node runs " +
+				"anything, and Node-RED starts with no authentication by default; a " +
+				"vendor shipping that default became CVE-2025-41656 (Pilz " +
+				"IndustrialPI 4, VDE-2025-045), unauthenticated command execution on " +
+				"the device. Output is capped per stream; a command that " +
 				"exceeds it is killed and reported rather than being allowed to fill " +
 				"the heap. A command that forks children of its own may leave them " +
 				"behind when it is killed.",

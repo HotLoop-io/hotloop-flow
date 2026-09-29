@@ -97,9 +97,9 @@ func execConfig(t *testing.T, mode string, extra map[string]any) string {
 	return s
 }
 
-// The node ships refusing everything. Node-RED's exec node against a default
-// configuration is CVE-2025-41656; this is the check that makes that
-// impossible here.
+// The node ships refusing everything. Node-RED's exec node runs anything, and
+// a vendor shipping Node-RED with no auth became CVE-2025-41656; this is the
+// check that means a flow here can't run anything nobody named.
 func TestExecIsDisabledUntilAnOperatorSaysOtherwise(t *testing.T) {
 	prev := Commands
 	Commands = &shell.Policy{}

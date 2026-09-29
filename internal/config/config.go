@@ -74,10 +74,12 @@ type Data struct {
 // Auth controls access to the editor and admin API.
 type Auth struct {
 	// Enabled defaults to true. Starting without it requires an explicit
-	// opt-out, because Node-RED shipping unauthenticated by default is the root
-	// cause of CVE-2025-41656 — unauthenticated RCE by deploying a flow with an
-	// exec node in it. Node-RED's own team proposed exactly this fix in
-	// designs#81 and did not ship it.
+	// opt-out, because Node-RED ships unauthenticated by default and vendors
+	// ship that default: CVE-2025-41656 (CERT@VDE VDE-2025-045) is Pilz's
+	// IndustrialPI 4 running Node-RED with no authentication, so anyone who
+	// could reach it could run commands on the device. That is Pilz's CVE, not
+	// Node-RED's. Node-RED's own team proposed refusing to start without auth
+	// in designs#81 and has not shipped it.
 	Enabled bool `yaml:"enabled"`
 
 	Users []User `yaml:"users"`
@@ -117,11 +119,12 @@ type Discovery struct {
 // Exec gates the exec node.
 //
 // Off by default, and an enabled node with no allowed commands is a
-// configuration error rather than "anything goes". Node-RED's exec node against
-// a default configuration is CVE-2025-41656 — unauthenticated remote code
-// execution, reached by deploying a flow — and the reason it is that severe is
-// that nothing between "can edit a flow" and "can run any command" exists. This
-// is that thing.
+// configuration error rather than "anything goes". In Node-RED nothing sits
+// between "can edit a flow" and "can run any command": the exec node runs
+// whatever it is given, through a shell. Put that behind a default with no
+// authentication and you get CVE-2025-41656, Pilz shipping Node-RED on a
+// device where anyone on the network could run commands. This is the thing
+// that sits in between.
 type Exec struct {
 	Enabled bool `yaml:"enabled"`
 	// AllowedCommands lists what a flow may run. Entries are matched on the
@@ -359,8 +362,8 @@ func (c *Config) Validate() error {
 	}
 
 	// Authentication. This is the check that exists because Node-RED does not
-	// have it: CVE-2025-41656 is unauthenticated RCE against a default config,
-	// achieved by deploying a flow containing an exec node.
+	// have it: CVE-2025-41656 is a vendor shipping Node-RED at that default,
+	// and anyone who could reach the device could run commands on it.
 	if !c.Auth.Enabled {
 		return &ErrInsecure{Reason: "authentication is disabled. " +
 			"Anyone who can reach this port can deploy a flow, and a flow can run commands. " +

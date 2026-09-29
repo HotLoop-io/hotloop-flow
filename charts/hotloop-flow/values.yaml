@@ -134,10 +134,11 @@ discovery:
 # Off by default, and enabling it without listing the commands is a startup
 # error rather than a licence to run anything.
 #
-# This is the node behind CVE-2025-41656: unauthenticated remote code execution
-# against a default Node-RED, reached by deploying a flow with an exec node in
-# it. HotLoop Flow will not start without authentication, and this list is the
-# second lock — anyone who does get edit access still cannot run a command that
+# Node-RED's exec node runs anything, and Node-RED starts with no authentication
+# by default. Pilz shipped exactly that on a device and it became CVE-2025-41656
+# (CERT@VDE VDE-2025-045): anyone on the network could run commands on it. That
+# is Pilz's CVE, not Node-RED's. HotLoop Flow will not start without
+# authentication, and this list is the second lock — anyone who does get edit access still cannot run a command that
 # is not named here. There is no shell either, so an allowed command cannot be
 # chained into an arbitrary one.
 #
