@@ -14,9 +14,10 @@ import (
 
 // MemoryContext is a volatile context store.
 //
-// It is the default for node-scoped context and the fallback when no persistent
-// store is configured, matching Node-RED's "memory" store. Values do not survive
-// a restart; for anything that must, see the bbolt-backed store.
+// It is the only context store there is, for every scope, matching Node-RED's
+// "memory" store. Values do not survive a restart, and there is no persistent
+// store to reach for yet. Node-RED ships a file-backed one, so that is a gap,
+// not a divergence.
 //
 // Every operation is atomic with respect to every other, which is what makes
 // CompareAndSwap and Increment meaningful. Node-RED's context API offers only
@@ -221,7 +222,7 @@ type ScopedContexts struct {
 	nodes  map[string]node.Context
 
 	// newStore builds a store for a scope that does not exist yet. Swapping it
-	// is how the bbolt-backed store is substituted for the memory one.
+	// is how a persistent store would replace the memory one. None exists yet.
 	newStore func(scope string) node.Context
 }
 

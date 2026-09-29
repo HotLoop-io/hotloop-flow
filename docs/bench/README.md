@@ -55,12 +55,9 @@ hotloop-flow bench -mode http -target http://127.0.0.1:18812 -path /bench \
   -duration 30s -warmup 5s -connections 8
 ```
 
-Memory is read separately, because the harness's own RSS reader measures a
-process it launched and these are containers:
-
-```bash
-podman stats --no-stream --format "{{.Name}} {{.MemUsage}}" ew-bench nr-bench
-```
+Memory is not taken from this setup any more. It used to be read with
+`podman stats`, and that turned out not to measure what the rows claimed; see
+[Memory](#memory) for why and for how it's measured now.
 
 The load generator is closed-loop: each client sends the next request when the
 last one came back. That measures what the far end can absorb, which is the
@@ -78,8 +75,6 @@ same host, `nodered/node-red:latest` (Node-RED 4.x), HotLoop Flow at `05d4235`.
 | | HotLoop Flow | Node-RED | |
 |---|---|---|---|
 | Image size | **25.1 MB** | 717 MB | 29× |
-| Memory, idle | **4.8 MB** | 54.6 MB | 11× |
-| Memory, under load | **12.3 MB** | 179.6 MB | 15× |
 | Throughput | **3,460 req/s** | 1,290 req/s | 2.7× |
 | Latency p50 | **1.03 ms** | 4.61 ms | 4.5× |
 | Latency p95 | **9.19 ms** | 14.72 ms | 1.6× |
@@ -117,6 +112,51 @@ overhead, not about every workload.
 loud rather than quoting the p50 alone: under saturation both runtimes queue,
 and queueing dominates the tail. The median is where the difference in
 per-request cost actually shows.
+
+## Memory
+
+This run's table used to carry two memory rows: 4.8 MB idle and 12.3 MB under
+load for HotLoop Flow, 54.6 MB and 179.6 MB for Node-RED, all read off
+`podman stats` as described above. They're gone. `podman stats` reports what the
+kernel charges to the container, not what the process has resident, and the
+4.8 MB never reproduced for anyone. Remeasured on 2026-09-28, the
+published 2.0.4 image read 2.6 MB in `podman stats` while the same process had
+14.7 MB in `VmRSS`. A figure that moves that far with the tool isn't one to
+print next to a ratio.
+
+What goes here instead is the process's own RSS, from the native binary with no
+container, using the harness's `-launch` mode:
+
+```bash
+cd web && npm ci && npm run build && cd ..
+CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o hotloop-flow ./cmd/hotloop-flow
+
+W=$(mktemp -d); cp hotloop-flow "$W/"; cp docs/bench/bench-flow.json "$W/flows.json"; cd "$W"
+export HOTLOOP_FLOW_DATA_DIR="$W" HOTLOOP_FLOW_ADMIN_USER=admin \
+  HOTLOOP_FLOW_ADMIN_PASSWORD_HASH="$(./hotloop-flow hash-password -password benchbench123)" \
+  HOTLOOP_FLOW_CREDENTIAL_SECRET=bench-secret HOTLOOP_FLOW_LOG_LEVEL=warn \
+  HOTLOOP_FLOW_HOST=127.0.0.1 HOTLOOP_FLOW_PORT=18897
+
+./hotloop-flow bench -mode http -launch ./hotloop-flow -target http://127.0.0.1:18897 \
+  -path /bench -duration 30s -warmup 5s -connections 8
+```
+
+`-launch` starts the binary, waits for the flow to answer, sleeps two seconds and
+reads `VmRSS` from `/proc` (idle), then samples it through the load and keeps the
+peak (under load). Linux only, since that's where `/proc` is.
+
+**Measured 2026-09-28.** Linux under WSL2, 24 CPUs (Ryzen 9 7900X), built from
+`main` at `5469d34`. Three runs:
+
+| | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| RSS, idle | 16.7 MiB | 16.6 MiB | 16.5 MiB |
+| RSS, peak under load | 26.6 MiB | 26.2 MiB | 27.5 MiB |
+
+There's no Node-RED column because nobody has run Node-RED through `-launch` on
+the same box yet, and dividing this by a number that came from a different
+measurement is exactly the mistake this section exists to undo. So it's quoted
+as an absolute number, not a ratio.
 
 ## Re-running after a change
 

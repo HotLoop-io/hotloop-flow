@@ -5,9 +5,11 @@
 // proof: it runs an arbitrary command line through a shell. That model held when
 // Node-RED was a thing you ran on your own Pi. It does not hold for an App Store
 // app on a customer's plant floor, where the editor is reachable by anyone with
-// a dashboard login, and it is the mechanism behind CVE-2025-41656 —
-// unauthenticated remote code execution against a default Node-RED, achieved by
-// deploying a flow with an exec node in it.
+// a dashboard login. And it isn't hypothetical: Pilz shipped Node-RED on its
+// IndustrialPI 4 with no authentication, and that became CVE-2025-41656
+// (CERT@VDE VDE-2025-045), anyone on the network running commands on the
+// device. That CVE is Pilz's, not Node-RED's, but Node-RED's default is what
+// they shipped.
 //
 // So the node ships disabled, an operator has to name the commands it may run,
 // and there is no shell. Those three together mean a flow author cannot turn

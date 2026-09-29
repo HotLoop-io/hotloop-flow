@@ -47,8 +47,6 @@ sitting. Linux, 12 CPUs, `nodered/node-red:latest`, 8 connections, 30 seconds.
 | | HotLoop Flow | Node-RED | |
 |---|---|---|---|
 | Image size | **25.1 MB** | 717 MB | 29× |
-| Memory, idle | **4.8 MB** | 54.6 MB | 11× |
-| Memory, under load | **12.3 MB** | 179.6 MB | 15× |
 | Throughput | **3,460 req/s** | 1,290 req/s | 2.7× |
 | Latency p50 | **1.03 ms** | 4.61 ms | 4.5× |
 | Latency p99 | **16.72 ms** | 23.14 ms | 1.4× |
@@ -66,6 +64,26 @@ either scheduler in isolation and I will not let anyone quote it as one. And the
 p99 gap is far narrower than the p50 gap for a reason that is not flattering to
 anybody: under saturation both runtimes queue, queueing dominates the tail, and
 the median is the only column where per-request cost actually shows up.
+
+Memory used to be in that table, at 4.8 MB idle and 12.3 MB under load. Those
+came off `podman stats`, which reports what the kernel charges to the container,
+and that is not what the process has resident. Nobody could reproduce 4.8 MB,
+me included, so it's gone. What the process actually holds, measured on
+the native binary with no container:
+
+| | HotLoop Flow |
+|---|---|
+| RSS, idle | **16.6 MiB** (16.5 to 16.7 over three runs) |
+| RSS, peak under load | **26.6 MiB** (26.2 to 27.5 over three runs) |
+
+That's `hotloop-flow bench -mode http -launch ./hotloop-flow -target
+http://127.0.0.1:18897 -path /bench -duration 30s -warmup 5s -connections 8`,
+serving [the bench flow](docs/bench/bench-flow.json), set up exactly as in
+[docs/bench/](docs/bench/README.md#memory). It reads `VmRSS` two seconds after
+the flow answers, then samples it through the load and keeps the peak. Built
+from `main` with `CGO_ENABLED=0 -trimpath -ldflags="-s -w"`, run on Linux under
+WSL2, 24 CPUs, 2026-09-28. The same 2.0.4 container that `podman stats` put at
+2.6 MB had an RSS of 14.7 MB, which is the whole reason the old rows had to go.
 
 Produced by `hotloop-flow bench`, which is in this repository, so you can go
 disagree with me on your own hardware. Method, flow file, exact commands, and
@@ -99,10 +117,12 @@ Do not use it to run untrusted code."*](https://nodejs.org/api/vm.html)
 Node-RED's actual trust model is that anyone who can deploy a flow already owns
 the box, and honestly, fair, the `exec` node is right there in the palette. That
 model is fine on a Pi in a workshop. It is not fine on a customer's plant floor,
-and it is not hypothetical either:
-[CVE-2025-41656](https://nvd.nist.gov/vuln/detail/CVE-2025-41656) records
-unauthenticated remote command execution, rated critical, because authentication
-for the Node-RED server is not configured by default.
+and it is not hypothetical either. Pilz shipped its IndustrialPI 4 with Node-RED
+on it and authentication never set up, and that became
+[CVE-2025-41656](https://certvde.com/en/advisories/VDE-2025-045/): anyone who
+could reach it could run commands on the device with high privileges, CVSS 10.
+That's a CVE in Pilz's firmware, not in Node-RED, and I'm not going to pretend
+otherwise. But no auth is Node-RED's default, and a vendor shipped the default.
 
 **Credentials are encrypted with AES-256-CTR keyed by a raw SHA-256 of your
 secret.** CTR has no MAC, so anyone who can write `flows_cred.json` on a shared
@@ -121,7 +141,7 @@ Both are still real.
 | Runtime | Node.js, one event loop | Go, goroutine per node |
 | Back-pressure | none, unbounded queue | bounded inbox, four policies |
 | Message cloning | first recipient aliases the sender | every recipient gets a copy |
-| Function sandbox | `node:vm`, explicitly not a boundary | goja with no host bindings, plus WASM guests with a hard memory ceiling |
+| Function sandbox | `node:vm`, explicitly not a boundary | goja with no host bindings. A WASM host with a hard memory ceiling is built and tested, but no node uses it yet |
 | `exec` node | any command, through a shell | disabled until allowlisted, and no shell at all |
 | File nodes | any path the process can reach | scoped to the PVC, symlinks resolved |
 | Credentials | AES-256-CTR, SHA-256 as the key | AES-256-GCM, Argon2id |
@@ -130,7 +150,7 @@ Both are still real.
 | Config | `settings.js`, executable JavaScript | declarative YAML |
 | Auth | off by default | refuses to start without it |
 | Metrics | none | Prometheus, per node |
-| Editor | ~40k lines of jQuery and D3 | vanilla TypeScript, native SVG, our theme, 34 kb of JS and 12 kb of CSS |
+| Editor | ~40k lines of jQuery and D3 | vanilla TypeScript, native SVG, our theme, 35 kB of JS and 16 kB of CSS |
 | Node definition | a `.js` plus a hand-written `.html` twin | one Go descriptor |
 
 ### Everything unbounded over there is bounded here, visibly
@@ -184,6 +204,12 @@ offers no primitive you could fix it with even if you noticed. `CompareAndSwap`,
 `Increment`, and `Update` cost nothing on a transactional store. Tested under
 10,000 concurrent increments with zero lost updates.
 
+Be clear on what that buys you today, though. The only store that exists is in
+memory. Flow and global context survive a deploy but are gone on every restart,
+and they aren't shared between instances, so these are the primitives a second
+instance would need, not a second instance. Node-RED ships a file-backed store
+and this doesn't have one yet. It's Phase 4 of the [roadmap](docs/ROADMAP.md).
+
 ---
 
 ## 🔒 Security posture
@@ -193,9 +219,9 @@ stops being a synonym for "anyone who owns the box".
 
 **It refuses to start without authentication.** Not a warning in a log nobody
 reads, not a default you are trusted to change, but a startup error with the
-remedy printed next to it. The cause NVD records for CVE-2025-41656 is that
-authentication is not configured by default, and this removes that default
-entirely.
+remedy printed next to it. CVE-2025-41656 happened because a device maker
+shipped Node-RED with authentication left at its default, which is off. This
+removes that default entirely, so there is nothing to forget.
 
 **The `exec` node ships disabled.** An operator names the commands a flow is
 permitted to run, and an enabled node with an empty allowlist is a configuration
@@ -259,7 +285,7 @@ for the footprint and the sandbox, stated plainly so you can decide against it.
 
 ---
 
-## Two sandboxes, and why there are two
+## Two sandboxes, and only one of them runs flows yet
 
 The Function node runs on [goja](https://github.com/dop251/goja), a JavaScript
 interpreter in pure Go with no host bindings unless somebody adds them, and
@@ -268,13 +294,21 @@ nobody added them. A call costs about 21 µs. It is a real boundary in the way
 
 It is also not a boundary against memory. A JavaScript function that allocates in
 a loop grows the Go heap until the pod dies, and the only defence goja can offer
-is a wall-clock timeout. So there is a second option: WebAssembly guests on
-[wazero](https://wazero.io/), where linear memory has a declared maximum and a
-guest that allocates past its ceiling gets a trap while the host carries on
-unbothered. A WASM call costs about 169 µs, which is eight times a goja call and
-worth it precisely when you are running something you do not fully trust.
+is a wall-clock timeout. So there is a second sandbox: a WebAssembly host on
+[wazero](https://wazero.io/), in `internal/wasmhost`, where linear memory has a
+declared maximum and a guest that allocates past its ceiling gets a trap while
+the host carries on unbothered. A WASM call costs about 169 µs, which is eight
+times a goja call and worth it precisely when you are running something you do
+not fully trust.
 
-It also means a node can be written in Rust, TinyGo, Zig, or AssemblyScript
+**Here's the catch: no node uses it yet.** The host is real, it's tested, and CI
+fails if those tests quietly skip. But nothing in the palette calls it and it
+isn't compiled into the binary, so today you cannot run a WASM guest in a flow.
+The Function node is goja and only goja. A `wasm` node on this host is Phase 6
+of the [roadmap](docs/ROADMAP.md), and until it ships, everything below
+describes the host, not something you can drag onto a canvas.
+
+Once it does, a node can be written in Rust, TinyGo, Zig, or AssemblyScript
 instead of JavaScript, which matters for the signal processing an OT flow
 actually wants to do.
 
@@ -302,7 +336,8 @@ that actually matter and a node that needs more should have to say so:
 | Max output | 16 MiB | 8 MiB |
 
 Both runtimes are pure Go with no cgo, which is what keeps `CGO_ENABLED=0` and
-the distroless image true. That constraint is load-bearing, not aesthetic.
+the distroless image true now, and keeps them true when the WASM host goes into
+the binary. That constraint is load-bearing, not aesthetic.
 
 ---
 
@@ -441,7 +476,7 @@ server:
   maxRequestBytes: 33554432 # 32 MiB, bounds a flow deploy
 
 data:
-  dir: /data                # the PVC. Flows, credentials, and context all live here
+  dir: /data                # the PVC. Flows and credentials live here. Context doesn't, it's memory only
   flowFile: flows.json
   credentialsFile: credentials.json
   credentialSecret: ""      # empty means plaintext, which is refused by default
@@ -603,16 +638,18 @@ you are to a limit that does not exist.
 
 ---
 
-## Deploying on EmberNET
+## Deploying on Kubernetes
 
 ```bash
 helm repo add hotloop-flow https://hotloop.io/hotloop-flow/
 helm install line3-flows hotloop-flow/hotloop-flow
 ```
 
-Or install it from the App Store in the dashboard, which is the entire point of
-it existing. Multi-instance in exactly the way Node-RED is: as many per node as
-you need.
+That's the whole install, on any cluster. The chart also carries the labels the
+EmberNET App Store looks for, so if you already run that dashboard it shows up
+there as a tile. You don't need it. Flow is Apache 2.0 for everyone, business
+use included, and there is no EmberNET step anywhere in running it.
+Multi-instance in exactly the way Node-RED is: as many per node as you need.
 
 One clarification, since it bites people. Multi-instance means multiple
 *releases*, not multiple replicas, and the chart pins `replicaCount: 1` on
@@ -624,9 +661,11 @@ instance with its own flows.
 Resources are presets rather than raw numbers, matching the node-red chart so
 nobody has to think while switching between them. Default is `small`, requesting
 10m CPU and 64Mi of memory, against the node-red chart's default of 512Mi
-requested and 2Gi limited. Idle measured 4.8 MB. The can of White Monster on my
-desk has more mass than this thing's idle heap, and I am fully aware how
-insufferable that is to point out. I am pointing it out anyway.
+requested and 2Gi limited. Idle measured 16.6 MiB resident (method under
+[The numbers](#the-numbers)), about a quarter of that 64Mi request. The can of
+White Monster on my desk still has more mass than this thing's idle footprint,
+and I am fully aware how insufferable that is to point out. I am pointing it out
+anyway.
 
 Three network modes, and this is the reason it earns a place on a plant floor at
 all, because a flow engine that can only see what k3s routes to it cannot
@@ -696,7 +735,8 @@ accident.
 Being straight about this, the same way the EmberRTOS README is.
 
 **It runs.** Starts, serves the API and the editor, loads flows off the PVC,
-moves messages, and survives restart. The chart deploys it three ways and the
+moves messages, and comes back with its flows and credentials after a restart.
+Context doesn't come back (see below). The chart deploys it three ways and the
 whole publish chain resolves.
 
 **Verified against real infrastructure**, not merely against my own encoders:
@@ -710,7 +750,13 @@ silence and cost somebody a day.
 **Not done yet**, roughly in the order it bothers me:
 
 - **Partial deploy.** A redeploy currently restarts every node rather than only
-  the ones that changed. Node-RED diffs. This is the last big runtime gap.
+  the ones that changed. Node-RED diffs. One of the two big runtime gaps.
+- **Persistent context.** The other one. Context lives in memory only, so flow
+  and global context are gone every time the process restarts. A counter or a
+  latch in a flow resets when the pod moves. Node-RED has a file-backed store;
+  this has nothing yet.
+- **A node that uses the WASM host.** The host is built and tested. Nothing in
+  the palette calls it, so WASM guests can't run in a flow today.
 - **Link Call, and Link Out's "return" mode.** Both refused with an error rather
   than silently doing nothing, which is the right behaviour while they do not
   exist, and still a gap.
@@ -744,7 +790,7 @@ hotloop-flow/
     runtime/         the scheduler, delivery, error and status routing
     store/           context, flow file, credentials
     js/              goja host
-    wasmhost/        wazero host
+    wasmhost/        wazero host, tested, not used by any node yet
     api/             admin REST and the editor websocket
     config/          the YAML surface and the refusals
     metrics/         the Prometheus exposition
@@ -753,7 +799,7 @@ hotloop-flow/
     filescope/       the file nodes' path scope
     discover/        network discovery
   web/               the editor
-  charts/            the App Store chart
+  charts/            the Helm chart
   docs/bench/        the benchmark method and results
 ```
 
@@ -765,10 +811,10 @@ go test ./...
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o hotloop-flow ./cmd/hotloop-flow
 ```
 
-Static, no cgo, runs on distroless. goja and wazero are both pure Go, which is
-the only reason that sentence is true. CI fails the build if the binary exceeds
-40MiB or turns out to be dynamically linked, because both of those are things you
-discover on a plant floor otherwise.
+Static, no cgo, runs on distroless. goja is pure Go, and so is wazero for when
+the WASM host goes in, which is the only reason that sentence is true. CI fails
+the build if the binary exceeds 40MiB or turns out to be dynamically linked,
+because both of those are things you discover on a plant floor otherwise.
 
 The race detector needs cgo, so run it where a C compiler exists:
 
