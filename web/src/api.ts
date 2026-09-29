@@ -72,6 +72,7 @@ export interface Settings {
   version: string;
   adminRoot: string;
   runtime: { inboxCapacity: number; overflow: string };
+  auth: { enabled: boolean };
   discovery: { enabled: boolean };
   metrics: { enabled: boolean; path: string };
 }
@@ -226,9 +227,13 @@ export class Api {
     let timer: number | undefined;
 
     const open = () => {
-      if (closed || !this.token) return;
+      if (closed) return;
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const url = `${proto}//${location.host}${this.base}/comms?access_token=${encodeURIComponent(this.token)}`;
+      // No token means the runtime was started with authentication off (the
+      // editor only gets this far without one when /settings answered), and
+      // the socket needs none.
+      const query = this.token ? `?access_token=${encodeURIComponent(this.token)}` : '';
+      const url = `${proto}//${location.host}${this.base}/comms${query}`;
 
       socket = new WebSocket(url);
 

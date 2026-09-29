@@ -16,7 +16,7 @@ export function mountEditor(
   api: Api,
   descriptors: Descriptor[],
   version: string,
-  onSignOut: () => void,
+  onSignOut: (() => void) | null,
   onSessionLost: () => void,
 ): EditorHandles {
   const byType = new Map(descriptors.map((d) => [d.type, d]));
@@ -32,7 +32,11 @@ export function mountEditor(
   const themeBtn = el('button', { class: 'icon', title: 'Toggle theme' },
     el('span', { id: 'theme-icon' }, '🌙'));
   const fitBtn = el('button', { class: 'icon', title: 'Fit to view' }, '⤢');
-  const signOut = el('button', { class: 'ghost' }, 'Sign out');
+  // No Sign out without a login to go back to. The badge takes its place so
+  // nobody forgets this editor is open to anyone who can reach it.
+  const signOut = onSignOut
+    ? el('button', { class: 'ghost' }, 'Sign out')
+    : el('span', { class: 'no-auth mono', title: 'Started with HOTLOOP_FLOW_INSECURE: anyone who can reach this port can deploy.' }, 'no login');
 
   const topbar = el('div', { class: 'topbar' },
     el('div', { class: 'brand' }, el('span', {}, 'Hot', el('span', { class: 'mark' }, 'Loop'), ' Flow'),
@@ -301,7 +305,7 @@ export function mountEditor(
     const icon = document.getElementById('theme-icon');
     if (icon) icon.textContent = dark ? '☀️' : '🌙';
   };
-  signOut.onclick = () => { teardown(); onSignOut(); };
+  if (onSignOut) signOut.onclick = () => { teardown(); onSignOut(); };
 
   graph.onChange(() => renderTabs());
 

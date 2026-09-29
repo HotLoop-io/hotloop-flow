@@ -107,6 +107,21 @@ code, pre, .mono {
 
 .spacer { flex: 1; }
 
+/* Takes Sign out's place when HOTLOOP_FLOW_INSECURE turned authentication off.
+   Warning colours, because this is a state somebody should notice every time
+   they open the editor, not a control. */
+.no-auth {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border: 1px solid var(--warning);
+  border-radius: 999px;
+  color: var(--warning-text);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;

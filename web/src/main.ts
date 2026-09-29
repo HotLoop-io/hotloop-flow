@@ -153,13 +153,16 @@ function renderLogin(message?: string): void {
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 async function start(): Promise<void> {
+  // Remembered before the calls, because a 401 drops the token: a stale one
+  // means "session expired", no token at all means "sign in".
+  const hadToken = api.authenticated;
   let settings: Settings;
   let descriptors: Descriptor[];
   try {
     [settings, descriptors] = await Promise.all([api.settings(), api.nodes()]);
   } catch (ex) {
     if (ex instanceof ApiError && ex.status === 401) {
-      renderLogin('Session expired. Sign in again.');
+      renderLogin(hadToken ? 'Session expired. Sign in again.' : undefined);
       return;
     }
     renderLogin(ex instanceof Error ? ex.message : 'could not reach the runtime');
@@ -171,7 +174,9 @@ async function start(): Promise<void> {
     api,
     descriptors,
     settings.version,
-    () => { api.logout(); renderLogin(); },
+    // With authentication off there is nobody to sign out and no screen to
+    // sign back in on, so the editor gets no Sign out button at all.
+    settings.auth.enabled ? () => { api.logout(); renderLogin(); } : null,
     () => renderLogin('Session expired. Sign in again.'),
   );
 }
@@ -180,8 +185,8 @@ applyTheme(initialTheme(), false);
 watchSystemTheme();
 followParentTheme();
 
-if (api.authenticated) {
-  void start();
-} else {
-  renderLogin();
-}
+// Ask the runtime rather than assume. It answers 401 when authentication is on
+// and there is no valid token, which lands on the login screen as before, and
+// answers when HOTLOOP_FLOW_INSECURE turned authentication off, which used to
+// land on a login screen with no users behind it.
+void start();

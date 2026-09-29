@@ -399,6 +399,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, _ *http.Request) {
 			"inboxCapacity": cfg.Runtime.InboxCapacity,
 			"overflow":      cfg.Runtime.Overflow,
 		},
+		// The editor has no other way to know it may skip the login screen, and
+		// a login screen with no users behind it is a locked door.
+		"auth":      map[string]any{"enabled": cfg.Auth.Enabled},
 		"discovery": map[string]any{"enabled": cfg.Discovery.Enabled},
 		"metrics":   map[string]any{"enabled": cfg.Metrics.Enabled, "path": cfg.Metrics.Path},
 		"editor":    map[string]any{"theme": "hotloop"},
