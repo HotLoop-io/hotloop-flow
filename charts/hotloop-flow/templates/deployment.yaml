@@ -78,16 +78,13 @@ spec:
           securityContext:
             allowPrivilegeEscalation: {{ .Values.securityContext.allowPrivilegeEscalation }}
             readOnlyRootFilesystem: {{ .Values.securityContext.readOnlyRootFilesystem }}
+            # Every capability dropped, discovery or not. The scan node only
+            # makes TCP connections and netinfo only reads the interface list,
+            # and neither needs a capability. Up to 2.0.4 this added two raw
+            # network capabilities for ARP sweeps that were never written.
             capabilities:
               drop:
                 - ALL
-              {{- if .Values.discovery.enabled }}
-              # Raw sockets for ARP sweeps and protocol discovery. Without
-              # these the scan nodes degrade to TCP connect probing rather
-              # than failing, so this is an enhancement and not a hard need.
-              add:
-                {{- toYaml .Values.discovery.addCapabilities | nindent 16 }}
-              {{- end }}
 
           ports:
             - name: http
