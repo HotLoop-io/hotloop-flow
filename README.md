@@ -30,8 +30,8 @@ spelled out) and doesn't run, so you find out at your desk instead of when a
 line stops. Nobody loses a year of flows because I had opinions at three in the
 morning. Everything else was fair game, and I took nearly all of it.
 
-Current release is `2.0.4`, and `2.0.0` was the first under the HotLoop Flow
-name. The image is `ghcr.io/hotloop-io/hotloop-flow:2.0.4` for amd64 and arm64,
+Current release is `2.0.5`, and `2.0.0` was the first under the HotLoop Flow
+name. The image is `ghcr.io/hotloop-io/hotloop-flow:2.0.5` for amd64 and arm64,
 the Helm repo is `https://hotloop.io/hotloop-flow/`. Just under 35,000 lines of
 Go, a third of it tests, 51 node types, and the race detector comes back clean
 on every package. Apache 2.0, the same terms for a business as for anyone, and
@@ -483,10 +483,10 @@ podman run --rm -p 1880:1880 -v hotloop-flow-data:/data \
   -e HOTLOOP_FLOW_ADMIN_USER=admin \
   -e HOTLOOP_FLOW_ADMIN_PASSWORD_HASH='<bcrypt hash>' \
   -e HOTLOOP_FLOW_CREDENTIAL_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/hotloop-io/hotloop-flow:2.0.4
+  ghcr.io/hotloop-io/hotloop-flow:2.0.5
 ```
 
-Generate the hash with `podman run --rm ghcr.io/hotloop-io/hotloop-flow:2.0.4
+Generate the hash with `podman run --rm ghcr.io/hotloop-io/hotloop-flow:2.0.5
 hash-password -password 'something-long'`. The image is distroless nonroot with
 no shell in it, so there is nothing to `exec` into and nothing for anybody who
 gets code execution to pivot with.
@@ -761,7 +761,7 @@ doesn't need my Go paths.
 
 | Refusal | Fix |
 |---|---|
-| Authentication is disabled | Configure a user. Or, if the network really is isolated and you've decided to own that, set `HOTLOOP_FLOW_INSECURE=true` in the environment. `auth.enabled: false` in the file isn't enough on its own. (Up to and including 2.0.4 the variable did nothing and you got this refusal back regardless. Fixed on main.) |
+| Authentication is disabled | Configure a user. Or, if the network really is isolated and you've decided to own that, set `HOTLOOP_FLOW_INSECURE=true` in the environment. `auth.enabled: false` in the file isn't enough on its own. (Up to and including 2.0.4 the variable did nothing and you got this refusal back regardless. Fixed in 2.0.5.) |
 | Authentication is on with no users | Set `auth.users`, or `HOTLOOP_FLOW_ADMIN_USER` and `HOTLOOP_FLOW_ADMIN_PASSWORD_HASH`. |
 | A `passwordHash` that is not bcrypt | Run `hotloop-flow hash-password`. This check exists so a plaintext password can never end up in a ConfigMap by accident. |
 | No credential secret | Set `HOTLOOP_FLOW_CREDENTIAL_SECRET`. Or `HOTLOOP_FLOW_ALLOW_PLAINTEXT_CREDENTIALS=true` if this instance holds no secrets at all. |
