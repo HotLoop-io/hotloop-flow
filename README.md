@@ -728,6 +728,8 @@ silence and cost somebody a day.
   not going to describe it as production-hardened until a plant has tried to
   break it.
 
+What gets built next, and in what order, is in [docs/ROADMAP.md](docs/ROADMAP.md).
+
 ---
 
 ## Layout
