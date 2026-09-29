@@ -1,6 +1,6 @@
 apiVersion: v2
 name: hotloop-flow
-description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
+description: HotLoop Flow, a visual flow engine for the plant floor. One static Go binary.
 type: application
 
 # Both are placeholders. helm-publish packages with --version and
@@ -19,7 +19,6 @@ sources:
   - https://github.com/HotLoop-io/hotloop-flow
 
 keywords:
-  - embernet
   - industrial
   - flow
   - automation
@@ -40,6 +39,3 @@ annotations:
   catalog.cattle.io/categories: "Forge Industrial,Automation,Flow"
   catalog.cattle.io/requests-cpu: "10m"
   catalog.cattle.io/requests-memory: "64Mi"
-  embernet.ai/vendor: "HotLoop"
-  embernet.ai/maintainer: "Patrick Ryan"
-  embernet.ai/documentation-url: "https://github.com/HotLoop-io/hotloop-flow#readme"
