@@ -823,7 +823,7 @@ not what. Keep that up.
 ## The rest of HotLoop
 
 Flow is its own product. The rest of HotLoop is one codebase shipped as four
-more: **IoT** (Home Assistant, rewritten in Go for OT), **Edge** (IoT plus the
+more: **IoT** (the automation base, built for OT), **Edge** (IoT plus the
 machine layer), the **Gateway** (everything, plus fleet, multi-site and reports)
 and the **Edge Relay** (headless, forwards over Sparkplug B). Gateway and Edge
 Relay 4.16.0 are out and pull with no login. IoT and Edge arrive in an upcoming
