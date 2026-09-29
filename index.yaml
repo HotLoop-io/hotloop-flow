@@ -12,18 +12,15 @@ entries:
       catalog.cattle.io/release-name: hotloop-flow
       catalog.cattle.io/requests-cpu: 10m
       catalog.cattle.io/requests-memory: 64Mi
-      embernet.ai/documentation-url: https://github.com/HotLoop-io/hotloop-flow#readme
-      embernet.ai/maintainer: Patrick Ryan
-      embernet.ai/vendor: HotLoop
     apiVersion: v2
-    appVersion: 2.0.4
-    created: "2026-09-27T17:56:24.032744001Z"
-    description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
-    digest: 92a65da1d4a1644dc80b78ddf8cb79fad9ca4d161a0c514e94f174ca68edc038
+    appVersion: 2.0.5
+    created: "2026-09-29T18:40:02.868512515Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: ce3a9f3b4319fd72d47582fa60cbb500f41c028a5ee850fb19d53156c35afba3
     home: https://github.com/HotLoop-io/hotloop-flow
     icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
     keywords:
-    - embernet
     - industrial
     - flow
     - automation
@@ -36,6 +33,6 @@ entries:
     - https://github.com/HotLoop-io/hotloop-flow
     type: application
     urls:
-    - https://hotloop.io/hotloop-flow/hotloop-flow-2.0.4.tgz
-    version: 2.0.4
-generated: "2026-09-27T17:56:24.031557528Z"
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.0.5.tgz
+    version: 2.0.5
+generated: "2026-09-29T18:40:02.867366584Z"
