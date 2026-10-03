@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"sort"
 	"sync"
 	"time"
 
@@ -98,7 +99,7 @@ type delayNode struct {
 	allowRate bool
 	limit     int
 	dropPort  int // -1 when the node has only one output
-	now       func() time.Time
+	clock     node.Clock
 
 	mu       sync.Mutex
 	out      node.Emitter
@@ -108,11 +109,26 @@ type delayNode struct {
 	lastSent time.Time
 	timers   int
 
-	// release is closed when the context is cancelled, telling every waiting
-	// timer to fire now rather than lose its message.
-	release chan struct{}
-	once    sync.Once
-	wg      sync.WaitGroup
+	// paused holds every message waiting on its own timer, so that stopping
+	// can let all of them go at once rather than lose them. releasing is set
+	// when that has happened: a message arriving after it goes straight
+	// through.
+	paused    map[*pausedMsg]struct{}
+	releasing bool
+
+	// ticker drives the rate limiter, at tickEvery, which follows msg.rate.
+	ticker    *clockTicker
+	tickEvery time.Duration
+
+	once sync.Once
+	wg   sync.WaitGroup
+}
+
+// pausedMsg is one message a Delay is holding on its own timer.
+type pausedMsg struct {
+	m     *engine.Msg
+	due   time.Time
+	timer node.Timer
 }
 
 func registerDelay() {
@@ -196,9 +212,9 @@ func newDelay(def *node.Definition) (node.Node, error) {
 		allowRate: def.Node.PropBool("allowrate", false),
 		limit:     def.Node.PropInt("ew_maxQueue", defaultDeferLimit),
 		dropPort:  -1,
-		now:       time.Now,
+		clock:     node.ClockOf(def.Services),
 		byTopic:   map[string]*engine.Msg{},
-		release:   make(chan struct{}),
+		paused:    map[*pausedMsg]struct{}{},
 	}
 	if n.limit <= 0 {
 		n.limit = defaultDeferLimit
@@ -284,16 +300,29 @@ func (n *delayNode) Start(ctx context.Context, out node.Emitter) error {
 		// Cancellation happens before the scheduler waits for the graph to go
 		// quiet, so everything let go here still reaches its destination. The
 		// alternative is Node-RED's: the queue evaporates on redeploy.
-		n.once.Do(func() { close(n.release) })
+		n.once.Do(func() { n.releaseAll(out) })
 		if held := n.flush(out, 0); held > 0 {
 			out.Log(node.LogWarn, "released %d queued message(s) early because the flow is stopping", held)
 		}
 	}()
 
 	if n.rateLimited() {
-		go n.tick(ctx, out)
+		n.mu.Lock()
+		n.tickEvery = n.interval
+		n.ticker = newClockTicker(n.clock, n.interval, func() { n.onTick(out) })
+		n.mu.Unlock()
+		context.AfterFunc(ctx, n.stopTicking)
 	}
 	return nil
+}
+
+func (n *delayNode) stopTicking() {
+	n.mu.Lock()
+	t := n.ticker
+	n.mu.Unlock()
+	if t != nil {
+		t.Stop()
+	}
 }
 
 func (n *delayNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
@@ -359,27 +388,59 @@ func (n *delayNode) pause(d time.Duration, m *engine.Msg, out node.Emitter) erro
 		n.mu.Unlock()
 		return n.overflow(m, out)
 	}
+	if n.releasing {
+		// The flow is stopping and everything held has already been let go.
+		// Holding this one would only hold up the stop.
+		n.mu.Unlock()
+		out.Send(0, m)
+		return nil
+	}
 	n.timers++
 	n.wg.Add(1)
+	p := &pausedMsg{m: m, due: n.clock.Now().Add(d)}
+	n.paused[p] = struct{}{}
+	p.timer = n.clock.AfterFunc(d, func() { n.letGo(p, out) })
+	n.mu.Unlock()
+	return nil
+}
+
+// letGo sends one held message, once, whichever of its timer and a release
+// gets to it first.
+func (n *delayNode) letGo(p *pausedMsg, out node.Emitter) {
+	n.mu.Lock()
+	if _, held := n.paused[p]; !held {
+		n.mu.Unlock()
+		return
+	}
+	delete(n.paused, p)
 	n.mu.Unlock()
 
-	go func() {
-		defer n.wg.Done()
-		t := time.NewTimer(d)
-		defer t.Stop()
-		select {
-		case <-t.C:
-		case <-n.release:
-		}
-		// Sent before the timer stops counting as pending. The other order
-		// leaves an instant where the message is in neither place, and
-		// anything waiting for the graph to go quiet can look right through it.
-		out.Send(0, m)
-		n.mu.Lock()
-		n.timers--
-		n.mu.Unlock()
-	}()
-	return nil
+	// Sent before the timer stops counting as pending. The other order leaves
+	// an instant where the message is in neither place, and anything waiting
+	// for the graph to go quiet can look right through it.
+	out.Send(0, p.m)
+	n.mu.Lock()
+	n.timers--
+	n.mu.Unlock()
+	n.wg.Done()
+}
+
+// releaseAll lets every held message go now, in the order their timers would
+// have, because the flow is stopping.
+func (n *delayNode) releaseAll(out node.Emitter) {
+	n.mu.Lock()
+	n.releasing = true
+	held := make([]*pausedMsg, 0, len(n.paused))
+	for p := range n.paused {
+		held = append(held, p)
+	}
+	n.mu.Unlock()
+
+	sort.Slice(held, func(i, j int) bool { return held[i].due.Before(held[j].due) })
+	for _, p := range held {
+		p.timer.Stop()
+		n.letGo(p, out)
+	}
 }
 
 // limitRate is the queueing half: rate, queue and timed modes.
@@ -402,8 +463,8 @@ func (n *delayNode) limitRate(m *engine.Msg, out node.Emitter) error {
 
 	n.mu.Lock()
 
-	if n.mode == delayRate && len(n.queue) == 0 && n.now().Sub(n.lastSent) >= n.interval {
-		n.lastSent = n.now()
+	if n.mode == delayRate && len(n.queue) == 0 && n.clock.Now().Sub(n.lastSent) >= n.interval {
+		n.lastSent = n.clock.Now()
 		n.mu.Unlock()
 		out.Send(0, m)
 		return nil
@@ -468,30 +529,21 @@ func (n *delayNode) overflow(m *engine.Msg, out node.Emitter) error {
 		"add a second output to catch the overflow, or slow the source down", n.limit)
 }
 
-// tick is the rate limiter's clock.
-func (n *delayNode) tick(ctx context.Context, out node.Emitter) {
+// onTick is the rate limiter's beat.
+func (n *delayNode) onTick(out node.Emitter) {
 	n.mu.Lock()
-	interval := n.interval
-	n.mu.Unlock()
-
-	t := time.NewTicker(interval)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			n.mu.Lock()
-			// msg.rate may have moved it since the last tick.
-			if n.interval != interval && n.interval > 0 {
-				interval = n.interval
-				t.Reset(interval)
-			}
-			n.mu.Unlock()
-			n.releaseDue(out)
-		}
+	var reset time.Duration
+	// msg.rate may have moved it since the last tick.
+	if n.interval != n.tickEvery && n.interval > 0 {
+		n.tickEvery = n.interval
+		reset = n.interval
 	}
+	t := n.ticker
+	n.mu.Unlock()
+	if reset > 0 && t != nil {
+		t.Reset(reset)
+	}
+	n.releaseDue(out)
 }
 
 // releaseDue emits whatever this interval is due to send.
@@ -524,7 +576,7 @@ func (n *delayNode) releaseDue(out node.Emitter) {
 		}
 	}
 	if len(due) > 0 {
-		n.lastSent = n.now()
+		n.lastSent = n.clock.Now()
 	}
 	n.mu.Unlock()
 
@@ -592,10 +644,16 @@ func (n *delayNode) Pending() int {
 	return n.timers + len(n.queue) + len(n.byTopic)
 }
 
-// Close waits for the timer goroutines started by pause. They have already been
-// told to fire early by the context cancellation, so this returns promptly.
+// Close waits for the held messages to go. The context cancellation has already
+// let them go early, so this returns promptly.
 func (n *delayNode) Close(ctx context.Context, _ bool) error {
-	n.once.Do(func() { close(n.release) })
+	n.stopTicking()
+	n.mu.Lock()
+	out := n.out
+	n.mu.Unlock()
+	if out != nil {
+		n.once.Do(func() { n.releaseAll(out) })
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -634,22 +692,34 @@ type triggerNode struct {
 	secondPort    int
 	limit         int
 
-	svc node.Services
+	svc   node.Services
+	clock node.Clock
 
-	mu      sync.Mutex
-	armed   map[string]*armedTrigger
-	release chan struct{}
-	once    sync.Once
-	wg      sync.WaitGroup
+	mu    sync.Mutex
+	armed map[string]*armedTrigger
+	// releasing is set once the flow is stopping and every armed timer has
+	// been dealt with.
+	releasing bool
+	once      sync.Once
+	wg        sync.WaitGroup
 }
 
 // armedTrigger is one outstanding timer, keyed by topic when the node groups by
 // topic and by "" when it does not.
 type armedTrigger struct {
-	cancel chan struct{}
 	// msg is the message that armed the timer, kept because the second message
 	// may need its payload and because its topic has to survive onto it.
 	msg *engine.Msg
+	// d is how long it waits; zero waits to be reset, with no timer at all.
+	d     time.Duration
+	timer node.Timer
+	out   node.Emitter
+}
+
+func (e *armedTrigger) stop() {
+	if e.timer != nil {
+		e.timer.Stop()
+	}
 }
 
 func registerTrigger() {
@@ -725,8 +795,8 @@ func newTrigger(def *node.Definition) (node.Node, error) {
 		topicProp:     orDefault(def.Node.PropString("topic", ""), engine.PropTopic),
 		limit:         def.Node.PropInt("ew_maxTimers", defaultDeferLimit),
 		svc:           def.Services,
+		clock:         node.ClockOf(def.Services),
 		armed:         map[string]*armedTrigger{},
-		release:       make(chan struct{}),
 	}
 	if n.limit <= 0 {
 		n.limit = defaultDeferLimit
@@ -771,9 +841,39 @@ func (n *triggerNode) Start(ctx context.Context, _ node.Emitter) error {
 		// Same reasoning as the Delay node: fire now rather than lose the second
 		// message. A watchdog whose "the sensor went quiet" alarm is swallowed by
 		// a redeploy is worse than one that fires a little early.
-		n.once.Do(func() { close(n.release) })
+		n.once.Do(n.releaseAll)
 	}()
 	return nil
+}
+
+// releaseAll deals with every armed timer because the flow is stopping. One
+// with a deadline fires now. One waiting to be reset is dropped: there's
+// nothing to bring forward, it was waiting for an event that hasn't happened,
+// and firing it would fabricate one.
+func (n *triggerNode) releaseAll() {
+	n.mu.Lock()
+	n.releasing = true
+	keys := make([]string, 0, len(n.armed))
+	for k := range n.armed {
+		keys = append(keys, k)
+	}
+	entries := make([]*armedTrigger, len(keys))
+	sort.Strings(keys)
+	for i, k := range keys {
+		entries[i] = n.armed[k]
+	}
+	n.mu.Unlock()
+
+	for i, e := range entries {
+		e.stop()
+		if !n.forget(keys[i], e) {
+			continue
+		}
+		if e.d > 0 {
+			n.sendSecond(e)
+		}
+		n.wg.Done()
+	}
 }
 
 func (n *triggerNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
@@ -842,43 +942,42 @@ func (n *triggerNode) isReset(m *engine.Msg) bool {
 // arm starts a timer. A zero duration arms it with no deadline, which is the
 // wait-to-be-reset mode.
 func (n *triggerNode) arm(key string, m *engine.Msg, d time.Duration, out node.Emitter) {
-	entry := &armedTrigger{cancel: make(chan struct{}), msg: m.Clone()}
+	entry := &armedTrigger{msg: m.Clone(), d: d, out: out}
 
 	n.mu.Lock()
+	if n.releasing {
+		// The flow is stopping and every other timer has already been dealt
+		// with. This one goes the same way, straight away.
+		n.mu.Unlock()
+		if d > 0 {
+			n.sendSecond(entry)
+		}
+		return
+	}
 	n.armed[key] = entry
 	n.wg.Add(1)
+	if d > 0 {
+		entry.timer = n.clock.AfterFunc(d, func() { n.expire(key, entry) })
+	}
 	n.mu.Unlock()
+}
 
-	go func() {
-		defer n.wg.Done()
+// expire is a timer reaching its deadline.
+func (n *triggerNode) expire(key string, entry *armedTrigger) {
+	if !n.forget(key, entry) {
+		// Superseded, reset or released first.
+		return
+	}
+	n.sendSecond(entry)
+	n.wg.Done()
+}
 
-		var fire <-chan time.Time
-		if d > 0 {
-			t := time.NewTimer(d)
-			defer t.Stop()
-			fire = t.C
-		}
-
-		select {
-		case <-fire:
-		case <-entry.cancel:
-			return
-		case <-n.release:
-			if d == 0 {
-				// Nothing to bring forward: this timer was waiting for an event
-				// that has not happened. Firing it would fabricate one.
-				n.forget(key, entry)
-				return
-			}
-		}
-
-		if !n.forget(key, entry) {
-			return
-		}
-		if err := n.sendOp(n.op2, n.op2Nul, n.op2Payload, entry.msg, n.secondPort, out); err != nil {
-			out.Error(err, entry.msg)
-		}
-	}()
+// sendSecond sends the second message, built from the one that armed the
+// timer.
+func (n *triggerNode) sendSecond(e *armedTrigger) {
+	if err := n.sendOp(n.op2, n.op2Nul, n.op2Payload, e.msg, n.secondPort, e.out); err != nil {
+		e.out.Error(err, e.msg)
+	}
 }
 
 // forget removes an armed entry if it is still the current one, reporting
@@ -894,12 +993,10 @@ func (n *triggerNode) forget(key string, entry *armedTrigger) bool {
 }
 
 func (n *triggerNode) cancelArmed(key string, entry *armedTrigger) {
-	n.mu.Lock()
-	if n.armed[key] == entry {
-		delete(n.armed, key)
+	entry.stop()
+	if n.forget(key, entry) {
+		n.wg.Done()
 	}
-	n.mu.Unlock()
-	close(entry.cancel)
 }
 
 // disarm handles a reset. In wait-to-be-reset mode the reset is what releases
@@ -914,7 +1011,8 @@ func (n *triggerNode) disarm(key string, out node.Emitter) {
 	if !ok {
 		return
 	}
-	close(entry.cancel)
+	entry.stop()
+	n.wg.Done()
 
 	if n.duration == 0 {
 		if err := n.sendOp(n.op2, n.op2Nul, n.op2Payload, entry.msg, n.secondPort, out); err != nil {
@@ -958,7 +1056,7 @@ func (n *triggerNode) Pending() int {
 }
 
 func (n *triggerNode) Close(ctx context.Context, _ bool) error {
-	n.once.Do(func() { close(n.release) })
+	n.once.Do(n.releaseAll)
 
 	done := make(chan struct{})
 	go func() {

@@ -518,7 +518,7 @@ func newHTTPResponse(def *node.Definition) (node.Node, error) {
 	n := &httpResponseNode{
 		statusCode: def.Node.PropInt("statusCode", 0),
 		headers:    map[string]string{},
-		now:        time.Now,
+		now:        node.ClockOf(def.Services).Now,
 		standIn:    node.StandInOf(def.Services),
 	}
 

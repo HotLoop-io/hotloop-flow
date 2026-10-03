@@ -59,9 +59,17 @@ type injectNode struct {
 	// this.
 	schedule *cron.Expr
 	// clock and recheck are the wall clock the schedule reads and how often it
-	// reads it again: time.Now and scheduleRecheck, swapped only by tests.
+	// reads it again: the node clock's Now and scheduleRecheck, swapped only
+	// by tests.
 	clock   func() time.Time
 	recheck time.Duration
+
+	// timers is the node's clock: the wall clock in a flow, the test's under
+	// a flow test. timer and ticker are what's pending on it, so a stop can
+	// cancel them.
+	timers node.Clock
+	timer  node.Timer
+	ticker *clockTicker
 
 	svc node.Services
 	mu  sync.Mutex
@@ -114,8 +122,10 @@ func registerInject() {
 }
 
 func newInject(def *node.Definition) (node.Node, error) {
+	timers := node.ClockOf(def.Services)
 	n := &injectNode{
-		clock:   time.Now,
+		clock:   timers.Now,
+		timers:  timers,
 		recheck: scheduleRecheck,
 		svc:     def.Services,
 		topic:   def.Node.PropString("topic", ""),
@@ -222,14 +232,13 @@ func (n *injectNode) emit(out node.Emitter) error {
 }
 
 func (n *injectNode) Start(ctx context.Context, out node.Emitter) error {
+	context.AfterFunc(ctx, n.stopTimers)
 	if !n.once {
 		n.startRepeating(ctx, out)
 		return nil
 	}
-	go func() {
-		select {
-		case <-time.After(n.onceThen):
-		case <-ctx.Done():
+	n.setTimer(ctx, n.timers.AfterFunc(n.onceThen, func() {
+		if ctx.Err() != nil {
 			return
 		}
 		if err := n.emit(out); err != nil {
@@ -238,30 +247,53 @@ func (n *injectNode) Start(ctx context.Context, out node.Emitter) error {
 		// The interval or the schedule starts after the startup injection, not
 		// alongside it, the order Node-RED's own Inject node uses.
 		n.startRepeating(ctx, out)
-	}()
+	}))
 	return nil
+}
+
+// setTimer keeps the pending timer so a stop can cancel it, and cancels it
+// itself if the stop already happened.
+func (n *injectNode) setTimer(ctx context.Context, t node.Timer) {
+	n.mu.Lock()
+	n.timer = t
+	n.mu.Unlock()
+	if ctx.Err() != nil {
+		t.Stop()
+	}
+}
+
+func (n *injectNode) stopTimers() {
+	n.mu.Lock()
+	t, tk := n.timer, n.ticker
+	n.mu.Unlock()
+	if t != nil {
+		t.Stop()
+	}
+	if tk != nil {
+		tk.Stop()
+	}
 }
 
 // startRepeating starts whichever of the interval or the crontab the node has.
 func (n *injectNode) startRepeating(ctx context.Context, out node.Emitter) {
 	switch {
 	case n.repeat > 0:
-		go func() {
-			t := time.NewTicker(n.repeat)
-			defer t.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-t.C:
-					if err := n.emit(out); err != nil {
-						out.Error(err, nil)
-					}
-				}
+		t := newClockTicker(n.timers, n.repeat, func() {
+			if ctx.Err() != nil {
+				return
 			}
-		}()
+			if err := n.emit(out); err != nil {
+				out.Error(err, nil)
+			}
+		})
+		n.mu.Lock()
+		n.ticker = t
+		n.mu.Unlock()
+		if ctx.Err() != nil {
+			t.Stop()
+		}
 	case n.schedule != nil:
-		go n.runSchedule(ctx, out)
+		n.scheduleNext(ctx, out)
 	}
 }
 
@@ -275,31 +307,32 @@ func (n *injectNode) startRepeating(ctx context.Context, out node.Emitter) {
 // wrong clock is corrected within a minute instead of firing hours late.
 const scheduleRecheck = time.Minute
 
-func (n *injectNode) runSchedule(ctx context.Context, out node.Emitter) {
-	for {
-		next, ok := n.schedule.Next(n.clock(), time.Local)
-		if !ok {
-			out.Status(node.Status{Fill: "grey", Shape: "ring", Text: "schedule has ended"})
-			out.Log(node.LogWarn, "crontab %q has no more dates to fire on", n.schedule.String())
-			return
-		}
-		for {
-			wait := next.Sub(n.clock())
-			if wait <= 0 {
-				break
-			}
-			t := time.NewTimer(min(wait, n.recheck))
-			select {
-			case <-ctx.Done():
-				t.Stop()
-				return
-			case <-t.C:
-			}
-		}
+// scheduleNext works out the next date on the crontab and waits for it.
+func (n *injectNode) scheduleNext(ctx context.Context, out node.Emitter) {
+	next, ok := n.schedule.Next(n.clock(), time.Local)
+	if !ok {
+		out.Status(node.Status{Fill: "grey", Shape: "ring", Text: "schedule has ended"})
+		out.Log(node.LogWarn, "crontab %q has no more dates to fire on", n.schedule.String())
+		return
+	}
+	n.waitUntil(ctx, out, next)
+}
+
+// waitUntil sleeps toward next a recheck at a time, looking at the clock again
+// each time it wakes, and injects once the clock says it's time.
+func (n *injectNode) waitUntil(ctx context.Context, out node.Emitter, next time.Time) {
+	if ctx.Err() != nil {
+		return
+	}
+	wait := next.Sub(n.clock())
+	if wait <= 0 {
 		if err := n.emit(out); err != nil {
 			out.Error(err, nil)
 		}
+		n.scheduleNext(ctx, out)
+		return
 	}
+	n.setTimer(ctx, n.timers.AfterFunc(min(wait, n.recheck), func() { n.waitUntil(ctx, out, next) }))
 }
 
 // parseSeconds reads a duration expressed in seconds, which is how Node-RED

@@ -224,7 +224,7 @@ func (tv TypedValue) Eval(ec EvalContext) (any, bool, error) {
 		return re, true, nil
 
 	case node.TypeDate:
-		now := time.Now
+		now := node.ClockOf(ec.Services).Now
 		if ec.Now != nil {
 			now = ec.Now
 		}

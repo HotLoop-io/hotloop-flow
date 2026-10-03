@@ -97,6 +97,10 @@ type Runtime struct {
 	// the process. Only a flow test sets it.
 	standIns func(nodeID string) node.StandIn
 
+	// clock, when set, is the time every node keeps instead of the wall
+	// clock. Only a flow test sets it.
+	clock node.Clock
+
 	// observer sees every message a node is handed and every message it sends.
 	// Only a flow test sets one: it is how a test knows what came out of a port
 	// without wiring anything into the flow it is testing.
@@ -128,6 +132,11 @@ func (rt *Runtime) SetObserver(o Observer) { rt.observer = o }
 // world, so that nothing it does reaches a broker, a database, a socket, a file
 // or a command. A flow test calls it before Start.
 func (rt *Runtime) SetStandIns(fn func(nodeID string) node.StandIn) { rt.standIns = fn }
+
+// SetClock gives every node built from here on a clock other than the wall
+// clock. A flow test calls it before Start, so the time a Delay waits is time
+// the test can move.
+func (rt *Runtime) SetClock(c node.Clock) { rt.clock = c }
 
 // Settled reports whether no message is queued for, or being handled by, any
 // node. Messages a node is holding on purpose, in a Delay or a Trigger, don't
@@ -1174,6 +1183,10 @@ func (s *services) StandIn() node.StandIn {
 	}
 	return s.rt.standIns(s.nodeID)
 }
+
+// Clock is what node.ClockOf finds: the test's clock under a flow test, and
+// nil, meaning the wall clock, the rest of the time.
+func (s *services) Clock() node.Clock { return s.rt.clock }
 
 func (s *services) ConfigNode(id string) (node.Node, bool) {
 	s.rt.configsMu.RLock()

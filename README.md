@@ -466,15 +466,15 @@ Delay or a context can leak into the next.
   expectations on one port are two messages, in that order.
 
 A test ends as soon as everything it waits for has happened and the flow has
-nothing left to do, so most take a millisecond. The `timeout` (5 seconds unless
-you say) is only what a broken test costs you.
+nothing left to do. The `timeout` is 5 seconds unless you say, on the test's
+own clock, which is the next section.
 
 A failure says what came out instead and where it differs:
 
 ```
---- FAIL: the alarm says LOW (0.30s)
+--- FAIL: the alarm says LOW (0.00s)
     expect 1: debug "alarm out" (alarm-out): 1 message(s) received and none matched; the first one differs at msg.payload: wanted "LOW", got "HIGH"
-      at 283µs: {"payload":"HIGH","topic":"line3/temp"}
+      at 0s: {"payload":"HIGH","topic":"line3/temp"}
 ```
 
 A test that can't run is an error, not a pass: a node it names that isn't in the
@@ -483,6 +483,53 @@ that won't start. So is a misspelt key. `expcet:` is refused when the file is
 read, because a typo that was quietly skipped would leave a test with nothing to
 check, and a test with nothing to check passes. Exit status 1 for anything
 short of all passing, and `-junit` writes the report every CI system reads.
+
+### On the test's clock
+
+Nobody runs a test suite that waits out a five-minute Delay, so a test doesn't
+wait. It keeps its own clock and moves it straight to the next thing anything in
+the flow is waiting for: a Delay letting go, a Trigger's second message, an
+Inject on an interval or a crontab, a Join or a Batch timing out, a Link Call
+giving up. The timer fires, the flow handles whatever it sent, and only then does
+the clock look for what's due next, the same order the real minutes would have
+taken. Five minutes of Delay is one step and about a millisecond.
+
+```yaml
+  - name: a reading at 4m pushes the watchdog's off out to 9m
+    clock: 2026-10-05T06:00:00Z     # when the test starts; the real time if you leave it out
+    timeout: 20m
+    inject:
+      - {node: watchdog, msg: {payload: reading}}
+      - {node: watchdog, msg: {payload: reading}, at: 4m}   # at: on the test's clock
+    expect:
+      - {node: watchdog, msg: {payload: "on"}}
+      - {node: watchdog, msg: {payload: "off"}, within: 9m}
+
+  - name: and not a moment before
+    timeout: 8m59s
+    inject:
+      - {node: watchdog, msg: {payload: reading}}
+      - {node: watchdog, msg: {payload: reading}, at: 4m}
+    expect:
+      - {node: watchdog, count: 1}  # the "on", and nothing else yet
+```
+
+**`at`** puts an injection at a moment on the test's clock, and everything due
+before it happens first. **`within`** and **`timeout`** are on that clock too, so
+`timeout: 1h` on a flow with an Inject every ten minutes is six ticks and a few
+milliseconds. **`clock`** sets when the test starts, for a flow that cares what
+time it is: a crontab that fires at half past six fires when the test's clock
+says half past six. A Function node's `Date`, an Inject's timestamp, a Change
+node setting a date and a cookie's `Expires` all read the same clock, so a flow
+that stamps and compares times agrees with itself under a test.
+
+The suite proves every timing node in the palette against it, to the millisecond:
+Delay in its fixed, random, rate and timed modes, Trigger with extend, Inject on
+an interval, once at startup and on a crontab, Join and Batch timeouts and a Link
+Call that never gets its answer. All of it, an hour of plant time included, runs
+in well under a second. What a test can't move is the CPU: a flow still busy
+after a minute of real time fails the test rather than hanging the suite. JSONata
+`$now()` and `$millis()` still read the wall clock.
 
 ### Nothing leaves the test
 

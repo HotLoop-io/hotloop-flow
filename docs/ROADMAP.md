@@ -95,7 +95,7 @@ Tests are YAML next to the flows, so they diff and review the same way.
       expect nothing, expect an error to reach a Catch. JUnit output for CI
 - [x] Virtualized I/O: an MQTT out, a database write or an HTTP request in a test
       records what it would have sent and never touches the network
-- [ ] Virtual clock: a five-minute Delay runs in milliseconds, and every timing
+- [x] Virtual clock: a five-minute Delay runs in milliseconds, and every timing
       node is proven against it
 - [ ] Context and credential fixtures, and assertions on context afterwards.
       One test can't lean on what another left behind

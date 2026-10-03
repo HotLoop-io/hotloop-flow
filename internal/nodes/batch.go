@@ -43,8 +43,8 @@ type batchNode struct {
 	byTopic map[string]*topicGroups
 
 	out    node.Emitter
-	ticker *time.Ticker
-	stop   chan struct{}
+	clock  node.Clock
+	ticker *clockTicker
 }
 
 type topicGroups struct {
@@ -101,7 +101,7 @@ func newBatch(def *node.Definition) (node.Node, error) {
 		mode:        orDefault(def.Node.PropString("mode", ""), "count"),
 		honourParts: def.Node.PropBool("honourParts", false),
 		byTopic:     map[string]*topicGroups{},
-		stop:        make(chan struct{}),
+		clock:       node.ClockOf(def.Services),
 	}
 	switch n.mode {
 	case "count":
@@ -147,25 +147,13 @@ func (n *batchNode) Start(ctx context.Context, out node.Emitter) error {
 	n.mu.Lock()
 	n.out = out
 	if n.mode == "interval" {
-		n.ticker = time.NewTicker(n.interval)
+		n.ticker = newClockTicker(n.clock, n.interval, n.flushInterval)
 	}
 	ticker := n.ticker
 	n.mu.Unlock()
-	if ticker == nil {
-		return nil
+	if ticker != nil {
+		context.AfterFunc(ctx, ticker.Stop)
 	}
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-n.stop:
-				return
-			case <-ticker.C:
-				n.flushInterval()
-			}
-		}
-	}()
 	return nil
 }
 
@@ -330,14 +318,10 @@ func (n *batchNode) receiveConcat(m *engine.Msg, out node.Emitter) error {
 // Close stops the interval timer.
 func (n *batchNode) Close(context.Context, bool) error {
 	n.mu.Lock()
-	defer n.mu.Unlock()
-	if n.ticker != nil {
-		n.ticker.Stop()
-	}
-	select {
-	case <-n.stop:
-	default:
-		close(n.stop)
+	t := n.ticker
+	n.mu.Unlock()
+	if t != nil {
+		t.Stop()
 	}
 	return nil
 }
