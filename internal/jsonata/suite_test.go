@@ -256,6 +256,13 @@ func runCase(dir string, c *suiteCase, datasets map[string]any) error {
 	}
 
 	got, defined, err := x.Eval(context.Background(), input, vars)
+	if len(opts) > 0 && ErrorCode(err) == "D1012" {
+		// The runner's timebox raises U1001 when the time limit runs out, the
+		// same code it raises for a stack that grew too deep. Which of the two
+		// trips first on runaway recursion depends on how fast the machine
+		// is, so a timeout here is the runner's U1001, not a different answer.
+		err = fmt.Errorf("U1001: %w", err)
+	}
 	switch {
 	case c.keys["undefinedResult"]:
 		if err != nil {
