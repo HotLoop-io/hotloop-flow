@@ -283,6 +283,11 @@ func decryptKeyPEM(keyPEM []byte, passphrase string) ([]byte, error) {
 	}
 }
 
+// ReadSecretFile reads a file through the secret scope. It is how a tls-config
+// reads its certificate, key and CA, and how the runtime reads a credential a
+// node names in ew_credentialFiles.
+func ReadSecretFile(path string) ([]byte, error) { return readSecretFile(path) }
+
 // readSecretFile reads one certificate, key or bundle through the secret scope.
 func readSecretFile(path string) ([]byte, error) {
 	checked, err := Secrets.Check(path)
@@ -299,7 +304,7 @@ func readSecretFile(path string) ([]byte, error) {
 		return nil, fmt.Errorf("reading %s: %w", checked, err)
 	}
 	if len(b) > maxSecretFileBytes {
-		return nil, fmt.Errorf("%s is larger than %d bytes, which no certificate is", checked, maxSecretFileBytes)
+		return nil, fmt.Errorf("%s is larger than %d bytes, which no certificate or password is", checked, maxSecretFileBytes)
 	}
 	return b, nil
 }

@@ -587,6 +587,24 @@ that scope ends up in a handshake, never in a message. Put the same key under
 `files.allowedPaths` instead and any flow with a File In node can pick it up and
 mail it to whoever it likes.
 
+**A password can live in a Secret instead of the flow.** Any node's credential
+can name a file instead of holding the value:
+
+```json
+{"id": "b1", "type": "mqtt-broker", "broker": "plc-broker", "user": "line3",
+ "ew_credentialFiles": {"password": "/etc/hotloop-flow/secrets/plc-broker/password"}}
+```
+
+The file is read through the same secret scope when the node starts. One
+trailing newline comes off, because that's what `echo` leaves behind and a
+password with a newline on the end fails a login with nothing in the log to say
+why. The flow file, the deployment log, the diff and a git mirror carry the path
+and never the password, so the flow can go in git and the password stays where
+whoever runs the cluster already keeps passwords. A file that's missing or
+outside the scope fails that node's deploy instead of letting it connect with no
+password. The chart mounts Secrets for you under `secrets.mounts`. A rotated
+Secret takes effect on the next deploy or restart.
+
 **Credentials are AES-256-GCM, keyed with Argon2id.** GCM refuses a tampered file
 outright instead of decrypting it to something an attacker picked, and Argon2id
 makes every guess at a weak secret cost 64 MiB of memory. The flow file is written

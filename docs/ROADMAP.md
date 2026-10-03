@@ -196,7 +196,7 @@ but plenty of people drop one that doesn't.
       editing, search across flows, debug filtering
 - [ ] Browser tests for the editor in CI, and a click-through of every node
       dialog
-- [ ] Secrets by reference: a node reads a password from a mounted Kubernetes
+- [x] Secrets by reference: a node reads a password from a mounted Kubernetes
       Secret or file, so it never lives in the flow file at all
 - [ ] Bring your flows: `hotloop-flow import` keeps reporting exactly what will
       and won't run before anything is deployed
