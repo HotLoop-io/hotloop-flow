@@ -19,6 +19,7 @@ import (
 
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/flowdiff"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
@@ -176,6 +177,8 @@ func (s *Server) routes() {
 	s.mux.Handle("GET "+s.path("/deployments"), s.auth(PermFlowsRead, s.handleListDeployments))
 	s.mux.Handle("GET "+s.path("/deployments/{seq}"), s.auth(PermFlowsRead, s.handleGetDeployment))
 	s.mux.Handle("GET "+s.path("/deployments/{seq}/flows"), s.auth(PermFlowsRead, s.handleGetDeploymentFlows))
+	s.mux.Handle("GET "+s.path("/deployments/{from}/diff/{to}"), s.auth(PermFlowsRead, s.handleDiffDeployments))
+	s.mux.Handle("POST "+s.path("/flows/diff"), s.auth(PermFlowsRead, s.handleDiffPending))
 	s.mux.Handle("GET "+s.path("/runtime/stats"), s.auth(PermStatusRead, s.handleStats))
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))
@@ -607,14 +610,76 @@ func (s *Server) handleGetDeploymentFlows(w http.ResponseWriter, r *http.Request
 	_, _ = w.Write(rec.Flows)
 }
 
+// diffJSON is a semantic diff as the API returns it: the structured result for
+// a program, the text a person would read, and the two revisions compared.
+type diffJSON struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	flowdiff.Result
+	Text string `json:"text"`
+}
+
+// handleDiffDeployments compares two deployments, node by node.
+func (s *Server) handleDiffDeployments(w http.ResponseWriter, r *http.Request) {
+	from, ok := s.deploymentNamed(w, r.PathValue("from"))
+	if !ok {
+		return
+	}
+	to, ok := s.deploymentNamed(w, r.PathValue("to"))
+	if !ok {
+		return
+	}
+	oldF, err := engine.ParseFlows(from.Flows)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("deployment %d: %v", from.Seq, err))
+		return
+	}
+	newF, err := engine.ParseFlows(to.Flows)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("deployment %d: %v", to.Seq, err))
+		return
+	}
+	res := flowdiff.Diff(oldF, newF)
+	writeJSON(w, http.StatusOK, diffJSON{From: from.Rev, To: to.Rev, Result: res, Text: flowdiff.Text(res, oldF, newF)})
+}
+
+// handleDiffPending compares what is live with a document that hasn't been
+// deployed yet: what "review and deploy" shows before anybody presses the
+// button.
+func (s *Server) handleDiffPending(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.deps.Config.Server.MaxRequestBytes))
+	if err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "flow document is too large")
+		return
+	}
+	pending, err := engine.ParseFlows(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	live, err := s.deps.Flows.Load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	res := flowdiff.Diff(live, pending)
+	writeJSON(w, http.StatusOK, diffJSON{From: live.Rev, To: "pending", Result: res, Text: flowdiff.Text(res, live, pending)})
+}
+
 // deploymentFromPath reads the {seq} in the path and loads that record,
 // writing the error response itself when it can't.
 func (s *Server) deploymentFromPath(w http.ResponseWriter, r *http.Request) (history.Record, bool) {
+	return s.deploymentNamed(w, r.PathValue("seq"))
+}
+
+// deploymentNamed loads a record by its sequence number as it appeared in a
+// path, writing the error response itself when it can't.
+func (s *Server) deploymentNamed(w http.ResponseWriter, name string) (history.Record, bool) {
 	if s.deps.History == nil {
 		writeError(w, http.StatusServiceUnavailable, "the deployment log is not available")
 		return history.Record{}, false
 	}
-	seq, err := strconv.ParseInt(r.PathValue("seq"), 10, 64)
+	seq, err := strconv.ParseInt(name, 10, 64)
 	if err != nil || seq < 1 {
 		writeError(w, http.StatusBadRequest, "a deployment is a positive sequence number")
 		return history.Record{}, false

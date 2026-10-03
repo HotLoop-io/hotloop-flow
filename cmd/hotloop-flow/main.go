@@ -35,6 +35,12 @@ var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
+		// A command whose exit status is its answer, like diff, has already
+		// said everything it has to say.
+		var code exitCode
+		if errors.As(err, &code) {
+			os.Exit(int(code))
+		}
 		// A configuration refusal gets printed plainly with its remedy rather
 		// than as a stack of wrapped errors. The operator reading this is
 		// probably looking at a CrashLoopBackOff.
@@ -55,13 +61,15 @@ func run() error {
 			return cmdHashPassword(os.Args[2:])
 		case "import":
 			return cmdImport(os.Args[2:])
+		case "diff":
+			return cmdDiff(os.Args[2:], os.Stdout)
 		case "bench":
 			return cmdBench(os.Args[2:])
 		case "version":
 			fmt.Println(version)
 			return nil
 		default:
-			return fmt.Errorf("unknown command %q (try: serve, hash-password, import, bench, version)", os.Args[1])
+			return fmt.Errorf("unknown command %q (try: serve, hash-password, import, diff, bench, version)", os.Args[1])
 		}
 	}
 	return cmdServe(os.Args[1:])
