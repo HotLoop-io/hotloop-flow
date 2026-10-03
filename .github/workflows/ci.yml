@@ -53,6 +53,18 @@ jobs:
           for i in $(seq 1 30); do nc -z localhost 1883 && exit 0; sleep 1; done
           docker logs mosquitto; exit 1
 
+      - name: Fetch the published JSONata test suite
+        # The suite is jsonata-js's own, cloned at the pinned tag and checked
+        # against the commit the tag pointed at when the expected count was
+        # written down. Cloned rather than committed for the same reason the
+        # WASM guest is built rather than committed: 1,347 files of somebody
+        # else's test data in this repository would be reviewed by nobody.
+        run: |
+          git -c advice.detachedHead=false clone -q --depth 1 --branch v2.2.2 \
+            https://github.com/jsonata-js/jsonata.git "$RUNNER_TEMP/jsonata-js"
+          test "$(git -C "$RUNNER_TEMP/jsonata-js" rev-parse HEAD)" = 6c7e95fdbf4405a1e741852a7cd8cd985b4305bb
+          echo "HOTLOOP_FLOW_JSONATA_SUITE=$RUNNER_TEMP/jsonata-js/test/test-suite" >> "$GITHUB_ENV"
+
       - name: Test with race detector
         # The race detector needs cgo. This is the test build only — the shipped
         # binary is built CGO_ENABLED=0 in the Dockerfile so it stays static and
@@ -94,6 +106,17 @@ jobs:
           for t in TestPartialDeployKeepsTheMQTTSessionUp TestIntegrationMQTTRoundTrip; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
+
+      - name: The JSONata suite actually ran
+        # A missing suite turns the test into a skip, and a skip reads as a
+        # pass. The count is the claim the README makes, so check it here.
+        run: |
+          OUT=$(go test ./internal/jsonata/ -count=1 -v -run TestPublishedJSONataSuite 2>&1)
+          echo "$OUT" | grep -E 'published suite|^(---|ok|FAIL)'
+          echo "$OUT" | grep -q -- "--- PASS: TestPublishedJSONataSuite" || {
+            echo "::error::the JSONata suite did not run and pass"; exit 1; }
+          echo "$OUT" | grep -q "1673 of 1686 cases pass" || {
+            echo "::error::the JSONata pass count is not the one the docs state"; exit 1; }
 
   chart:
     name: Chart

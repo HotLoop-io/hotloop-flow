@@ -807,10 +807,19 @@ imply otherwise to make a table look nicer. That is the trade you make for the
 footprint and the sandbox, stated plainly so you can decide against it. Signed
 WASM plugins are Flow's answer to that, Phase 6 of the roadmap.
 
-What an imported flow trips over most, in order: JSONata expressions (refused,
-not ignored), cron-scheduled Inject nodes (they load and never fire on schedule,
-and `import` warns you), and Link Call. All three are on the
-[roadmap](docs/ROADMAP.md) and listed under [Where it stands](#where-it-stands).
+JSONata used to top the list of what an imported flow trips over. It runs now:
+every `jsonata`-typed property evaluates, with Node-RED's `$flowContext`,
+`$globalContext`, `$env` and `$clone` bound in, and CI runs it against the
+published jsonata-js test suite on every pull request. 1673 of the 1686 cases
+pass. The 13 that don't are pinned in a test with the reason for each, and ten
+of those still raise an error, just with a different code. `$moment` is the one
+Node-RED function you'll miss, and it tells you what to use instead of failing
+quietly.
+
+What an imported flow trips over most now: cron-scheduled Inject nodes (they
+load and never fire on schedule, and `import` warns you), and Link Call. Both
+are on the [roadmap](docs/ROADMAP.md) and listed under
+[Where it stands](#where-it-stands).
 
 ---
 
@@ -843,10 +852,6 @@ rename, and the only change to those nodes since is what they're called.
 - **Link Call, and Link Out's "return" mode.** Both are refused with an error
   rather than silently doing nothing. That's the right behaviour while they
   don't exist, and it's still a gap.
-- **JSONata.** Every `jsonata`-typed property is refused, so a node that uses
-  one errors on every message. That beats returning the expression text and
-  letting a flow route on a literal string, but it's also the single most
-  common thing an imported flow trips over.
 - **Cron-style Inject scheduling.** Interval and on-startup injection work. "At
   06:00 on weekdays" doesn't: `crontab` is ignored, so a cron-scheduled Inject
   loads fine and never fires on its schedule. `hotloop-flow import` warns you.

@@ -34,6 +34,9 @@ coverage.*
 .DS_Store
 Thumbs.db
 
+# The published JSONata test suite, cloned by CI at a pinned tag, not committed
+testdata/jsonata-suite/
+
 # Compiled WASM test guest — built by CI, not committed
 testdata/wasmguest/*.wasm
 testdata/wasmguest/*.h

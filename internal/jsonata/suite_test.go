@@ -22,7 +22,7 @@ import (
 //
 // The suite is not committed. CI clones jsonata-js at the pinned tag below,
 // checks the commit, and points HOTLOOP_FLOW_JSONATA_SUITE at it, the same way
-// it builds the WASM guest rather than committing it: 1,346 files of somebody
+// it builds the WASM guest rather than committing it: 1,347 files of somebody
 // else's test data in this repository would be reviewed by nobody and could
 // drift from the release it claims to be. To run it locally:
 //
