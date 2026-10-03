@@ -871,10 +871,18 @@ of those still raise an error, just with a different code. `$moment` is the one
 Node-RED function you'll miss, and it tells you what to use instead of failing
 quietly.
 
-What an imported flow trips over most now: cron-scheduled Inject nodes (they
-load and never fire on schedule, and `import` warns you), and Link Call. Both
-are on the [roadmap](docs/ROADMAP.md) and listed under
-[Where it stands](#where-it-stands).
+Cron-scheduled Inject nodes were next on that list. They fire now, and on the
+same minute Node-RED's would: the crontab is read by a port of cronosjs 1.7.1,
+the scheduler inside Node-RED's own Inject node, and checked against 18,852
+firings cronosjs itself produced across six time zones, either side of real
+clock changes. That matters at 2 AM. A shift start that lands in the hour that
+goes missing in spring runs the moment the clocks jump, and the hour that
+repeats in autumn runs once, not twice. The schedule also rereads the wall
+clock every minute, so a box that boots with the wrong time and gets fixed by
+NTP later starts firing on the right one instead of hours late.
+
+What an imported flow trips over most now: Link Call. It's on the
+[roadmap](docs/ROADMAP.md) and listed under [Where it stands](#where-it-stands).
 
 ---
 
@@ -907,10 +915,6 @@ rename, and the only change to those nodes since is what they're called.
 - **Link Call, and Link Out's "return" mode.** Both are refused with an error
   rather than silently doing nothing. That's the right behaviour while they
   don't exist, and it's still a gap.
-- **Cron-style Inject scheduling.** Interval and on-startup injection work. "At
-  06:00 on weekdays" doesn't: `crontab` is ignored, so a cron-scheduled Inject
-  loads fine and never fires on its schedule. `hotloop-flow import` warns you.
-  The runtime doesn't.
 - **Editor click-through for the newer nodes.** The dialogs are built from each
   node's descriptor, so they render, but nobody has clicked through the HTTP,
   WebSocket, TCP or UDP ones by hand yet.

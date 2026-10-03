@@ -187,7 +187,7 @@ but plenty of people drop one that doesn't.
       operators not to deploy during a shift
 - [x] JSONata, proven against the published examples, since it's the most common
       thing an imported flow trips over
-- [ ] Cron-style inject
+- [x] Cron-style inject
 - [ ] Link Call and Link Out's return mode
 - [ ] Join by timeout and reduce, batch by time, split streaming
 - [ ] MQTT v5 and last will
