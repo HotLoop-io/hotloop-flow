@@ -3,26 +3,68 @@ Copyright 2026 HotLoop
 
 This product includes software developed by HotLoop (https://hotloop.io).
 
+Parts of it are ported from other people's open source code. Each one is listed
+below with where it came from, who holds the copyright and the license it came
+under. Every ported file opens with a comment saying the same thing, and every
+one of them was modified: translated to Go, and changed wherever the file says
+so.
+
 --------------------------------------------------------------------------------
-Attribution
+Node-RED
 --------------------------------------------------------------------------------
 
-HotLoop Flow is an independent implementation. It is not affiliated with, endorsed
-by, or derived from the Node-RED project or the OpenJS Foundation.
+HotLoop Flow is not affiliated with or endorsed by the Node-RED project or the
+OpenJS Foundation.
 
 HotLoop Flow reads and writes the Node-RED v1 flow file format, and implements
 compatible semantics for property expressions, message routing, and the core node
 set. That interoperability is deliberate: it is what lets an existing flow be
 imported without being rewritten.
 
-No Node-RED source code is included in this repository or in the binaries built
-from it. The format and behaviour were implemented from the public specification
-and from reading the upstream source, which is licensed under the Apache License,
-Version 2.0:
+Most of it was written from the format and the behaviour, with its own structure.
+Where an imported flow has to get exactly the answer Node-RED gives, the upstream
+code was ported instead, and the files below are derivative works of Node-RED:
 
     Node-RED - https://github.com/node-red/node-red
-    Copyright OpenJS Foundation and other contributors
-    Licensed under the Apache License, Version 2.0
+    Copyright OpenJS Foundation and other contributors, https://openjsf.org/
+    Licensed under the Apache License, Version 2.0 (LICENSE in this repository)
+
+The upstream source files carry the line "Copyright JS Foundation and other
+contributors, http://js.foundation", and the files ported from them carry it too.
+Node-RED ships no NOTICE file, so there is none to pass on. All of these were
+modified. Versions are the ones each port was checked against.
+
+    internal/nodes/split.go
+        @node-red/nodes 5.0.7, core/sequence/17-split.js: SplitNode
+    internal/nodes/join.go
+        @node-red/nodes 5.0.7, core/sequence/17-split.js: JoinNode and its
+        reduce functions
+    internal/nodes/batch.go
+        @node-red/nodes 5.0.7, core/sequence/19-batch.js
+    internal/nodes/linkcall.go
+        @node-red/nodes 5.0.7, core/common/60-link.js: LinkCallNode, and
+        LinkOutNode's return mode
+    internal/nodes/common.go, LinkRegistry.target only
+        @node-red/runtime 5.0.7, lib/nodes/index.js: linkcallTargets.getTargetNode
+    internal/nodes/tlsconfig.go, newTLSConfig only
+        @node-red/nodes 5.0.7, core/network/05-tls.js: the TLSConfig constructor
+        and addTLSOptions
+    internal/nodes/httpcookies.go
+        @node-red/nodes 5.0.7, core/network/21-httpin.js: HTTPOut's msg.cookies;
+        core/network/21-httprequest.js: msg.cookies into the cookie jar, and
+        extractCookies
+    internal/nodes/httpmultipart.go
+        @node-red/nodes 5.0.7, core/network/21-httprequest.js: the
+        multipart/form-data body
+    internal/nodes/network_mqtt.go, the knownMediaTypes table only
+        @node-red/nodes 5.0.7, core/network/10-mqtt.js
+    internal/jsonata/jsonata.go, legacyRef only
+        @node-red/util 5.0.7, lib/util.js: prepareJSONataExpression
+    internal/engine/property.go, ParsePath only
+        @node-red/util 5.0.7, lib/util.js: normalisePropertyExpression
+    internal/nodes/testdata/http-golden/golden.mjs, the blocks marked verbatim
+        @node-red/nodes 4.1.15 and 5.0.7 (identical in both),
+        core/network/21-httpin.js and core/network/21-httprequest.js
 
 Where HotLoop Flow deliberately diverges from Node-RED behaviour, the divergence is
 documented at the point of divergence in the source and summarised in
@@ -31,3 +73,118 @@ and credential encryption are the three that change observable behaviour.
 
 "Node-RED" is a trademark of the OpenJS Foundation. It is used here only to
 describe compatibility.
+
+--------------------------------------------------------------------------------
+cronosjs
+--------------------------------------------------------------------------------
+
+internal/cron/cron.go is ported from cronosjs 1.7.1, src/parser.ts,
+src/expression.ts and src/date.ts. cronosjs is the scheduler inside Node-RED's
+Inject node. The crontabs marked "From cronosjs's own tests" in
+internal/cron/testdata/golden.mjs come from its test suite, and
+internal/cron/testdata/cronosjs-1.7.1.json is its output.
+
+    cronosjs - https://github.com/jaclarke/cronosjs
+
+ISC License
+
+Copyright (c) 2019, James Clarke
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+--------------------------------------------------------------------------------
+MIT-licensed code
+--------------------------------------------------------------------------------
+
+These are ported in part, each under the MIT License, whose text follows the
+list. internal/nodes/testdata/http-golden/node-red-4-http.json is the output of
+the HTTP libraries below.
+
+internal/nodes/httpcookies.go:
+
+    cookie 0.7.2, index.js: parse and serialize
+    https://github.com/jshttp/cookie
+    Copyright (c) 2012-2014 Roman Shtylman <shtylman@gmail.com>
+    Copyright (c) 2015 Douglas Christopher Wilson <doug@somethingdoug.com>
+
+    express 4.22.2, lib/response.js: res.cookie and res.clearCookie
+    https://github.com/expressjs/express
+    Copyright (c) 2009-2014 TJ Holowaychuk <tj@vision-media.ca>
+    Copyright (c) 2013-2014 Roman Shtylman <shtylman+expressjs@gmail.com>
+    Copyright (c) 2014-2015 Douglas Christopher Wilson <doug@somethingdoug.com>
+
+    cookie-parser 1.4.7, index.js
+    https://github.com/expressjs/cookie-parser
+    Copyright (c) 2014 TJ Holowaychuk <tj@vision-media.ca>
+    Copyright (c) 2015 Douglas Christopher Wilson <doug@somethingdoug.com>
+
+internal/nodes/httpmultipart.go:
+
+    form-data 4.0.6, lib/form_data.js: append, the part header and the footer
+    https://github.com/form-data/form-data
+    Copyright (c) 2012 Felix Geisendörfer (felix@debuggable.com) and contributors
+
+    busboy 1.6.0, lib/utils.js and lib/types/multipart.js
+    https://github.com/mscdex/busboy
+    Copyright Brian White. All rights reserved.
+
+    multer 2.3.0, lib/make-middleware.js and lib/multer-error.js
+    https://github.com/expressjs/multer
+    Copyright (c) 2014 Hage Yaapa <http://www.hacksparrow.com>
+
+    append-field 1.0.0, lib/parse-path.js and lib/set-value.js
+    https://github.com/LinusU/node-append-field
+    Copyright (c) 2015 Linus Unnebäck
+
+    mime-types 2.1.35 and mime-db 1.52.0: the mimeTypes table, a subset
+    https://github.com/jshttp/mime-types
+    https://github.com/jshttp/mime-db
+    Copyright (c) 2014 Jonathan Ong <me@jongleberry.com>
+    Copyright (c) 2015-2022 Douglas Christopher Wilson <doug@somethingdoug.com>
+
+internal/jsonata/suite_test.go, runCase only:
+
+    jsonata-js 2.2.2, test/run-test-suite.js
+    https://github.com/jsonata-js/jsonata
+    Copyright IBM Corp. 2016
+
+    The JSONata test suite itself is not in this repository. CI clones it at
+    the pinned tag when it runs.
+
+internal/nodes/mustache.go, the mustacheEscaper table only:
+
+    mustache.js, mustache.js: entityMap (checked against 4.2.0)
+    https://github.com/janl/mustache.js
+    Copyright (c) 2009 Chris Wanstrath (Ruby)
+    Copyright (c) 2010-2014 Jan Lehnardt (JavaScript)
+    Copyright (c) 2010-2015 The mustache.js community
+
+The MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

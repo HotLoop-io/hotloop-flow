@@ -74,6 +74,11 @@ LABEL org.opencontainers.image.title="HotLoop Flow" \
 
 COPY --from=builder /out/hotloop-flow /usr/local/bin/hotloop-flow
 
+# The binary carries code ported from Node-RED, cronosjs and a handful of MIT
+# libraries. Apache 2.0 wants the NOTICE to go wherever the work goes, and the
+# ISC and MIT licenses want their notices in every copy. The image is a copy.
+COPY --from=builder /src/LICENSE /src/NOTICE /usr/share/doc/hotloop-flow/
+
 # 65532 is distroless's nonroot user, and it matches the chart's securityContext.
 # The chart's fsGroup makes the PVC writable by it.
 USER 65532:65532

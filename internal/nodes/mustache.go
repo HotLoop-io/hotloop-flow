@@ -1,3 +1,9 @@
+// The mustacheEscaper table is ported from mustache.js, entityMap in mustache.js
+// (checked against 4.2.0) (MIT), Copyright (c) 2009 Chris Wanstrath, Copyright
+// (c) 2010-2014 Jan Lehnardt, Copyright (c) 2010-2015 The mustache.js community.
+// Modified. The rest of this file is HotLoop Flow's own. The MIT notice is in
+// NOTICE.
+
 package nodes
 
 import (

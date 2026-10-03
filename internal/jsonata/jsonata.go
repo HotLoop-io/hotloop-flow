@@ -1,3 +1,8 @@
+// legacyRef is ported from Node-RED 5.0.7 @node-red/util lib/util.js
+// (prepareJSONataExpression) (Apache-2.0), Copyright JS Foundation and other
+// contributors, http://js.foundation. Modified. The rest of this file is
+// HotLoop Flow's own.
+
 // Package jsonata evaluates JSONata expressions the way a flow expects them to
 // behave: against a message, with Node-RED's own functions bound in.
 //

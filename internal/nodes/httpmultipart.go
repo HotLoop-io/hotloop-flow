@@ -1,3 +1,21 @@
+// Ported from:
+//   - form-data 4.0.6 lib/form_data.js (MIT), Copyright (c) 2012 Felix
+//     Geisendörfer and contributors
+//   - busboy 1.6.0 lib/utils.js and lib/types/multipart.js (MIT), Copyright
+//     Brian White
+//   - multer 2.3.0 lib/make-middleware.js and lib/multer-error.js (MIT),
+//     Copyright (c) 2014 Hage Yaapa
+//   - append-field 1.0.0 lib/parse-path.js and lib/set-value.js (MIT),
+//     Copyright (c) 2015 Linus Unnebäck
+//   - the mimeTypes table: mime-types 2.1.35 and mime-db 1.52.0 (MIT),
+//     Copyright (c) 2014 Jonathan Ong, Copyright (c) 2015-2022 Douglas
+//     Christopher Wilson
+//   - Node-RED 5.0.7 @node-red/nodes core/network/21-httprequest.js, the
+//     multipart/form-data body (Apache-2.0), Copyright JS Foundation and other
+//     contributors, http://js.foundation
+//
+// Modified. The MIT notices are in NOTICE.
+
 package nodes
 
 import (

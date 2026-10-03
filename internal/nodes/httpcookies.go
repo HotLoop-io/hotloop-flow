@@ -1,3 +1,18 @@
+// Ported from:
+//   - cookie 0.7.2 index.js (MIT), Copyright (c) 2012-2014 Roman Shtylman,
+//     Copyright (c) 2015 Douglas Christopher Wilson
+//   - express 4.22.2 lib/response.js, res.cookie and res.clearCookie (MIT),
+//     Copyright (c) 2009-2014 TJ Holowaychuk, Copyright (c) 2013-2014 Roman
+//     Shtylman, Copyright (c) 2014-2015 Douglas Christopher Wilson
+//   - cookie-parser 1.4.7 index.js (MIT), Copyright (c) 2014 TJ Holowaychuk,
+//     Copyright (c) 2015 Douglas Christopher Wilson
+//   - Node-RED 5.0.7 @node-red/nodes core/network/21-httpin.js, HTTPOut's
+//     msg.cookies, and 21-httprequest.js, msg.cookies into the jar and
+//     extractCookies (Apache-2.0), Copyright JS Foundation and other
+//     contributors, http://js.foundation
+//
+// Modified. The MIT notices are in NOTICE.
+
 package nodes
 
 import (
