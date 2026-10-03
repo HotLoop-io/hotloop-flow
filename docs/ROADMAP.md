@@ -35,13 +35,13 @@ The README makes claims the code doesn't back. That gets fixed before anything
 new is promised, because a README that lies once gets read like it lies every
 time.
 
-- [ ] The WASM sandbox is real and tested, but no node uses it and it isn't in
+- [x] The WASM sandbox is real and tested, but no node uses it and it isn't in
       the binary. Say so until Phase 6 makes it true
-- [ ] Two code comments point at a bbolt-backed context store that doesn't exist.
+- [x] Two code comments point at a bbolt-backed context store that doesn't exist.
       Delete them
-- [ ] Re-measure idle and loaded memory the same way on the same box, publish the
+- [x] Re-measure idle and loaded memory the same way on the same box, publish the
       command with the number, and drop any figure nobody can reproduce
-- [ ] CVE-2025-41656 is a vendor shipping another flow engine with auth off, not
+- [x] CVE-2025-41656 is a vendor shipping another flow engine with auth off, not
       a CVE in that engine. Fix the attribution in the README and in the `exec`
       row of `docs/compatibility.md`
 - [ ] Rewrite the top of the README around what Flow does. Importing existing
@@ -49,9 +49,10 @@ time.
       trip and `hotloop-flow import` as the evidence
 - [ ] Deployment docs talk about Kubernetes, Podman and Quadlet, not one
       company's App Store
-- [ ] Tests for the packages that have none: `api` (login, permissions, the 409
+- [x] Tests for the packages that have none: `api` (login, permissions, the 409
       on a stale deploy), `config` (every startup refusal the README lists) and
-      `cmd` (deploy writes the flow file before it stops the old runtime)
+      `cmd` (deploy writes the flow file before it stops the old runtime), plus
+      `js`, the Function node's sandbox, which had none either
 
 ### Phase 1: history, diff, rollback
 

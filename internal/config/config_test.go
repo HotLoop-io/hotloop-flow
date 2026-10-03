@@ -140,3 +140,175 @@ func TestAuthOnWithAUserStarts(t *testing.T) {
 		t.Errorf("Auth = %+v, want enabled and not insecure", cfg.Auth)
 	}
 }
+
+// withAdmin gives a test a valid user, so the only refusal left is the one the
+// test is about.
+func withAdmin(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOTLOOP_FLOW_ADMIN_USER", "admin")
+	t.Setenv("HOTLOOP_FLOW_ADMIN_PASSWORD_HASH", testHash)
+}
+
+// The README's table of startup refusals, one row at a time. Each one is a
+// promise that a dangerous setup stops at boot with the fix printed, so each
+// one gets a test that it actually does.
+
+func TestRefusesAPlaintextPasswordHash(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("HOTLOOP_FLOW_ADMIN_USER", "admin")
+	t.Setenv("HOTLOOP_FLOW_ADMIN_PASSWORD_HASH", "hunter2-in-a-configmap")
+	_, err := Load("")
+	if err == nil || !strings.Contains(err.Error(), "not a bcrypt hash") ||
+		!strings.Contains(err.Error(), "hotloop-flow hash-password") {
+		t.Fatalf("err = %v, want the plaintext refused with the command that fixes it", err)
+	}
+}
+
+func TestRefusesAUserWithNoHash(t *testing.T) {
+	clearEnv(t)
+	_, err := Load(writeConfig(t, "auth:\n  users:\n    - username: dana\n"))
+	if err == nil || !strings.Contains(err.Error(), "no passwordHash") {
+		t.Fatalf("err = %v, want a user with no hash refused", err)
+	}
+}
+
+func TestRefusesNoCredentialSecret(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	t.Setenv("HOTLOOP_FLOW_CREDENTIAL_SECRET", "")
+	_, err := Load("")
+	wantInsecure(t, err, "HOTLOOP_FLOW_CREDENTIAL_SECRET")
+}
+
+// The explicit way out of the refusal above, for an instance with no secrets.
+func TestPlaintextCredentialsNeedTheirOwnOptIn(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	t.Setenv("HOTLOOP_FLOW_CREDENTIAL_SECRET", "")
+	t.Setenv("HOTLOOP_FLOW_ALLOW_PLAINTEXT_CREDENTIALS", "0")
+	if _, err := Load(""); err == nil {
+		t.Fatal("HOTLOOP_FLOW_ALLOW_PLAINTEXT_CREDENTIALS=0 allowed plaintext credentials")
+	}
+	t.Setenv("HOTLOOP_FLOW_ALLOW_PLAINTEXT_CREDENTIALS", "true")
+	if _, err := Load(""); err != nil {
+		t.Fatalf("with the opt-in: %v", err)
+	}
+}
+
+func TestRefusesDiscoveryWithNoAllowlist(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	t.Setenv("HOTLOOP_FLOW_DISCOVERY_ENABLED", "true")
+	_, err := Load("")
+	if err == nil || !strings.Contains(err.Error(), "discovery.allowedCIDRs is empty") {
+		t.Fatalf("err = %v, want discovery with an empty allowlist refused", err)
+	}
+	t.Setenv("HOTLOOP_FLOW_DISCOVERY_CIDRS", "10.20.0.0/24, 10.21.0.0/24")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("with an allowlist: %v", err)
+	}
+	if len(cfg.Discovery.AllowedCIDRs) != 2 {
+		t.Fatalf("AllowedCIDRs = %v, want two", cfg.Discovery.AllowedCIDRs)
+	}
+}
+
+func TestRefusesExecWithNoAllowlist(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	_, err := Load(writeConfig(t, "exec:\n  enabled: true\n"))
+	if err == nil || !strings.Contains(err.Error(), "exec.allowedCommands is empty") {
+		t.Fatalf("err = %v, want exec with an empty allowlist refused", err)
+	}
+	if _, err := Load(writeConfig(t, "exec:\n  enabled: true\n  allowedCommands: [ping]\n")); err != nil {
+		t.Fatalf("with an allowlist: %v", err)
+	}
+}
+
+// A typo in the file is a startup failure, not a setting that quietly does
+// nothing. This is the one that would otherwise leave credentials in
+// plaintext for six months.
+func TestRefusesAMisspelledField(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	_, err := Load(writeConfig(t, "data:\n  credentialSecert: oops\n"))
+	if err == nil || !strings.Contains(err.Error(), "credentialSecert") {
+		t.Fatalf("err = %v, want the misspelled field named", err)
+	}
+}
+
+// The plain config errors the README says it also refuses on.
+func TestRefusesOutOfRangeValues(t *testing.T) {
+	cases := map[string]string{
+		"server:\n  port: 70000\n":            "not a valid port",
+		"server:\n  adminRoot: editor\n":      "must start with /",
+		"server:\n  httpRoot: api\n":          "must start with /",
+		"runtime:\n  overflow: drop-all\n":    "is not one of block",
+		"runtime:\n  inboxCapacity: 0\n":      "at least 1",
+		"logging:\n  level: loud\n":           "logging.level",
+		"logging:\n  format: xml\n":           "logging.format",
+		"data:\n  backupGenerations: -1\n":    "must not be negative",
+		"data:\n  dir: \"\"\n":                "data.dir is empty",
+		"server:\n  port: [not, a, number]\n": "parsing",
+	}
+	for body, want := range cases {
+		t.Run(strings.TrimSpace(body), func(t *testing.T) {
+			clearEnv(t)
+			withAdmin(t)
+			_, err := Load(writeConfig(t, body))
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("err = %v, want it to mention %q", err, want)
+			}
+		})
+	}
+}
+
+// Environment beats the file, which is what lets a chart keep secrets in a
+// Secret and everything else in a ConfigMap.
+func TestEnvironmentOverridesTheFile(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	t.Setenv("HOTLOOP_FLOW_PORT", "1990")
+	t.Setenv("HOTLOOP_FLOW_OVERFLOW", "drop-oldest")
+	cfg, err := Load(writeConfig(t, "server:\n  port: 1881\nruntime:\n  overflow: block\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.Port != 1990 || cfg.Runtime.Overflow != "drop-oldest" {
+		t.Fatalf("port %d overflow %s, want the environment's 1990 and drop-oldest",
+			cfg.Server.Port, cfg.Runtime.Overflow)
+	}
+}
+
+func TestPrefixGrantsCoverExactlyTheirPrefix(t *testing.T) {
+	u := User{Permissions: []string{"flows.*", "status.read"}}
+	for perm, want := range map[string]bool{
+		"flows.read":    true,
+		"flows.write":   true,
+		"status.read":   true,
+		"status.write":  false,
+		"inject.write":  false,
+		"flowsx.read":   false,
+		"settings.read": false,
+	} {
+		if got := u.Allows(perm); got != want {
+			t.Errorf("Allows(%q) = %v, want %v", perm, got, want)
+		}
+	}
+	if !(User{Permissions: []string{"*"}}).Allows("anything.at.all") {
+		t.Error(`"*" does not grant everything`)
+	}
+}
+
+func TestHashPasswordRefusesShortPasswords(t *testing.T) {
+	if _, err := HashPassword("short"); err == nil {
+		t.Fatal("hashed a five-character password")
+	}
+	h, err := HashPassword("long-enough-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !CheckPassword(h, "long-enough-password") || CheckPassword(h, "long-enough-passwore") {
+		t.Fatal("the hash does not check the password it was made from, and only that one")
+	}
+}
