@@ -26,9 +26,20 @@ build if one does not.
 **Node-RED community nodes.** They are npm packages that need Node.js.
 There is no version of this where they work.
 
-**JSONata expressions.** Any property typed `jsonata` is refused with an
-error rather than ignored. Returning the expression text would make a flow
-appear to work while routing on a literal string.
+## JSONata
+
+Every property typed `jsonata` is evaluated, by gnata, a pure Go JSONata 2.x,
+with Node-RED's own functions bound in: `$flowContext`, `$globalContext`, `$env`,
+`$clone`, and the legacy form that names `msg`. Against the published jsonata-js
+2.2.2 test suite it passes 1673 of 1686 cases. The 13 it misses are listed in
+`internal/jsonata/suite_test.go`, and ten of those still raise an error, just
+with a different code or token than jsonata-js gives.
+
+Three differences from Node-RED. `$moment` is refused with an error naming
+`$fromMillis` and `$toMillis`, because moment.js isn't reimplemented here. A
+message object has no key order, so `$keys()` and anything that walks an object
+sees its keys sorted. And an evaluation still running after 10 seconds is
+stopped with D1012 instead of stalling the node's whole queue.
 
 ## Summary
 
@@ -36,8 +47,8 @@ appear to work while routing on a literal string.
 
 | Level | Count |
 |---|---|
-| full | 10 |
-| partial | 26 |
+| full | 11 |
+| partial | 25 |
 | divergent | 9 |
 | hotloop-flow-only | 6 |
 
@@ -76,13 +87,13 @@ appear to work while routing on a literal string.
 
 | Type | Level | Notes |
 |---|---|---|
-| `change` | partial | set, change, delete and move are supported for msg, flow and global targets. JSONata-typed values are not evaluated in this build. |
+| `change` | partial | set, change, delete and move are supported for msg, flow and global targets, including JSONata-typed values. The deep copy option is ignored: a value set from another property is shared with it, as it is in Node-RED with the option off. Ignored properties: `dc`. |
 | `delay` | divergent | All six modes are implemented — fixed, variable, random, rate limit, per-topic queue and timed release — along with msg.reset, msg.flush and the second output for dropped messages. Two deliberate differences: the queue is bounded, and past the limit a message is refused to a Catch node rather than held, because Node-RED's unbounded queue turns a source faster than the drain into an OOM-kill with no explanation; and messages still held when the flow stops are released rather than discarded. |
 | `exec` | divergent | The three outputs, both buffered and streaming modes, the timeout and the appended message property all behave as Node-RED's do. Two things do not, and neither is negotiable. There is no shell: the command line is split on quoting rules only, and an unquoted shell metacharacter is refused rather than run, so one allowed command cannot become an arbitrary one. And the node is disabled until an operator names the commands a flow may run. Node-RED's exec node runs anything, and Node-RED starts with no authentication by default; a vendor shipping that default became CVE-2025-41656 (Pilz IndustrialPI 4, VDE-2025-045), unauthenticated command execution on the device. Output is capped per stream; a command that exceeds it is killed and reported rather than being allowed to fill the heap. A command that forks children of its own may leave them behind when it is killed. |
 | `function` | partial | Runs on goja, a JavaScript interpreter written in Go, rather than Node's vm module. The language is ES2023; the Node standard library is not present. require() and npm modules do not work and cannot be made to without embedding Node. There is always a CPU time limit, which Node-RED leaves optional and off. setTimeout and setInterval are not available — use a Delay or Trigger node, which the runtime can account for. Ignored properties: `libs`, `setTimeout`, `setInterval`, `require`. |
 | `range` | full | — |
 | `rbe` | partial | Block-unless-changed and deadband modes are supported. Narrowband modes are not implemented in this build. |
-| `switch` | partial | All comparison operators are supported except jsonata_exp, which needs an expression engine this build does not ship. Ignored properties: `jsonata_exp`. |
+| `switch` | partial | Every comparison rule is supported, including a JSONata expression rule, which sees $I and $N for a message that is part of a sequence. The sequence rules head, tail and index are not implemented, and a rule using one fails every message with an unknown operator error. Ignored properties: `head`, `tail`, `index`. |
 | `template` | partial | Mustache templating is implemented against mustache.js's dialect, including its HTML escape set and standalone-line handling, so a template moved from Node-RED renders the same bytes. Partials ({{>name}}) and custom delimiters are refused rather than ignored, because there is nothing in a flow file that can supply either. |
 | `trigger` | divergent | Both messages, extend-on-retrigger, wait-to-be-reset, msg.reset, the msg.delay override, per-topic grouping and the second output are implemented. The divergence is the same as the Delay node's: the number of simultaneously armed timers is bounded, and a message past the limit is refused to a Catch node rather than silently arming another. Timers with a deadline that are still armed when the flow stops fire immediately rather than being discarded; a timer waiting to be reset is dropped, because firing it would invent an event that never happened. |
 
@@ -119,7 +130,7 @@ appear to work while routing on a literal string.
 |---|---|---|
 | `batch` | partial | Grouping by message count, with overlap, is supported. Time-interval and concatenate-sequences modes are not implemented. Ignored properties: `interval`, `concat`. |
 | `join` | partial | Automatic mode rejoins sequences produced by Split, and manual mode joins by count. Timeout-based and reduce-sequence modes are not implemented. Ignored properties: `timeout`, `reduceRight`, `reduceExp`. |
-| `sort` | partial | Sorts array payloads and message sequences by a property. JSONata key expressions are not supported. Ignored properties: `keyType:jsonata`. |
+| `sort` | full | Sorts an array property by its elements or by a JSONata key evaluated against each element, and a message sequence by a property or a JSONata key evaluated against each message. |
 | `split` | partial | Splits arrays, objects, strings and buffers. Streaming mode, which carries a partial remainder between messages, is not implemented. Ignored properties: `stream`. |
 
 ## Storage

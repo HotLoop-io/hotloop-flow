@@ -59,7 +59,10 @@ func registerChange() {
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "set, change, delete and move are supported for msg, flow and global " +
-				"targets. JSONata-typed values are not evaluated in this build.",
+				"targets, including JSONata-typed values. The deep copy option is ignored: " +
+				"a value set from another property is shared with it, as it is in Node-RED " +
+				"with the option off.",
+			UnsupportedProps: []string{"dc"},
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -117,6 +120,11 @@ func newChange(def *node.Definition) (node.Node, error) {
 		if r.Prop == "" {
 			return nil, fmt.Errorf("rule %d has no target property", i+1)
 		}
+		if r.Op == "set" || r.Op == "change" {
+			if err := r.To.Check(); err != nil {
+				return nil, fmt.Errorf("rule %d: %w", i+1, err)
+			}
+		}
 		if r.Op == "change" && r.From.Type == node.TypeRe {
 			re, err := regexp.Compile(r.From.Value)
 			if err != nil {
@@ -129,8 +137,8 @@ func newChange(def *node.Definition) (node.Node, error) {
 	return n, nil
 }
 
-func (n *changeNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
-	ec := EvalContext{Msg: m, Services: n.svc}
+func (n *changeNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
+	ec := EvalContext{Msg: m, Services: n.svc, Ctx: ctx}
 
 	for i, r := range n.rules {
 		if err := n.apply(ec, r); err != nil {
@@ -296,9 +304,11 @@ func registerSwitch() {
 		LabelProp:    "name",
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
-			Notes: "All comparison operators are supported except jsonata_exp, which " +
-				"needs an expression engine this build does not ship.",
-			UnsupportedProps: []string{"jsonata_exp"},
+			Notes: "Every comparison rule is supported, including a JSONata expression " +
+				"rule, which sees $I and $N for a message that is part of a sequence. The " +
+				"sequence rules head, tail and index are not implemented, and a rule using " +
+				"one fails every message with an unknown operator error.",
+			UnsupportedProps: []string{"head", "tail", "index"},
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -340,6 +350,7 @@ func switchOps() []node.Option {
 		{Value: "empty", Label: "is empty"},
 		{Value: "nempty", Label: "is not empty"},
 		{Value: "hask", Label: "has key"},
+		{Value: "jsonata_exp", Label: "JSONata exp"},
 		{Value: "else", Label: "otherwise"},
 	}
 }
@@ -353,6 +364,9 @@ func newSwitch(def *node.Definition) (node.Node, error) {
 	}
 	if n.prop.Value == "" {
 		n.prop.Value = engine.PropPayload
+	}
+	if err := n.prop.Check(); err != nil {
+		return nil, fmt.Errorf("property: %w", err)
 	}
 
 	raw, _ := def.Node.Prop("rules")
@@ -382,8 +396,10 @@ func newSwitch(def *node.Definition) (node.Node, error) {
 			}
 			r.re = re
 		}
-		if r.Op == "jsonata_exp" {
-			return nil, fmt.Errorf("rule %d uses a JSONata expression, which is not supported in this build", i+1)
+		for _, tv := range []TypedValue{r.V, r.V2} {
+			if err := tv.Check(); err != nil {
+				return nil, fmt.Errorf("rule %d: %w", i+1, err)
+			}
 		}
 		n.rules = append(n.rules, r)
 	}
@@ -391,6 +407,29 @@ func newSwitch(def *node.Definition) (node.Node, error) {
 		return nil, fmt.Errorf("switch node has no rules")
 	}
 	return n, nil
+}
+
+// sequenceVars binds $I and $N for a message that is part of a sequence, the
+// way the Switch node does for a JSONata rule: msg.parts has to carry an id and
+// an index, and $N is the count if the sequence knows it yet.
+func sequenceVars(m *engine.Msg) map[string]any {
+	if m == nil {
+		return nil
+	}
+	parts, ok := m.Data["parts"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	_, hasID := parts["id"]
+	index, hasIndex := parts["index"]
+	if !hasID || !hasIndex {
+		return nil
+	}
+	vars := map[string]any{"I": index}
+	if count, ok := parts["count"]; ok {
+		vars["N"] = count
+	}
+	return vars
 }
 
 func boolOr(v any, def bool) bool {
@@ -406,8 +445,8 @@ func boolOr(v any, def bool) bool {
 	return def
 }
 
-func (n *switchNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
-	ec := EvalContext{Msg: m, Services: n.svc}
+func (n *switchNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
+	ec := EvalContext{Msg: m, Services: n.svc, Ctx: ctx}
 
 	value, present, err := n.prop.Eval(ec)
 	if err != nil {
@@ -469,6 +508,17 @@ func (n *switchNode) test(ec EvalContext, r switchRule, value any, present bool)
 			return false, nil
 		}
 		return r.re.MatchString(s), nil
+	case "jsonata_exp":
+		// The rule's value is the test. Node-RED routes only on a result that
+		// is exactly true, so a truthy string or a non-zero number does not
+		// count, and a message in a sequence gets its position as $I and the
+		// sequence length as $N.
+		v, ok, err := r.V.EvalWith(ec, sequenceVars(ec.Msg))
+		if err != nil {
+			return false, err
+		}
+		b, isBool := v.(bool)
+		return ok && isBool && b, nil
 	}
 
 	operand, opOK, err := r.V.Eval(ec)

@@ -393,12 +393,6 @@ func TestSortRejectsNonArray(t *testing.T) {
 	}
 }
 
-func TestSortRejectsJSONataKey(t *testing.T) {
-	if err := buildErr(t, "sort", `{"target":"payload","targetType":"jsonata"}`, newTestServices()); err == nil {
-		t.Error("a JSONata sort key was accepted")
-	}
-}
-
 func TestBatchByCount(t *testing.T) {
 	svc := newTestServices()
 	n := build(t, "batch", `{"mode":"count","count":3,"overlap":0}`, svc)

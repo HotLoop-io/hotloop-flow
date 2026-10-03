@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/jsonata"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 )
 
@@ -159,6 +160,11 @@ func newInject(def *node.Definition) (node.Node, error) {
 			injectProp{Prop: engine.PropTopic, TV: TypedValue{Type: node.TypeStr, Value: n.topic}},
 		)
 	}
+	for _, p := range n.props {
+		if err := p.TV.Check(); err != nil {
+			return nil, fmt.Errorf("%s: %w", p.Prop, err)
+		}
+	}
 
 	return n, nil
 }
@@ -247,6 +253,12 @@ type debugNode struct {
 	svc        node.Services
 	nodeID     string
 	nodeName   string
+
+	// show and status are set when the flow gives a JSONata expression for
+	// what to display (targetType jsonata) or for the status badge
+	// (statusType jsonata) instead of a property.
+	show   *jsonata.Expr
+	status *jsonata.Expr
 }
 
 func registerDebug() {
@@ -291,16 +303,39 @@ func newDebug(def *node.Definition) (node.Node, error) {
 	if n.complete == "" {
 		n.complete = "payload"
 	}
+	if n.targetType == node.TypeJSONata {
+		x, err := jsonata.Compile(def.Node.PropString("complete", ""), def.Services)
+		if err != nil {
+			return nil, err
+		}
+		n.show = x
+	}
+	if def.Node.PropString("statusType", "") == node.TypeJSONata {
+		x, err := jsonata.Compile(def.Node.PropString("statusVal", ""), def.Services)
+		if err != nil {
+			return nil, fmt.Errorf("status: %w", err)
+		}
+		n.status = x
+	}
 	return n, nil
 }
 
-func (n *debugNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
+func (n *debugNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
 	if !n.active {
 		return nil
 	}
 
 	var shown any
-	if n.complete == "true" || n.complete == "complete" {
+	if n.show != nil {
+		v, ok, err := n.show.EvalMsg(ctx, m, nil)
+		if err != nil {
+			return err
+		}
+		shown = v
+		if !ok {
+			shown = "(undefined)"
+		}
+	} else if n.complete == "true" || n.complete == "complete" {
 		shown = m.Data
 	} else {
 		v, ok, err := m.Get(n.complete)
@@ -317,7 +352,18 @@ func (n *debugNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) 
 	}
 
 	if n.toStatus {
-		out.Status(node.Status{Fill: "grey", Shape: "dot", Text: truncate(stringify(shown), 32)})
+		badge := shown
+		if n.status != nil {
+			v, ok, err := n.status.EvalMsg(ctx, m, nil)
+			if err != nil {
+				return fmt.Errorf("status: %w", err)
+			}
+			badge = v
+			if !ok {
+				badge = "(undefined)"
+			}
+		}
+		out.Status(node.Status{Fill: "grey", Shape: "dot", Text: truncate(stringify(badge), 32)})
 	}
 
 	if n.toSidebar {

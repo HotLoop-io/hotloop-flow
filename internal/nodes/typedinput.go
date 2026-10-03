@@ -2,15 +2,18 @@
 package nodes
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/jsonata"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 )
 
@@ -26,6 +29,20 @@ import (
 type TypedValue struct {
 	Type  string
 	Value string
+
+	// expr holds the compiled form of a jsonata-typed value. It is a pointer
+	// so every copy a node makes of its rules shares one compile, and it is
+	// filled on first use because compiling binds the expression to the
+	// node's own context and environment, which a value read out of a flow
+	// entry does not know yet.
+	expr *compiledExpr
+}
+
+// compiledExpr is a JSONata expression compiled once, on first evaluation.
+type compiledExpr struct {
+	once sync.Once
+	x    *jsonata.Expr
+	err  error
 }
 
 // ReadTypedValue pulls a typed value out of a raw config map, given the key
@@ -37,6 +54,9 @@ func ReadTypedValue(raw map[string]any, valueKey, typeKey, defType string) Typed
 	tv := TypedValue{Type: defType}
 	if t, ok := raw[typeKey].(string); ok && t != "" {
 		tv.Type = t
+	}
+	if tv.Type == node.TypeJSONata {
+		tv.expr = &compiledExpr{}
 	}
 	switch v := raw[valueKey].(type) {
 	case string:
@@ -65,6 +85,50 @@ type EvalContext struct {
 	Services node.Services
 	// Now is the clock, injectable so date-typed values are testable.
 	Now func() time.Time
+	// Ctx bounds a JSONata evaluation along with its own time limit. Nil
+	// means no bound beyond that limit.
+	Ctx context.Context
+}
+
+// Check refuses a jsonata-typed value that does not parse. Nodes call it while
+// they are built, so a typo in an expression fails that node at deploy, with
+// the parser's message, instead of on every message that arrives afterwards.
+// Values of every other type pass.
+func (tv TypedValue) Check() error {
+	if tv.Type != node.TypeJSONata {
+		return nil
+	}
+	_, err := jsonata.Compile(tv.Value, nil)
+	return err
+}
+
+// EvalWith resolves a typed value with extra JSONata bindings, such as $I and
+// $N for the message's place in a sequence. For any type but jsonata the
+// bindings mean nothing and it is the same as Eval.
+func (tv TypedValue) EvalWith(ec EvalContext, vars map[string]any) (any, bool, error) {
+	if tv.Type != node.TypeJSONata {
+		return tv.Eval(ec)
+	}
+	x, err := tv.compiled(ec.Services)
+	if err != nil {
+		return nil, false, err
+	}
+	ctx := ec.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return x.EvalMsg(ctx, ec.Msg, vars)
+}
+
+// compiled returns the value's expression, compiling it on first use.
+func (tv TypedValue) compiled(svc node.Services) (*jsonata.Expr, error) {
+	if tv.expr == nil {
+		// Built as a literal rather than read from a flow entry, so there is
+		// nowhere to keep the compile.
+		return jsonata.Compile(tv.Value, svc)
+	}
+	tv.expr.once.Do(func() { tv.expr.x, tv.expr.err = jsonata.Compile(tv.Value, svc) })
+	return tv.expr.x, tv.expr.err
 }
 
 // Eval resolves a typed value.
@@ -178,10 +242,7 @@ func (tv TypedValue) Eval(ec EvalContext) (any, bool, error) {
 		return v, true, nil
 
 	case node.TypeJSONata:
-		// JSONata is a full expression language and is not implemented in this
-		// build. Erroring is deliberate: silently returning the expression text
-		// would make a flow appear to work while routing on a literal string.
-		return nil, false, fmt.Errorf("JSONata expressions are not supported in this build; see docs/compatibility.md")
+		return tv.EvalWith(ec, nil)
 
 	case "":
 		// An untyped field in an old flow file is a string literal.
