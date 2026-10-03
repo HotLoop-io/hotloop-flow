@@ -44,7 +44,7 @@ time.
 - [x] CVE-2025-41656 is a vendor shipping another flow engine with auth off, not
       a CVE in that engine. Fix the attribution in the README and in the `exec`
       row of `docs/compatibility.md`
-- [ ] Rewrite the top of the README around what Flow does. Importing existing
+- [x] Rewrite the top of the README around what Flow does. Importing existing
       flows moves to its own section further down, with the byte-exact round
       trip and `hotloop-flow import` as the evidence
 - [x] Deployment docs talk about Kubernetes, Podman and Quadlet, not one
@@ -118,13 +118,13 @@ Tests are YAML next to the flows, so they diff and review the same way.
 
 A historian going down for an hour shouldn't cost you an hour of readings.
 
-- [ ] Persistent context: a file store first, then Postgres, with the atomic
-      operations (compare-and-swap, increment, update) on both. Today flow and
-      global context are gone on every restart, which is the gap most likely to
-      bite somebody first
-- [ ] Durable wires: mark a wire durable and its queue spills to disk instead of
-      blocking or dropping. Survives a restart, keeps order, honors a disk quota,
-      and the depth is a metric
+- [ ] Persistent context in SQLite, pure Go with no cgo, with the atomic
+      operations (compare-and-swap, increment, update). One store for context now
+      and durable queues next, not two. Today flow and global context are gone on
+      every restart, which is the gap most likely to bite somebody first
+- [ ] Durable wires: mark a wire durable and its queue spills to that same store
+      instead of blocking or dropping. Survives a restart, keeps order, honors a
+      disk quota, and the depth is a metric
 - [ ] Store-and-forward proven the ugly way: kill the real InfluxDB for ten
       minutes under steady input, bring it back, count rows. None missing, none
       doubled. Then kill -9 the runtime mid-queue and count again
