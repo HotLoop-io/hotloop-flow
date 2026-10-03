@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HotLoop-io/hotloop-flow/internal/audit"
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowdiff"
@@ -38,6 +39,7 @@ const (
 	PermNodesRead  = "nodes.read"
 	PermSettings   = "settings.read"
 	PermInject     = "inject.write"
+	PermAuditRead  = "audit.read"
 )
 
 // Deps is everything the server needs from the rest of the process.
@@ -47,7 +49,10 @@ type Deps struct {
 	Flows       *store.FlowStore
 	Credentials *store.CredentialStore
 	History     *history.Log
-	Logger      *slog.Logger
+	// Audit is the trail of who did what from where. Nil records nothing,
+	// which only tests that aren't about it should ever want.
+	Audit  *audit.Log
+	Logger *slog.Logger
 
 	// Runtime returns the currently running runtime. It is a function rather
 	// than a value because a deploy replaces the whole runtime, and every
@@ -215,6 +220,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET "+s.path("/nodes"), s.auth(PermNodesRead, s.handleNodes))
 	s.mux.Handle("GET "+s.path("/flows"), s.auth(PermFlowsRead, s.handleGetFlows))
 	s.mux.Handle("POST "+s.path("/flows"), s.auth(PermFlowsWrite, s.handlePostFlows))
+	s.mux.Handle("GET "+s.path("/audit"), s.auth(PermAuditRead, s.handleAudit))
 	s.mux.Handle("GET "+s.path("/deployments"), s.auth(PermFlowsRead, s.handleListDeployments))
 	s.mux.Handle("GET "+s.path("/deployments/{seq}"), s.auth(PermFlowsRead, s.handleGetDeployment))
 	s.mux.Handle("GET "+s.path("/deployments/{seq}/flows"), s.auth(PermFlowsRead, s.handleGetDeploymentFlows))
@@ -452,12 +458,17 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 	valid := config.CheckPassword(user.PasswordHash, req.Password)
 	if !found || !valid {
 		s.log.Warn("failed login", "username", req.Username, "remote", r.RemoteAddr)
+		// The client gets one answer for both, so it can't fish for
+		// usernames. The audit trail is for the operator, and an unknown
+		// name is worth knowing apart from a wrong password.
+		s.record(r, audit.LoginFailed, req.Username, map[string]any{"knownUser": found})
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	tok, expires := s.tokens.issue(user)
 	s.log.Info("login", "username", user.Username, "remote", r.RemoteAddr)
+	s.record(r, audit.Login, user.Username, nil)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"access_token": tok,
 		"token_type":   "Bearer",
@@ -467,6 +478,9 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	if tok := bearerToken(r); tok != "" {
+		if u, ok := s.tokens.lookup(tok); ok {
+			s.record(r, audit.Logout, u.Username, nil)
+		}
 		s.tokens.revoke(tok)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -574,14 +588,33 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrRevisionConflict):
 		// 409 rather than 500: the client can resolve this by reloading, and
 		// the editor shows a merge prompt.
+		s.record(r, audit.DeployRefused, requestUser(r), map[string]any{"reason": "stale revision", "rev": expectedRev})
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	case err != nil:
+		s.record(r, audit.DeployRefused, requestUser(r), map[string]any{"reason": err.Error()})
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	s.record(r, audit.Deploy, requestUser(r), deployDetail(res, note))
 	s.writeDeployResult(w, res)
+}
+
+// deployDetail is what the audit trail keeps about a deploy. The deployment
+// record holds the rest, the bytes included, so this points at it.
+func deployDetail(res DeployResult, note string) map[string]any {
+	d := map[string]any{"rev": res.Rev, "type": string(res.Update.Mode)}
+	if res.Deployment > 0 {
+		d["deployment"] = res.Deployment
+	}
+	if note != "" {
+		d["note"] = note
+	}
+	if len(res.Failures) > 0 {
+		d["failures"] = len(res.Failures)
+	}
+	return d
 }
 
 // writeDeployResult answers a deploy or a rollback the same way.
@@ -703,6 +736,9 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		Note:        note,
 		Mode:        mode,
 	})
+	if err != nil {
+		s.record(r, audit.RollbackFailed, requestUser(r), map[string]any{"to": seq, "reason": err.Error()})
+	}
 	switch {
 	case errors.Is(err, history.ErrNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
@@ -717,6 +753,9 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	d := deployDetail(res, note)
+	d["to"] = seq
+	s.record(r, audit.Rollback, requestUser(r), d)
 	s.writeDeployResult(w, res)
 }
 
@@ -917,11 +956,73 @@ func (s *Server) handleInject(w http.ResponseWriter, r *http.Request) {
 		m = engine.WrapMsg(payload)
 	}
 
+	// The id is read before the message is handed over. Once it's in a node's
+	// inbox the node owns it and may be writing to it, so reading it back
+	// afterwards was a data race the race detector found as soon as a test
+	// injected into a Function node.
+	msgID := m.EnsureID()
 	if err := rt.Inject(id, m); err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"injected": id, "msgId": m.ID()})
+	// An inject starts a flow by hand, and a flow can move equipment. Who
+	// pressed the button is the first question afterwards.
+	s.record(r, audit.Inject, requestUser(r), map[string]any{"node": id, "msgId": msgID})
+	writeJSON(w, http.StatusOK, map[string]any{"injected": id, "msgId": msgID})
+}
+
+// record writes to the audit trail. A trail that can't be written never stops
+// the action it was recording; it says so in the process log and the failure
+// is counted in the metrics.
+func (s *Server) record(r *http.Request, event, user string, detail map[string]any) {
+	if s.deps.Audit == nil {
+		return
+	}
+	err := s.deps.Audit.Record(audit.Entry{
+		Event:        event,
+		User:         user,
+		Remote:       r.RemoteAddr,
+		ForwardedFor: r.Header.Get("X-Forwarded-For"),
+		Detail:       detail,
+	})
+	if err != nil {
+		s.log.Error("the audit log could not be written", "event", event, "user", user, "error", err)
+	}
+}
+
+// handleAudit reads the trail, newest first. ?event= (exact, or a prefix
+// ending in a dot), ?user=, ?since= (RFC 3339) and ?limit= narrow it.
+func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Audit == nil {
+		writeError(w, http.StatusServiceUnavailable, "the audit log is not available")
+		return
+	}
+	q := audit.Query{Event: r.URL.Query().Get("event"), User: r.URL.Query().Get("user")}
+	if v := r.URL.Query().Get("since"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "since must be an RFC 3339 time, like 2026-10-03T06:00:00Z")
+			return
+		}
+		q.Since = t
+	}
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 10000 {
+			writeError(w, http.StatusBadRequest, "limit must be between 1 and 10000")
+			return
+		}
+		q.Limit = n
+	}
+	entries, err := s.deps.Audit.Read(q)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if entries == nil {
+		entries = []audit.Entry{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": entries})
 }
 
 // ---------------------------------------------------------------------------

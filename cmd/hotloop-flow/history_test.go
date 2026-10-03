@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/api"
+	"github.com/HotLoop-io/hotloop-flow/internal/audit"
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
@@ -26,7 +27,8 @@ const e2ePassword = "correct-horse-battery"
 // credentials and deployment log.
 type e2e struct {
 	*httptest.Server
-	app *application
+	app   *application
+	trail *audit.Log
 }
 
 func serveApp(t *testing.T, app *application, users map[string][]string) *e2e {
@@ -45,7 +47,13 @@ func serveAppWith(t *testing.T, app *application, users map[string][]string, adj
 	for name, perms := range users {
 		app.cfg.Auth.Users = append(app.cfg.Auth.Users, config.User{Username: name, PasswordHash: hash, Permissions: perms})
 	}
+	trail, err := audit.Open(app.cfg.AuditPath(), app.cfg.Audit.MaxBytes, app.cfg.Audit.Keep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { trail.Close() })
 	deps := api.Deps{
+		Audit:       trail,
 		Config:      app.cfg,
 		Registry:    node.Default,
 		Flows:       app.flowStore,
@@ -63,7 +71,7 @@ func serveAppWith(t *testing.T, app *application, users map[string][]string, adj
 	srv := api.New(deps)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	return &e2e{Server: ts, app: app}
+	return &e2e{Server: ts, app: app, trail: trail}
 }
 
 func (e *e2e) login(t *testing.T, user string) string {

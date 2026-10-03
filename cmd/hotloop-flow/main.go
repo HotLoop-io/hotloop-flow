@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/api"
+	"github.com/HotLoop-io/hotloop-flow/internal/audit"
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/discover"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
@@ -167,7 +168,7 @@ func cmdServe(args []string) error {
 		adminRoot + "/health", adminRoot + "/ready", adminRoot + "/auth",
 		adminRoot + "/settings", adminRoot + "/nodes", adminRoot + "/flows",
 		adminRoot + "/runtime", adminRoot + "/inject", adminRoot + "/comms",
-		adminRoot + "/deployments",
+		adminRoot + "/deployments", adminRoot + "/audit",
 	}
 	if cfg.Metrics.Enabled {
 		reserved = append(reserved, adminRoot+cfg.Metrics.Path)
@@ -229,7 +230,21 @@ func cmdServe(args []string) error {
 		}
 	}
 
+	trail, err := audit.Open(cfg.AuditPath(), cfg.Audit.MaxBytes, cfg.Audit.Keep)
+	if err != nil {
+		return err
+	}
+	defer trail.Close()
+	extraMetrics = append(extraMetrics, metrics.Family{
+		Name: "hotloop_flow_audit_write_failures_total", Type: "counter",
+		Help: "Audit entries that could not be written. Anything above zero means the trail has a hole in it.",
+		Collect: func() []metrics.Sample {
+			return []metrics.Sample{{Value: float64(trail.Failures())}}
+		},
+	})
+
 	srv := api.New(api.Deps{
+		Audit:       trail,
 		Mirror:      mirrorStatus,
 		Metrics:     extraMetrics,
 		Config:      cfg,

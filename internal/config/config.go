@@ -37,6 +37,15 @@ type Config struct {
 	Logging   Logging   `yaml:"logging"`
 	Metrics   Metrics   `yaml:"metrics"`
 	History   History   `yaml:"history"`
+	Audit     Audit     `yaml:"audit"`
+}
+
+// Audit bounds the audit trail at data.dir/audit.log.
+type Audit struct {
+	// MaxBytes is the size at which the file rotates.
+	MaxBytes int64 `yaml:"maxBytes"`
+	// Keep is how many rotated files are kept beside the live one.
+	Keep int `yaml:"keep"`
 }
 
 // Server is the HTTP listener.
@@ -303,6 +312,7 @@ func Default() Config {
 		Logging: Logging{Level: "info", Format: "text"},
 		Metrics: Metrics{Enabled: true, Path: "/metrics"},
 		History: History{Retain: 100},
+		Audit:   Audit{MaxBytes: 16 << 20, Keep: 4},
 	}
 }
 
@@ -464,6 +474,12 @@ func (c *Config) Validate() error {
 	if c.Data.BackupGenerations < 0 {
 		return fmt.Errorf("data.backupGenerations must not be negative")
 	}
+	if c.Audit.MaxBytes < 4096 {
+		return fmt.Errorf("audit.maxBytes must be at least 4096; a trail that rotates on every line is no trail")
+	}
+	if c.Audit.Keep < 1 {
+		return fmt.Errorf("audit.keep must be at least 1")
+	}
 	if c.History.Retain < 0 {
 		return fmt.Errorf("history.retain must not be negative; 0 keeps every deployment")
 	}
@@ -575,6 +591,9 @@ func (c *Config) FlowPath() string { return filepath.Join(c.Data.Dir, c.Data.Flo
 func (c *Config) CredentialsPath() string {
 	return filepath.Join(c.Data.Dir, c.Data.CredentialsFile)
 }
+
+// AuditPath is where the audit trail lives.
+func (c *Config) AuditPath() string { return filepath.Join(c.Data.Dir, "audit.log") }
 
 // HistoryDir is where the deployment log lives.
 func (c *Config) HistoryDir() string { return filepath.Join(c.Data.Dir, "deployments") }
