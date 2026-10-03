@@ -412,7 +412,10 @@ func TestTLSTCPInListensWithTheConfigsCertificate(t *testing.T) {
 	_, _ = plain.Write([]byte("plaintext\n"))
 	plain.Close()
 
-	conn, err := tls.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), &tls.Config{RootCAs: pki.pool()})
+	// A timeout on the dial, so a listener that is not speaking TLS fails the
+	// test instead of hanging it waiting for a server hello.
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp",
+		net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), &tls.Config{RootCAs: pki.pool()})
 	if err != nil {
 		t.Fatalf("a client trusting the CA could not connect: %v", err)
 	}
