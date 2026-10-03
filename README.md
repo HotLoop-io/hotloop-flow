@@ -689,66 +689,39 @@ you are to a limit that does not exist.
 
 ---
 
-## Deploying on Kubernetes
+## Deploying
+
+Kubernetes, Podman with Quadlet, or a plain `podman run` to kick the tires.
+[docs/deploying.md](docs/deploying.md) has all three end to end, plus backups
+and the one secret you must never lose. The short version:
 
 ```bash
 helm repo add hotloop-flow https://hotloop.io/hotloop-flow/
 helm install line3-flows hotloop-flow/hotloop-flow
 ```
 
-That's the whole install, on any cluster. The chart also carries the labels the
-EmberNET App Store looks for, so if you already run that dashboard it shows up
-there as a tile. You don't need it. Flow is Apache 2.0 for everyone, business
-use included, and there is no EmberNET step anywhere in running it.
-Multi-instance in exactly the way Node-RED is: as many per node as you need.
+That's the whole install, on any cluster. On a box with no cluster, a Quadlet
+unit hands the container to systemd, so it starts at boot, restarts when it dies
+and logs to the journal. The unit in the doc was run exactly as written against
+the published image.
 
-One clarification, since it bites people. Multi-instance means multiple
-*releases*, not multiple replicas, and the chart pins `replicaCount: 1` on
-purpose. HotLoop Flow holds flow state and open connections to brokers and PLCs, so
-two pods behind one Service would both subscribe and both write, and your
-InfluxDB would quietly receive everything twice. Scaling out means a second
-instance with its own flows.
+Two things bite people, so they're here and not only there.
 
-Resources are presets rather than raw numbers, matching the node-red chart so
-nobody has to think while switching between them. Default is `small`, requesting
-10m CPU and 64Mi of memory, against the node-red chart's default of 512Mi
-requested and 2Gi limited. Idle measured 16.6 MiB resident (method under
-[The numbers](#the-numbers)), about a quarter of that 64Mi request. So it
-schedules on an edge node with 64Mi to spare, where the node-red chart's 512Mi
-request would sit in Pending.
+**One instance is one pod.** The chart pins `replicaCount: 1` on purpose. Flow
+holds open connections to brokers and PLCs, so two pods behind one Service would
+both subscribe and both write, and your historian would quietly get everything
+twice. Scaling out means a second release with its own flows.
 
-Three network modes, and this is the reason it earns a place on a plant floor at
-all, because a flow engine that can only see what k3s routes to it cannot
-inventory an OT segment:
+**The credential secret is forever.** It encrypts every password your flows
+hold. The chart generates it on the first install and reads it back off the
+existing Secret on every upgrade, because if it ever regenerates, every
+credential on that volume is unreadable, and it looks like a clean upgrade until
+MQTT stops authenticating. On Podman it lives in a Podman secret for the same
+reason.
 
-| Mode | What it gets | Instances per node |
-|---|---|---|
-| `cluster` | ClusterIP. Whatever the cluster routes. The default, and the right answer unless you specifically need L2. | unlimited |
-| `host` | The host's interfaces, ARP table, and broadcast domain. | one, the port is the node's |
-| `macvlan` | Its **own MAC and IP** on the target VLAN, sitting directly on the segment with the PLCs. | unlimited |
-
-`macvlan` is the interesting one: multi-instance safe **and** on the OT segment,
-with no port collisions whatsoever because every instance carries its own
-address. It needs Multus on the cluster. No other App Store chart ships this yet.
-
-The pod runs distroless nonroot as uid 65532 with a read-only root filesystem, no
-privilege escalation, `RuntimeDefault` seccomp, and every capability dropped,
-discovery included. `scan` only ever does TCP connect probes, which need no
-capability and finish the handshake instead of leaving half-open connections on
-a PLC. The chart used to hand the pod `NET_RAW` and `NET_ADMIN` when discovery
-was on, for ARP sweeps nobody ever wrote. That's gone: a capability nothing uses
-is just attack surface with a comment on it.
-
-The chart generates the admin password and the credential secret on first install
-and **reads both back off the existing Secret on upgrade**. (The generated password did
-not work at all until 2.0.2. The hash the app checks was made from a different random
-password than the one the chart stored. It is fixed, and a release installed with the
-bug is fixed in place by upgrading, without changing the password or the credential secret.) That is not
-defensiveness for its own sake. If the credential secret ever regenerates, every
-credential already encrypted onto that PVC becomes undecryptable, every broker
-password in every flow is simply gone, and it presents as a completely clean
-upgrade until somebody notices that MQTT will not authenticate. Enable the
-optional ServiceMonitor and you will at least be watching when it happens.
+The pod runs distroless nonroot with a read-only root filesystem and every
+capability dropped, and the chart's three network modes (`cluster`, `host`, and
+`macvlan` for its own MAC and IP on the OT VLAN) are in the doc.
 
 ---
 
