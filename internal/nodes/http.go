@@ -10,6 +10,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
+	"golang.org/x/net/publicsuffix"
 )
 
 func init() {
@@ -73,12 +75,17 @@ type pendingResponse struct {
 
 // reply writes the response exactly once, reporting whether this caller was the
 // one that did it.
-func (p *pendingResponse) reply(status int, headers map[string]string, body []byte) bool {
+func (p *pendingResponse) reply(status int, headers map[string]string, cookies []string, body []byte) bool {
 	replied := false
 	p.once.Do(func() {
 		replied = true
 		for k, v := range headers {
 			p.w.Header().Set(k, v)
+		}
+		// Appended after the headers, as Express appends them, so a
+		// Set-Cookie in msg.headers and msg.cookies both go out.
+		for _, c := range cookies {
+			p.w.Header().Add("Set-Cookie", c)
 		}
 		if p.w.Header().Get("Content-Type") == "" {
 			p.w.Header().Set("Content-Type", sniffContentType(body))
@@ -117,6 +124,8 @@ type httpInNode struct {
 	timeout  time.Duration
 	nodeID   string
 	rawBody  bool
+	upload   bool
+	svc      node.Services
 	unbind   func()
 	bindOnce sync.Once
 
@@ -146,9 +155,12 @@ func registerHTTPIn() {
 				"nodes claiming the same method and path is refused at deploy time " +
 				"rather than one of them silently never firing. And a path that would " +
 				"shadow the editor or the admin API is refused for the same reason. " +
-				"File uploads are not parsed into msg.files; a multipart body arrives " +
-				"as raw bytes.",
-			UnsupportedProps: []string{"upload", "swaggerDoc"},
+				"Uploads parse the way multer does in Node-RED: text fields into " +
+				"msg.payload, files into msg.req.files, a broken upload answered with " +
+				"500. One bound multer lacks: an array index over 10,000 in a field " +
+				"name, a[99999999], is refused instead of building a sparse array that " +
+				"long. msg.req.cookies is cookie-parser's, j: values included.",
+			UnsupportedProps: []string{"swaggerDoc"},
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -163,6 +175,8 @@ func registerHTTPIn() {
 				}},
 			{Name: "url", Kind: node.PropString, Label: "URL", Required: true,
 				Placeholder: "/readings/:line"},
+			{Name: "upload", Kind: node.PropBool, Label: "Accept file uploads",
+				Help: "POST only. Text fields become msg.payload and files msg.req.files."},
 			{Name: "ew_rawBody", Kind: node.PropBool, Label: "Always deliver the body as raw bytes",
 				Help: "Off decodes JSON and form bodies the way Node-RED does."},
 			{Name: "ew_maxBody", Kind: node.PropNumber, Label: "Request body limit (bytes)"},
@@ -181,6 +195,8 @@ func newHTTPIn(def *node.Definition) (node.Node, error) {
 		timeout: defaultRequestTimeout,
 		nodeID:  def.Node.ID,
 		rawBody: def.Node.PropBool("ew_rawBody", false),
+		upload:  def.Node.PropBool("upload", false),
+		svc:     def.Services,
 	}
 	if n.method == "ALL" {
 		n.method = flowhttp.MethodAny
@@ -224,11 +240,31 @@ func (n *httpInNode) serve(ctx context.Context, w http.ResponseWriter, r *http.R
 	pending := &pendingResponse{w: w, req: r, done: make(chan struct{}), nodeID: n.nodeID}
 
 	m := engine.NewMsg()
-	m.Data["req"] = buildRequestObject(r, body)
+	reqObj := buildRequestObject(r, body)
+	m.Data["req"] = reqObj
 	m.Data["res"] = pending
 	m.Data["method"] = r.Method
 	m.Data["url"] = r.URL.String()
-	m.SetPayload(n.decodeBody(r, body))
+	if n.takesUpload(r) {
+		fields, files, err := parseUpload(r.Header.Get("Content-Type"), body)
+		if err != nil {
+			// Node-RED's answer to a broken upload, word for word: a warning
+			// for whoever reads the log and a bare 500 for the client.
+			if n.svc != nil {
+				n.svc.Log(node.LogWarn, "rejected an upload to "+r.URL.Path+": "+err.Error())
+			}
+			// res.sendStatus(500), byte for byte.
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(http.StatusText(http.StatusInternalServerError)))
+			return
+		}
+		reqObj["body"] = fields
+		reqObj["files"] = files
+		m.SetPayload(fields)
+	} else {
+		m.SetPayload(n.decodeBody(r, body))
+	}
 
 	n.mu.Lock()
 	n.pending++
@@ -254,12 +290,25 @@ func (n *httpInNode) serve(ctx context.Context, w http.ResponseWriter, r *http.R
 	case <-ctx.Done():
 		// The flow is stopping. Answer rather than dropping the connection, so
 		// a client sees a status instead of a reset.
-		pending.reply(http.StatusServiceUnavailable, nil, []byte("the flow is restarting\n"))
+		pending.reply(http.StatusServiceUnavailable, nil, nil, []byte("the flow is restarting\n"))
 	case <-r.Context().Done():
 		// The client gave up. Nothing to write, but the Response node still has
 		// to be told it lost the race rather than panicking on a dead writer.
 		pending.once.Do(func() { close(pending.done) })
 	}
+}
+
+// takesUpload is whether multer would run: uploads on, a POST, a multipart
+// content type and a body. Raw mode wins, as Node-RED's skipBodyParsing does.
+func (n *httpInNode) takesUpload(r *http.Request) bool {
+	if !n.upload || n.rawBody || r.Method != http.MethodPost {
+		return false
+	}
+	ct, ok := busboyContentType(latin1(r.Header.Get("Content-Type")))
+	if !ok || ct.typ != "multipart" {
+		return false
+	}
+	return r.Header.Get("Content-Length") != "" || len(r.TransferEncoding) > 0
 }
 
 // buildRequestObject assembles msg.req, matching the field names Node-RED
@@ -286,21 +335,22 @@ func buildRequestObject(r *http.Request, body []byte) map[string]any {
 		params[k] = v
 	}
 
-	cookies := map[string]any{}
-	for _, c := range r.Cookies() {
-		cookies[c.Name] = c.Value
-	}
+	// cookie-parser's reading, not net/http's: Go drops a cookie whose value
+	// has a space in it and keeps the last of two with the same name, and
+	// cookie-parser keeps both kinds and the first.
+	cookies := requestCookies(strings.Join(r.Header.Values("Cookie"), "; "))
 
 	return map[string]any{
-		"method":      r.Method,
-		"url":         r.URL.Path,
-		"originalUrl": r.URL.String(),
-		"headers":     headers,
-		"query":       query,
-		"params":      params,
-		"cookies":     cookies,
-		"ip":          clientIP(r),
-		"host":        r.Host,
+		"method":        r.Method,
+		"url":           r.URL.Path,
+		"originalUrl":   r.URL.String(),
+		"headers":       headers,
+		"query":         query,
+		"params":        params,
+		"cookies":       cookies,
+		"signedCookies": map[string]any{},
+		"ip":            clientIP(r),
+		"host":          r.Host,
 		// The raw body is kept alongside the decoded payload, because a
 		// signature check needs the exact bytes and re-encoding the decoded form
 		// does not reproduce them.
@@ -413,6 +463,7 @@ func (n *httpInNode) Close(context.Context, bool) error {
 type httpResponseNode struct {
 	statusCode int
 	headers    map[string]string
+	now        func() time.Time
 }
 
 func registerHTTPResponse() {
@@ -429,9 +480,10 @@ func registerHTTPResponse() {
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Status code and headers from the node or from msg.statusCode and " +
-				"msg.headers, with the payload as the body. Cookies set through " +
-				"msg.cookies are not implemented; set a Set-Cookie header instead.",
-			UnsupportedProps: []string{"cookies"},
+				"msg.headers, with the payload as the body. msg.cookies sets and clears " +
+				"cookies exactly as Express does for Node-RED, options and all; with " +
+				"more than one, they go out in name order rather than the order the " +
+				"object was built in.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -452,6 +504,7 @@ func newHTTPResponse(def *node.Definition) (node.Node, error) {
 	n := &httpResponseNode{
 		statusCode: def.Node.PropInt("statusCode", 0),
 		headers:    map[string]string{},
+		now:        time.Now,
 	}
 
 	// Node-RED stores the header list either as an array of rows or as a plain
@@ -508,8 +561,12 @@ func (n *httpResponseNode) Receive(_ context.Context, m *engine.Msg, out node.Em
 	if err != nil {
 		return err
 	}
+	cookies, err := responseCookies(m.Data["cookies"], n.now())
+	if err != nil {
+		return fmt.Errorf("msg.cookies: %w", err)
+	}
 
-	if !pending.reply(status, headers, body) {
+	if !pending.reply(status, headers, cookies, body) {
 		// Two branches both replied, or the client hung up. Either way the flow
 		// author should know: Node-RED throws away the second reply silently and
 		// half the response the flow believes it sent never existed.
@@ -582,13 +639,16 @@ func registerHTTPRequest() {
 				"node. The response body is size-capped and the call is bounded by a " +
 				"timeout, neither of which Node-RED does. TLS comes from a tls-config, or " +
 				"without one msg.rejectUnauthorized = false skips the certificate " +
-				"check for that one message, as in Node-RED. Cookie jars, proxy settings " +
-				"and connection persistence are not implemented in this build. There is " +
-				"no egress allowlist: this node " +
+				"check for that one message, as in Node-RED. msg.cookies and a cookie " +
+				"header go out through a cookie jar, cookies a redirect sets follow the " +
+				"redirect, and msg.responseCookies and msg.redirectList come back, all " +
+				"as in Node-RED. A multipart/form-data content type with an object " +
+				"payload sends it as a form. Proxy settings and connection persistence " +
+				"are not implemented in this build. There is no egress allowlist: this node " +
 				"can reach anything the pod can, exactly as Node-RED's can, and the " +
 				"place to bound that is a NetworkPolicy rather than an edit dialog " +
 				"nobody outside the cluster can trust.",
-			UnsupportedProps: []string{"proxy", "persist", "cookies"},
+			UnsupportedProps: []string{"proxy", "persist"},
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -697,16 +757,39 @@ func (n *httpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.E
 		}
 	}
 
+	headers, _ := m.Data["headers"].(map[string]any)
+	wantsForm := false
+	for k, v := range headers {
+		// Node-RED compares the whole value: a content type that already
+		// carries a boundary is the flow's own body, sent as it is.
+		if strings.EqualFold(k, "content-type") && mustacheString(v) == "multipart/form-data" {
+			wantsForm = true
+		}
+	}
+
 	var body io.Reader
 	contentType := ""
+	builtForm := false
 	if method != http.MethodGet && method != http.MethodHead && method != http.MethodDelete {
-		raw, ct, err := requestBody(m.Payload())
-		if err != nil {
-			return err
-		}
-		if raw != nil {
+		payload, hasPayload := m.Data["payload"]
+		if wantsForm && hasPayload && isJSObject(payload) {
+			boundary := newFormBoundary()
+			raw, err := buildFormData(payload, boundary)
+			if err != nil {
+				return err
+			}
 			body = bytes.NewReader(raw)
-			contentType = ct
+			contentType = "multipart/form-data; boundary=" + boundary
+			builtForm = true
+		} else {
+			raw, ct, err := requestBody(m.Payload())
+			if err != nil {
+				return err
+			}
+			if raw != nil {
+				body = bytes.NewReader(raw)
+				contentType = ct
+			}
 		}
 	}
 
@@ -717,24 +800,47 @@ func (n *httpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.E
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	if headers, ok := m.Data["headers"].(map[string]any); ok {
-		for k, v := range headers {
-			req.Header.Set(k, mustacheString(v))
+	headerCookie := ""
+	for k, v := range headers {
+		switch {
+		case k == "cookie":
+			// Node-RED moves exactly this key, lower case, into the jar.
+			headerCookie = mustacheString(v)
+			continue
+		case builtForm && strings.EqualFold(k, "content-type"):
+			// Replaced by the one with the boundary in it.
+			continue
 		}
+		req.Header.Set(k, mustacheString(v))
 	}
 	if n.authUser != "" || n.authPass != "" {
 		req.SetBasicAuth(n.authUser, n.authPass)
 	}
 
-	client := n.client
+	jar, err := requestJar(req.URL, headerCookie, m.Data["cookies"])
+	if err != nil {
+		return fmt.Errorf("msg.cookies: %w", err)
+	}
+
+	c := *n.client
+	client := &c
+	client.Jar = jar
 	if n.transport != nil {
-		c := *n.client
-		c.Transport = n.transport
-		client = &c
+		client.Transport = n.transport
 	} else if n.skipVerify(m) {
-		c := *n.client
-		c.Transport = n.insecureTransport()
-		client = &c
+		client.Transport = n.insecureTransport()
+	}
+	redirects := []any{}
+	client.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if err := n.client.CheckRedirect(next, via); err != nil {
+			return err
+		}
+		hop := map[string]any{"location": next.Response.Header.Get("Location")}
+		if sc := next.Response.Header.Values("Set-Cookie"); len(sc) > 0 {
+			hop["cookies"] = extractResponseCookies(sc)
+		}
+		redirects = append(redirects, hop)
+		return nil
 	}
 
 	out.Status(node.Status{Fill: "blue", Shape: "dot", Text: "requesting"})
@@ -764,11 +870,22 @@ func (n *httpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.E
 	m.Data["statusCode"] = float64(resp.StatusCode)
 	m.Data["responseUrl"] = resp.Request.URL.String()
 
-	headers := make(map[string]any, len(resp.Header))
+	respHeaders := make(map[string]any, len(resp.Header))
 	for k, v := range resp.Header {
-		headers[strings.ToLower(k)] = strings.Join(v, ", ")
+		respHeaders[strings.ToLower(k)] = strings.Join(v, ", ")
 	}
-	m.Data["headers"] = headers
+	m.Data["redirectList"] = redirects
+	if sc := resp.Header.Values("Set-Cookie"); len(sc) > 0 {
+		// Node's http module keeps Set-Cookie as an array, because joining
+		// cookies with commas breaks every Expires date in them.
+		list := make([]any, len(sc))
+		for i, s := range sc {
+			list[i] = s
+		}
+		respHeaders["set-cookie"] = list
+		m.Data["responseCookies"] = extractResponseCookies(sc)
+	}
+	m.Data["headers"] = respHeaders
 
 	// A non-2xx is not an error here, matching Node-RED: the status is data, and
 	// a flow polling an endpoint that returns 404 while a device boots wants to
@@ -781,6 +898,44 @@ func (n *httpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.E
 
 	out.Send(0, m)
 	return nil
+}
+
+// isJSObject is typeof v === "object" for a message value, null included.
+func isJSObject(v any) bool {
+	switch v.(type) {
+	case nil, map[string]any, []any, []byte, engine.ImmutableBytes:
+		return true
+	}
+	return false
+}
+
+// requestJar is the cookie jar Node-RED gives every request: tough-cookie,
+// with the cookie header's cookies and msg.cookies in it. Cookies a redirect
+// sets go in too and come back on the next hop. The public suffix list keeps
+// a server from setting a cookie for all of co.uk, as tough-cookie's does.
+func requestJar(u *url.URL, headerCookie string, msgCookies any) (http.CookieJar, error) {
+	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
+	if err != nil {
+		return nil, err
+	}
+	pairs, err := outboundCookies(headerCookie, msgCookies)
+	if err != nil {
+		return nil, err
+	}
+	if len(pairs) == 0 {
+		return jar, nil
+	}
+	cookies := make([]*http.Cookie, 0, len(pairs))
+	for _, p := range pairs {
+		c := &http.Cookie{Name: p.name, Value: p.value}
+		if len(p.value) >= 2 && p.value[0] == '"' && p.value[len(p.value)-1] == '"' {
+			// Go keeps the quotes as a flag rather than as part of the value.
+			c.Value, c.Quoted = p.value[1:len(p.value)-1], true
+		}
+		cookies = append(cookies, c)
+	}
+	jar.SetCookies(u, cookies)
+	return jar, nil
 }
 
 // skipVerify reads msg.rejectUnauthorized, which Node-RED honours only when the

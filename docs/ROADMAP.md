@@ -191,7 +191,7 @@ but plenty of people drop one that doesn't.
 - [x] Link Call and Link Out's return mode
 - [x] Join by timeout and reduce, batch by time, split streaming
 - [x] MQTT v5 and last will
-- [ ] TLS on TCP, cookies and multipart on HTTP
+- [x] TLS on TCP, cookies and multipart on HTTP
 - [ ] Editor: copy and paste, import and export a selection, subflow and group
       editing, search across flows, debug filtering
 - [ ] Browser tests for the editor in CI, and a click-through of every node
