@@ -228,3 +228,10 @@ jobs:
         # every PR catches regressions; the corpus in testdata carries anything
         # a longer run has already found.
         run: go test ./internal/engine/ -run=XXX -fuzz=FuzzParsePath -fuzztime=60s
+
+      - name: Fuzz the semantic diff
+        # A flow compared with itself must be no change at all, for any
+        # document the parser accepts. If that ever fails, every review and
+        # every rollback built on the diff is showing somebody a change that
+        # isn't there.
+        run: go test ./internal/flowdiff/ -run=XXX -fuzz=FuzzDiffOfAFlowWithItselfIsEmpty -fuzztime=30s

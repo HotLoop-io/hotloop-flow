@@ -63,10 +63,10 @@ a line stops, and today the answer is three `.bak` files.
 - [x] Deployment log: every deploy is an immutable record with the user, the
       time, an optional note, the flow bytes and the encrypted credentials as
       they stood. Retention is a setting. `GET /deployments`
-- [ ] Semantic diff: node by node, property by property. Added, removed,
+- [x] Semantic diff: node by node, property by property. Added, removed,
       changed, rewired. Dragging a node around shows up as layout, never as a
       logic change. Over the API and as `hotloop-flow diff a.json b.json`
-- [ ] The diff works as a git difftool, so a pull request on a flow reads
+- [x] The diff works as a git difftool, so a pull request on a flow reads
       "rule 2 threshold 7.5 to 8.0" instead of a JSON hunk
 - [ ] Rollback: redeploys an old record as a new one, credentials included, so a
       node you deleted comes back with its broker password. History stays

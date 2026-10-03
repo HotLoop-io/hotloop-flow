@@ -23,8 +23,10 @@ What that means on a bad night:
 - **The flow file is something you can review.** It loads and saves byte for
   byte, an edit to one property is a one-line diff, and every save is atomic with
   three backups behind it. Every deploy is [a record](#every-deploy-is-a-record):
-  who, when, why and the exact bytes. A node-by-node diff and one-click rollback
-  are being built on top of it right now, first on the [roadmap](docs/ROADMAP.md).
+  who, when, why and the exact bytes, and any two of them
+  [diff node by node](#the-diff-reads-like-a-review), in the API, on the
+  command line and inside `git diff`. One-click rollback is being built on top
+  of that right now, first on the [roadmap](docs/ROADMAP.md).
 - **It won't start unlocked.** No authentication is a startup error, not a
   default. The `exec` node ships switched off, the file nodes are fenced into the
   data directory, and credentials are AES-256-GCM under an Argon2id key.
@@ -206,6 +208,55 @@ Two things it does that you'd only miss once they bit you:
 The API never hands out the credentials in a record, encrypted or not. They're
 kept for one job, putting them back, and a history endpoint isn't a way to walk
 off with them.
+
+### The diff reads like a review
+
+A line diff of a flow file is honest and useless. Drag a node twenty pixels and
+it's a change. Change a threshold and it's a change. The reviewer can't tell
+which one is about to stop a press. So Flow diffs node by node:
+
+```
+1 changed, 2 moved
+
+Tab "Line 3" (t1)
+  ~ switch "Pressure check" (sw1)
+      rules[1].v: "7.5" -> "8.0"
+      wire added: port 1 -> change "set alarm" (alarm1)
+
+Moved on the canvas only
+  mqtt in "press 01" (in1)
+  debug "ok" (ok1)
+```
+
+Added, removed and changed, property by property with the old and new value,
+which wires moved by output port, and **layout kept apart from logic**: moving,
+resizing or hiding a label is "moved on the canvas", never a change, so a
+tidy-up reads as a tidy-up. A credential reads as "set" or "changed", never with
+its value. Edits inside a subflow show up on the subflow, and dragging one of its
+ports is layout too.
+
+Same answer everywhere, from one engine package:
+
+- `GET /deployments/{from}/diff/{to}` compares two deployments.
+- `POST /flows/diff` compares what's live with a document nobody has deployed
+  yet, which is what you look at before pressing deploy.
+- `hotloop-flow diff old.json new.json` on the command line. `-json` for a
+  program. Exits 1 when something differs, like `diff`.
+- **Inside git.** Make it git's diff driver for flow files and `git diff`,
+  `git log -p` and `git show` print the semantic diff instead of a JSON hunk:
+
+  ```bash
+  git config diff.hotloop-flow.command 'hotloop-flow diff'
+  echo 'flows.json diff=hotloop-flow' >> .gitattributes
+  ```
+
+  Or as a difftool:
+  `git config difftool.hotloop-flow.cmd 'hotloop-flow diff "$LOCAL" "$REMOTE"'`,
+  then `git difftool -t hotloop-flow`.
+
+A flow diffed against itself is no change at all, for any document the parser
+accepts. CI fuzzes that on every pull request, because a diff that invents a
+change is worse than no diff.
 
 ---
 
@@ -416,6 +467,7 @@ TypeScript and native SVG, 35.3 kB of JS and 16.9 kB of CSS minified.
 | `hotloop-flow -config <path>` | Same, from a YAML file. Also reads `HOTLOOP_FLOW_CONFIG`. |
 | `hotloop-flow hash-password` | bcrypt hash for a password. Takes `-password` or `HOTLOOP_FLOW_PASSWORD`. Refuses anything under 8 characters. |
 | `hotloop-flow import <flows.json>` | Reports what would happen before you deploy it. |
+| `hotloop-flow diff <old> <new>` | Node-by-node diff of two flow files. Also git's diff driver and difftool. |
 | `hotloop-flow bench` | The benchmark harness that produced [the numbers](#the-numbers). |
 | `hotloop-flow version` | The version. |
 
@@ -540,6 +592,8 @@ timeouts.
 | `GET /deployments` | `flows.read` | The deployment log, newest first, without the payloads. `?limit=N` bounds it. |
 | `GET /deployments/{seq}` | `flows.read` | One record, with its flows parsed. Never its credentials. |
 | `GET /deployments/{seq}/flows` | `flows.read` | That deployment's flow file, byte for byte. |
+| `GET /deployments/{from}/diff/{to}` | `flows.read` | Node-by-node diff between two deployments, structured and as text. |
+| `POST /flows/diff` | `flows.read` | The diff from what's live to the document in the body. Deploys nothing. |
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
 | `GET /comms` | `status.read` | The editor's status and debug websocket. |
@@ -866,7 +920,8 @@ What CI does check, beyond vet and the race detector, is the set of things I hav
 personally been burned by: that `go mod tidy` is committed, that the sandbox
 tests genuinely ran rather than silently skipping, that the editor bundle is
 actually inside the binary, that the binary is under 40MiB and statically linked,
-and a 60-second fuzz run against the property expression parser. Every one of
+a 60-second fuzz run against the property expression parser, and a 30-second
+one proving a flow never differs from itself. Every one of
 those exists because the alternative was a green checkmark over something broken,
 and a green checkmark is worse than a red one.
 
