@@ -410,6 +410,21 @@ on purpose, because a config file can't do it on its own: the file is where a
 copy-paste lands. Do it and the log warns on every boot and the editor wears a
 **no login** badge, so the next person knows the door is open.
 
+**Everything that matters leaves a trail.** Logins, failed logins (with whether
+the name even exists, which a client never gets told but an operator should),
+logouts, deploys, refused deploys, rollbacks and injects go to
+`data/audit.log`, one JSON line each, synced to disk before the request is
+answered. Each says who, from which address, and what: a deploy points at its
+deployment record, an inject names the node. `X-Forwarded-For` is kept beside
+the socket's address and never instead of it, because anybody can send that
+header. `GET /audit` reads it newest first, filtered by `?event=` (`login.` for
+every kind of login), `?user=`, `?since=` and `?limit=`, and it takes its own
+`audit.read` permission, because being allowed to deploy doesn't mean being
+allowed to read who else logged in. It rotates by size (`audit.maxBytes`,
+`audit.keep`) so a busy instance can't fill its volume, and a trail that can't
+be written never stops the action it was recording: it's logged and counted in
+`hotloop_flow_audit_write_failures_total`, which should be zero forever.
+
 **The `exec` node ships disabled.** An operator names the commands a flow may
 run, and an enabled node with an empty allowlist is a startup error, not a
 licence to run anything. The allowlist matches the **resolved absolute path**,
@@ -683,6 +698,10 @@ logging:
 metrics:
   enabled: true
   path: /metrics
+
+audit:
+  maxBytes: 16777216        # data.dir/audit.log rotates at 16 MiB
+  keep: 4                   # rotated files kept beside it
 ```
 
 A typo in that file is a startup failure rather than a setting that silently does
@@ -742,6 +761,7 @@ timeouts.
 | `GET /flows/export` | `flows.read` | The flow file exactly as it sits on disk, for git. |
 | `POST /flows` | `flows.write` | Deploy. Takes an optional note for the deployment log. |
 | `GET /deployments` | `flows.read` | The deployment log, newest first, without the payloads. `?limit=N` bounds it. |
+| `GET /audit` | `audit.read` | Who did what from where, newest first. `?event=`, `?user=`, `?since=`, `?limit=`. |
 | `GET /deployments/{seq}` | `flows.read` | One record, with its flows parsed. Never its credentials. |
 | `GET /deployments/{seq}/flows` | `flows.read` | That deployment's flow file, byte for byte. |
 | `GET /deployments/{from}/diff/{to}` | `flows.read` | Node-by-node diff between two deployments, structured and as text. |
@@ -818,6 +838,7 @@ you should not need a second container to find out that your inbox is full.
 | `hotloop_flow_git_mirror_behind_deployments` | gauge | Deployments the git mirror's remote doesn't have yet. Only with a mirror. |
 | `hotloop_flow_git_mirror_push_failures_total` | counter | Pushes to the mirror that failed and will be retried. |
 | `hotloop_flow_git_mirror_pushes_total` | counter | Pushes to the mirror that succeeded. |
+| `hotloop_flow_audit_write_failures_total` | counter | Audit entries that couldn't be written. Should be zero forever. |
 
 The one to alert on is `hotloop_flow_node_queue_high_water` against
 `hotloop_flow_node_queue_capacity`. High water is the early warning that a flow is
