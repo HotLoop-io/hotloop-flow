@@ -71,7 +71,7 @@ a line stops, and today the answer is three `.bak` files.
 - [x] Rollback: redeploys an old record as a new one, credentials included, so a
       node you deleted comes back with its broker password. History stays
       append-only
-- [ ] Editor: history panel, the diff drawn on the canvas, "review and deploy"
+- [x] Editor: history panel, the diff drawn on the canvas, "review and deploy"
       with a note, a rollback button. A deploy conflict shows what the other
       person changed instead of a yes/no box
 - [ ] Flows as code: `hotloop-flow deploy` and `hotloop-flow export` for CI,

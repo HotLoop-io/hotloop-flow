@@ -83,6 +83,57 @@ export interface RuntimeEvent {
   at: string;
 }
 
+/** One entry in the deployment log, as GET /deployments lists it. */
+export interface Deployment {
+  seq: number;
+  kind: 'deploy' | 'rollback' | 'baseline';
+  rev: string;
+  parentRev?: string;
+  user?: string;
+  remote?: string;
+  note?: string;
+  time: string;
+  rollbackOf?: number;
+}
+
+/** A property that differs, from the engine's semantic diff. */
+export interface DiffProp {
+  path: string;
+  old?: unknown;
+  new?: unknown;
+  hasOld: boolean;
+  hasNew: boolean;
+  secret?: boolean;
+}
+
+/** One node, tab, subflow or group that differs. */
+export interface DiffEntry {
+  id: string;
+  type: string;
+  name?: string;
+  z?: string;
+  kind: 'added' | 'removed' | 'changed' | 'moved';
+  props?: DiffProp[];
+  wires?: { port: number; to: string; added: boolean }[];
+  layout?: DiffProp[];
+}
+
+/** A semantic diff, structured and as the text a person reads. */
+export interface DiffResult {
+  from: string;
+  to: string;
+  entries: DiffEntry[];
+  summary: { added: number; removed: number; changed: number; moved: number };
+  text: string;
+}
+
+export interface DeployResult {
+  rev: string;
+  deployment?: number;
+  warnings?: string[];
+  failures?: { id: string; type: string; error: string }[];
+}
+
 const TOKEN_KEY = 'hotloop-flow.token';
 
 export class ApiError extends Error {
@@ -184,33 +235,67 @@ export class Api {
   /**
    * Deploys a flow set.
    *
-   * The revision travels in a header rather than the body so the payload stays
-   * a plain v1 array — exactly what the runtime persists and what an operator
-   * can paste into a file. Passing an empty rev forces the write, which is the
-   * "overwrite theirs" branch of a conflict.
+   * The revision travels in a header, and the payload stays a plain v1 array
+   * when there is no note, which is exactly what the runtime persists and what
+   * an operator can paste into a file. A note rides in the wrapped form instead
+   * of a header, because a browser refuses to put anything outside Latin-1 in a
+   * header and people write notes in their own language. Passing an empty rev
+   * forces the write, which is the "overwrite theirs" branch of a conflict.
    */
-  async deploy(
-    flows: unknown[],
-    rev: string,
-  ): Promise<{ rev: string; warnings?: string[]; failures?: { id: string; type: string; error: string }[] }> {
-    const res = await fetch(`${this.base}/flows`, {
-      method: 'POST',
+  deploy(flows: unknown[], rev: string, note = ''): Promise<DeployResult> {
+    const body = note.trim() ? { flows, note: note.trim() } : flows;
+    return this.send<DeployResult>('POST', '/flows', body, { 'HotLoop-Flow-Deployment-Rev': rev });
+  }
+
+  /** The deployment log, newest first. */
+  deployments(limit = 50): Promise<{ deployments: Deployment[]; retain: number; current: string }> {
+    return this.get(`/deployments?limit=${limit}`);
+  }
+
+  /** One deployment, with its flows. */
+  deployment(seq: number): Promise<Deployment & { flows: unknown[] }> {
+    return this.get(`/deployments/${seq}`);
+  }
+
+  /** What changed between two deployments, node by node. */
+  deploymentDiff(from: number, to: number): Promise<DiffResult> {
+    return this.get(`/deployments/${from}/diff/${to}`);
+  }
+
+  /** What deploying this document would change, against what is live. */
+  pendingDiff(flows: unknown[]): Promise<DiffResult> {
+    return this.send<DiffResult>('POST', '/flows/diff', flows);
+  }
+
+  /**
+   * Deploys an earlier record again, as a new record, credentials included.
+   * The rev is the one this editor last loaded, so a rollback racing
+   * somebody's deploy gets the same 409 a deploy would.
+   */
+  rollback(seq: number, rev: string, note: string): Promise<DeployResult> {
+    return this.send<DeployResult>('POST', `/deployments/${seq}/rollback`, { note: note.trim() },
+      { 'HotLoop-Flow-Deployment-Rev': rev });
+  }
+
+  private async send<T>(method: string, path: string, body: unknown, headers: Record<string, string> = {}): Promise<T> {
+    const res = await fetch(this.base + path, {
+      method,
       headers: {
         'Content-Type': 'application/json',
-        'HotLoop-Flow-Deployment-Rev': rev,
+        ...headers,
         ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
       },
-      body: JSON.stringify(flows),
+      body: JSON.stringify(body),
     });
     if (res.status === 401) {
       this.setToken(null);
       throw new ApiError(401, 'session expired');
     }
     if (!res.ok) {
-      const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ApiError(res.status, body.error ?? res.statusText);
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new ApiError(res.status, err.error ?? res.statusText);
     }
-    return res.json();
+    return res.json() as Promise<T>;
   }
 
   /**

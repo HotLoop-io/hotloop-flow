@@ -194,6 +194,119 @@
   user-select: none;
 }
 
+/* ── Diff on the canvas ───────────────────────────────────────────────────────
+   What a deploy changes, drawn where it changes. These are states, not
+   controls, so they come from the semantic ramp and never from the accent:
+   green is new, amber is changed, blue is only moved, red is gone. Removed
+   nodes and wires are ghosts, dashed and faint, so they read as "was here"
+   rather than as something still running. */
+
+.node.diff-added .node-body   { stroke: var(--success); stroke-width: 3; }
+.node.diff-changed .node-body { stroke: var(--warning); stroke-width: 3; }
+.node.diff-moved .node-body   { stroke: var(--info); stroke-width: 2; stroke-dasharray: 5 3; }
+.node.diff-removed { opacity: 0.35; pointer-events: none; }
+.node.diff-removed .node-body { stroke: var(--danger); stroke-width: 2.5; stroke-dasharray: 5 3; }
+
+.wire.diff-added   { stroke: var(--success); stroke-width: 3; opacity: 1; }
+.wire.diff-removed { stroke: var(--danger); stroke-dasharray: 6 4; opacity: 0.6; pointer-events: none; }
+
+.tab.has-diff::after {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--warning);
+  vertical-align: middle;
+}
+
+.view-banner {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 24px);
+  padding: 8px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--info);
+  border-radius: var(--radius-input);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+.view-banner .what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The read-only canvas for a deployment from the history sits over the
+   working one, which stays exactly as it was underneath. */
+.view-host { position: absolute; inset: 0; background: var(--portal-bg); }
+.view-host[hidden], .view-banner[hidden] { display: none; }
+.canvas-host.viewing > .canvas { visibility: hidden; }
+
+/* ── History and review ───────────────────────────────────────────────────── */
+
+.history { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+
+.history-item {
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.history-item.current { border-left: 4px solid var(--success); }
+.history-item .meta { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.history-item .seq { font-weight: 800; }
+.history-item .who { color: var(--text-sub); }
+.history-item .note { margin: 4px 0 0; word-break: break-word; }
+.history-item .actions { display: flex; gap: 6px; margin-top: 6px; }
+.history-item button { font-size: 10px; padding: 4px 10px; }
+
+.kind { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--text-sub); }
+.kind.rollback { color: var(--warning-text); }
+.kind.baseline { color: var(--info-text); }
+
+.review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--warning);
+  border-radius: var(--radius-input);
+}
+.review textarea, .dialog textarea.note {
+  width: 100%;
+  min-height: 54px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-main);
+  background: var(--card-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  resize: vertical;
+}
+.review .actions, .dialog-foot .actions { display: flex; gap: 8px; }
+.review h3 { margin: 0; }
+
+.diff-text {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-radius: var(--radius-input);
+  font-family: var(--hl-font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
 .marquee {
   fill: var(--accent);
   fill-opacity: 0.08;

@@ -13,6 +13,9 @@
 # meant it never could.
 !/web/dist/.gitkeep
 /web/node_modules/
+/web/e2e/node_modules/
+/web/e2e/test-results/
+/web/e2e/playwright-report/
 
 # Runtime data — never commit a flow file or a credential store
 /data/
