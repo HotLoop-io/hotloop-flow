@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
+	"github.com/HotLoop-io/hotloop-flow/internal/history"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
@@ -43,6 +45,7 @@ type Deps struct {
 	Registry    *node.Registry
 	Flows       *store.FlowStore
 	Credentials *store.CredentialStore
+	History     *history.Log
 	Logger      *slog.Logger
 
 	// Runtime returns the currently running runtime. It is a function rather
@@ -51,8 +54,8 @@ type Deps struct {
 	Runtime func() *runtime.Runtime
 
 	// Deploy swaps in a new flow set. It owns stopping the old runtime,
-	// persisting, and starting the new one.
-	Deploy func(ctx context.Context, flows *engine.Flows, expectedRev string) (DeployResult, error)
+	// persisting, recording the deployment, and starting the new one.
+	Deploy func(ctx context.Context, req DeployRequest) (DeployResult, error)
 
 	// FlowRoutes holds the paths the flow's HTTP In nodes have claimed. It is
 	// consulted for anything the fixed routes below did not match, because a
@@ -64,11 +67,26 @@ type Deps struct {
 	Version string
 }
 
+// DeployRequest is a deploy and everything the deployment log records about it.
+type DeployRequest struct {
+	Flows       *engine.Flows
+	ExpectedRev string
+	// User is whoever the token belongs to, empty when authentication is off.
+	User string
+	// Remote is the address the request came from.
+	Remote string
+	// Note is the deployer's sentence for whoever reads the history next.
+	Note string
+}
+
 // DeployResult reports what a deploy did.
 type DeployResult struct {
-	Rev      string               `json:"rev"`
-	Failures []runtime.StartError `json:"-"`
-	Warnings []string             `json:"warnings,omitempty"`
+	Rev string `json:"rev"`
+	// Deployment is the deployment log's sequence number for this deploy, or
+	// zero if the record could not be written (which is also a warning).
+	Deployment int64                `json:"deployment,omitempty"`
+	Failures   []runtime.StartError `json:"-"`
+	Warnings   []string             `json:"warnings,omitempty"`
 }
 
 // Server is the HTTP surface.
@@ -155,6 +173,9 @@ func (s *Server) routes() {
 	s.mux.Handle("GET "+s.path("/nodes"), s.auth(PermNodesRead, s.handleNodes))
 	s.mux.Handle("GET "+s.path("/flows"), s.auth(PermFlowsRead, s.handleGetFlows))
 	s.mux.Handle("POST "+s.path("/flows"), s.auth(PermFlowsWrite, s.handlePostFlows))
+	s.mux.Handle("GET "+s.path("/deployments"), s.auth(PermFlowsRead, s.handleListDeployments))
+	s.mux.Handle("GET "+s.path("/deployments/{seq}"), s.auth(PermFlowsRead, s.handleGetDeployment))
+	s.mux.Handle("GET "+s.path("/deployments/{seq}/flows"), s.auth(PermFlowsRead, s.handleGetDeploymentFlows))
 	s.mux.Handle("GET "+s.path("/runtime/stats"), s.auth(PermStatusRead, s.handleStats))
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))
@@ -300,8 +321,19 @@ func (s *Server) auth(perm string, h http.HandlerFunc) http.Handler {
 			writeError(w, http.StatusForbidden, "token lacks the "+perm+" permission")
 			return
 		}
-		h(w, r)
+		h(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user.Username)))
 	})
+}
+
+// userKey carries the authenticated username on a request's context.
+type userKey struct{}
+
+// requestUser is who made the request, or "" when authentication is off. It is
+// what the deployment log writes down, so it comes from the token, never from
+// anything the client says about itself.
+func requestUser(r *http.Request) string {
+	u, _ := r.Context().Value(userKey{}).(string)
+	return u
 }
 
 // bearerToken reads the token from the Authorization header, or from a query
@@ -458,7 +490,19 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 		expectedRev = h
 	}
 
-	res, err := s.deps.Deploy(r.Context(), flows, expectedRev)
+	note, err := deployNote(r, body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	res, err := s.deps.Deploy(r.Context(), DeployRequest{
+		Flows:       flows,
+		ExpectedRev: expectedRev,
+		User:        requestUser(r),
+		Remote:      r.RemoteAddr,
+		Note:        note,
+	})
 	switch {
 	case errors.Is(err, store.ErrRevisionConflict):
 		// 409 rather than 500: the client can resolve this by reloading, and
@@ -478,11 +522,131 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 			"id": f.NodeID, "type": f.Type, "error": f.Err.Error(),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"rev":      res.Rev,
 		"warnings": res.Warnings,
 		"failures": failures,
+	}
+	if res.Deployment > 0 {
+		out["deployment"] = res.Deployment
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// deployNote reads the note for the deployment log. It can ride in the
+// wrapped document as "note", which is how the editor sends it, because a
+// browser refuses to put anything outside Latin-1 in a header and people write
+// notes in their own language. A CI job can use the header instead.
+func deployNote(r *http.Request, body []byte) (string, error) {
+	note := r.Header.Get("HotLoop-Flow-Deployment-Note")
+	if trimmed := strings.TrimLeft(string(body), " \t\r\n"); strings.HasPrefix(trimmed, "{") {
+		var wrapper struct {
+			Note *string `json:"note"`
+		}
+		if err := json.Unmarshal(body, &wrapper); err == nil && wrapper.Note != nil {
+			note = *wrapper.Note
+		}
+	}
+	note = strings.TrimSpace(note)
+	if len(note) > history.MaxNoteLength {
+		return "", fmt.Errorf("the deploy note is %d bytes; the limit is %d", len(note), history.MaxNoteLength)
+	}
+	return note, nil
+}
+
+// handleListDeployments is the deployment log, newest first, without the flow
+// bytes. ?limit=N bounds it.
+func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
+	if s.deps.History == nil {
+		writeError(w, http.StatusServiceUnavailable, "the deployment log is not available")
+		return
+	}
+	limit := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			writeError(w, http.StatusBadRequest, "limit must be a positive number")
+			return
+		}
+		limit = n
+	}
+	list := s.deps.History.List(limit)
+	if list == nil {
+		list = []history.Record{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"deployments": list,
+		"retain":      s.deps.History.Retain(),
+		"current":     s.deps.Flows.Rev(),
 	})
+}
+
+// handleGetDeployment returns one record with its flows, exactly as they were
+// written. The credentials stay on the server: they are encrypted, they are
+// only ever needed for a rollback, and a history endpoint is not a way to walk
+// off with them.
+func (s *Server) handleGetDeployment(w http.ResponseWriter, r *http.Request) {
+	rec, ok := s.deploymentFromPath(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, deploymentView(rec))
+}
+
+// handleGetDeploymentFlows returns a deployment's flow file byte for byte, the
+// way it sat on disk, so what you download is what ran and a diff against it
+// shows nothing that didn't change.
+func (s *Server) handleGetDeploymentFlows(w http.ResponseWriter, r *http.Request) {
+	rec, ok := s.deploymentFromPath(w, r)
+	if !ok {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="flows-%d.json"`, rec.Seq))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(rec.Flows)
+}
+
+// deploymentFromPath reads the {seq} in the path and loads that record,
+// writing the error response itself when it can't.
+func (s *Server) deploymentFromPath(w http.ResponseWriter, r *http.Request) (history.Record, bool) {
+	if s.deps.History == nil {
+		writeError(w, http.StatusServiceUnavailable, "the deployment log is not available")
+		return history.Record{}, false
+	}
+	seq, err := strconv.ParseInt(r.PathValue("seq"), 10, 64)
+	if err != nil || seq < 1 {
+		writeError(w, http.StatusBadRequest, "a deployment is a positive sequence number")
+		return history.Record{}, false
+	}
+	rec, err := s.deps.History.Get(seq)
+	switch {
+	case errors.Is(err, history.ErrNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+		return history.Record{}, false
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return history.Record{}, false
+	}
+	return rec, true
+}
+
+// deploymentJSON is a record as the API shows it: the metadata, the flows as
+// JSON rather than base64, and whether credentials were captured, never what
+// they are.
+type deploymentJSON struct {
+	history.Record
+	Flows          json.RawMessage `json:"flows"`
+	Credentials    *struct{}       `json:"credentials,omitempty"`
+	HasCredentials bool            `json:"hasCredentials"`
+}
+
+func deploymentView(rec history.Record) deploymentJSON {
+	flows := json.RawMessage(rec.Flows)
+	if len(rec.Flows) == 0 {
+		flows = json.RawMessage("[]")
+	}
+	return deploymentJSON{Record: rec.Meta(), Flows: flows, HasCredentials: len(rec.Credentials) > 0}
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {

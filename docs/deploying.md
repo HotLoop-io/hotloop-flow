@@ -247,8 +247,10 @@ The image is distroless nonroot with no shell in it, so there's nothing to
 
 ## Backups
 
-Everything worth keeping is in `/data`: `flows.json`, `credentials.json`, and
-`flows.json.bak.1` to `.bak.3`. Back up the directory and the credential secret,
+Everything worth keeping is in `/data`: `flows.json`, `credentials.json`,
+`flows.json.bak.1` to `.bak.3`, and the deployment log in `deployments/`, one
+file per deploy. The log's records carry credentials encrypted under the same
+secret. Back up the directory and the credential secret,
 **separately**. The credential file is useless without the secret, which is the
 point, and a backup that holds both in one place is a backup that hands both to
 whoever steals it.

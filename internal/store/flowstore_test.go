@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -343,5 +344,50 @@ func TestFlowStoreSurvivesRepeatedSaveLoadCycles(t *testing.T) {
 		if newRev != rev {
 			t.Fatalf("cycle %d changed the revision: %s -> %s; the file is churning", i, rev, newRev)
 		}
+	}
+}
+
+// Bytes is what the deployment log records, so it has to be the file, not a
+// re-render of it: after a save, after a load, and after a recovery, where the
+// running flows came from a backup and the primary is gone.
+func TestFlowStoreBytesAreWhatRuns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "flows.json")
+	s := NewFlowStore(path)
+	if s.Bytes() != nil {
+		t.Fatal("Bytes before anything exists is not nil")
+	}
+	if _, err := s.Save(sampleFlows(t, "Good"), ""); err != nil {
+		t.Fatal(err)
+	}
+	onDisk, _ := os.ReadFile(path)
+	if !bytes.Equal(s.Bytes(), onDisk) {
+		t.Fatalf("after Save, Bytes = %q, file = %q", s.Bytes(), onDisk)
+	}
+
+	// A hand-written file with its own spacing comes back exactly as written.
+	hand := []byte("[ {\"id\":\"t1\",\"type\":\"tab\",\"label\":\"by hand\"} ]\n")
+	if err := os.WriteFile(path, hand, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(s.Bytes(), hand) {
+		t.Fatalf("after Load, Bytes = %q, want %q", s.Bytes(), hand)
+	}
+
+	if _, err := s.Save(sampleFlows(t, "Next"), ""); err != nil {
+		t.Fatal(err)
+	}
+	backup, _ := os.ReadFile(path + ".bak.1")
+	if err := os.WriteFile(path, []byte(`[{"id":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s2 := NewFlowStore(path)
+	if _, err := s2.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(s2.Bytes(), backup) {
+		t.Fatalf("after a recovery, Bytes = %q, want the backup %q", s2.Bytes(), backup)
 	}
 }

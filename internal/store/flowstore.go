@@ -32,6 +32,7 @@ type FlowStore struct {
 	rev        string
 	recovered  bool
 	recoveryOf string
+	current    []byte
 }
 
 // NewFlowStore returns a store for the flow file at path.
@@ -78,6 +79,7 @@ func (s *FlowStore) Load() (*engine.Flows, error) {
 	switch {
 	case os.IsNotExist(err):
 		f := mustEmpty()
+		s.current = nil
 		s.rev = revisionOf(nil)
 		f.Rev = s.rev
 		return f, nil
@@ -87,6 +89,7 @@ func (s *FlowStore) Load() (*engine.Flows, error) {
 
 	flows, parseErr := engine.ParseFlows(data)
 	if parseErr == nil {
+		s.current = data
 		s.rev = revisionOf(data)
 		flows.Rev = s.rev
 		return flows, nil
@@ -114,6 +117,7 @@ func (s *FlowStore) Load() (*engine.Flows, error) {
 		// save overwrite the evidence.
 		_ = os.Rename(s.path, s.path+".corrupt")
 
+		s.current = bdata
 		s.rev = revisionOf(bdata)
 		bflows.Rev = s.rev
 		bflows.Warnings = append(bflows.Warnings, fmt.Sprintf(
@@ -156,9 +160,24 @@ func (s *FlowStore) Save(flows *engine.Flows, expectedRev string) (string, error
 		return "", err
 	}
 
+	s.current = data
 	s.rev = revisionOf(data)
 	flows.Rev = s.rev
 	return s.rev, nil
+}
+
+// Bytes returns the flow document the running revision came from, byte for
+// byte: what the last Save wrote, or what the last Load read (a backup, if the
+// primary file was corrupt). Nil means there is no flow file yet. The
+// deployment log's whole promise is "the exact bytes", so this is kept rather
+// than re-rendered from the parsed flows.
+func (s *FlowStore) Bytes() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.current == nil {
+		return nil
+	}
+	return append([]byte(nil), s.current...)
 }
 
 // Rev returns the current revision token.

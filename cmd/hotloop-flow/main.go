@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,6 +22,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/filescope"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
+	"github.com/HotLoop-io/hotloop-flow/internal/history"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/nodes" // registers the built-in palette
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
@@ -146,6 +148,7 @@ func cmdServe(args []string) error {
 		adminRoot + "/health", adminRoot + "/ready", adminRoot + "/auth",
 		adminRoot + "/settings", adminRoot + "/nodes", adminRoot + "/flows",
 		adminRoot + "/runtime", adminRoot + "/inject", adminRoot + "/comms",
+		adminRoot + "/deployments",
 	}
 	if cfg.Metrics.Enabled {
 		reserved = append(reserved, adminRoot+cfg.Metrics.Path)
@@ -169,11 +172,20 @@ func cmdServe(args []string) error {
 		log.Warn("no credential secret is set; node credentials are stored in plaintext")
 	}
 
+	deployments, warnings, err := history.Open(cfg.HistoryDir(), cfg.History.Retain)
+	if err != nil {
+		return fmt.Errorf("opening the deployment log: %w", err)
+	}
+	for _, w := range warnings {
+		log.Error("deployment log", "detail", w)
+	}
+
 	app := &application{
 		cfg:       cfg,
 		log:       log,
 		flowStore: flowStore,
 		creds:     creds,
+		history:   deployments,
 		registry:  node.Default,
 		contexts:  store.NewScopedContexts(),
 	}
@@ -183,6 +195,7 @@ func cmdServe(args []string) error {
 		Registry:    node.Default,
 		Flows:       flowStore,
 		Credentials: creds,
+		History:     deployments,
 		Logger:      log,
 		Runtime:     app.currentRuntime,
 		Deploy:      app.deploy,
@@ -204,6 +217,7 @@ func cmdServe(args []string) error {
 	for _, w := range flows.Warnings {
 		log.Warn("flow warning", "detail", w)
 	}
+	app.recordBaseline(flows.Rev)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -257,6 +271,7 @@ type application struct {
 	log       *slog.Logger
 	flowStore *store.FlowStore
 	creds     *store.CredentialStore
+	history   *history.Log
 	registry  *node.Registry
 	contexts  *store.ScopedContexts
 	hub       interface{ Broadcast(runtime.Event) }
@@ -264,6 +279,11 @@ type application struct {
 	mu      sync.Mutex
 	rt      *runtime.Runtime
 	pumpCtx context.CancelFunc
+
+	// deployMu serialises deploys. Each one reads the revision it replaces,
+	// writes two files, appends to the deployment log and swaps the runtime,
+	// and two of those interleaved would record a parent that was never live.
+	deployMu sync.Mutex
 }
 
 func (a *application) currentRuntime() *runtime.Runtime {
@@ -375,13 +395,55 @@ func (a *application) stop(ctx context.Context) {
 	nodes.TCPReplies.Reset()
 }
 
+// recordBaseline writes what is on disk into the deployment log when the log
+// doesn't already end with it: the first start with a log, or a flow file that
+// was changed by hand while the process was down. Without it the first deploy
+// would have nothing to diff against or roll back to, and a hand edit would
+// quietly become history nobody recorded.
+func (a *application) recordBaseline(rev string) {
+	if a.history == nil {
+		return
+	}
+	data := a.flowStore.Bytes()
+	latest, ok := a.history.Latest()
+	if ok && latest.Rev == rev {
+		return
+	}
+	if !ok && data == nil {
+		// A fresh volume. Nothing has ever run, so there is nothing to record.
+		return
+	}
+	creds, err := a.creds.Snapshot()
+	if err != nil {
+		a.log.Error("could not snapshot credentials for the deployment log", "error", err)
+	}
+	note := "the flow file on disk at startup"
+	if ok {
+		note = "the flow file changed outside Flow since deployment " + strconv.FormatInt(latest.Seq, 10)
+	}
+	rec, err := a.history.Append(history.Record{
+		Kind: history.KindBaseline, Rev: rev, ParentRev: latest.Rev,
+		Note: note, Flows: data, Credentials: creds,
+	})
+	if err != nil {
+		a.log.Error("could not record the startup flow file in the deployment log", "error", err)
+		return
+	}
+	a.log.Info("recorded the startup flow file in the deployment log", "deployment", rec.Seq, "rev", rev)
+}
+
 // deploy replaces the running flows.
 //
 // The order matters and is not the obvious one. Credentials are split out and
 // the flow file is written *before* the old runtime is stopped, so that a
 // failure to persist leaves the previous flows running rather than taking the
 // line down for a bad save.
-func (a *application) deploy(ctx context.Context, flows *engine.Flows, expectedRev string) (api.DeployResult, error) {
+func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.DeployResult, error) {
+	a.deployMu.Lock()
+	defer a.deployMu.Unlock()
+
+	flows, expectedRev := req.Flows, req.ExpectedRev
+	parentRev := a.flowStore.Rev()
 	incoming := flows.StripCredentials()
 	for id, c := range incoming {
 		a.creds.Merge(id, c)
@@ -403,6 +465,21 @@ func (a *application) deploy(ctx context.Context, flows *engine.Flows, expectedR
 		return api.DeployResult{}, fmt.Errorf("saving credentials: %w", err)
 	}
 
+	// Recorded after the save and before the swap. A log that can't be written
+	// doesn't stop the deploy: the flow file is already saved, and refusing now
+	// would leave the disk and the running flows disagreeing until the next
+	// restart, which is worse than a missing record. It fails loudly instead,
+	// in the log and in the deploy response.
+	var warnings []string
+	seq, err := a.record(history.Record{
+		Kind: history.KindDeploy, Rev: rev, ParentRev: parentRev,
+		User: req.User, Remote: req.Remote, Note: req.Note,
+	})
+	if err != nil {
+		a.log.Error("the deployment log could not be written; this deploy has no record", "rev", rev, "error", err)
+		warnings = append(warnings, "the deployment log could not be written, so this deploy has no record: "+err.Error())
+	}
+
 	a.stop(ctx)
 
 	// Drop context belonging to nodes and flows that no longer exist, so
@@ -420,12 +497,32 @@ func (a *application) deploy(ctx context.Context, flows *engine.Flows, expectedR
 	// about to complete and its cancellation must not tear down the flows.
 	failures := a.start(context.Background(), flows)
 
-	a.log.Info("deployed", "rev", rev, "failures", len(failures))
+	a.log.Info("deployed", "rev", rev, "deployment", seq, "user", req.User, "failures", len(failures))
 	return api.DeployResult{
-		Rev:      rev,
-		Warnings: append(append([]string(nil), flows.Warnings...), a.warnings()...),
-		Failures: failures,
+		Rev:        rev,
+		Deployment: seq,
+		Warnings:   append(append(append([]string(nil), flows.Warnings...), a.warnings()...), warnings...),
+		Failures:   failures,
 	}, nil
+}
+
+// record appends to the deployment log with the flow file and credentials as
+// they now stand on disk.
+func (a *application) record(r history.Record) (int64, error) {
+	if a.history == nil {
+		return 0, nil
+	}
+	creds, err := a.creds.Snapshot()
+	if err != nil {
+		return 0, fmt.Errorf("snapshotting credentials: %w", err)
+	}
+	r.Flows = a.flowStore.Bytes()
+	r.Credentials = creds
+	rec, err := a.history.Append(r)
+	if err != nil {
+		return 0, err
+	}
+	return rec.Seq, nil
 }
 
 // ---------------------------------------------------------------------------

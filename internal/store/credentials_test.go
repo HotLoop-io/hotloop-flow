@@ -410,3 +410,40 @@ func BenchmarkCredentialSave(b *testing.B) {
 		}
 	}
 }
+
+// A snapshot is the credential file as Save would write it, and Restore puts
+// exactly that back, replacing whatever is there, so a rollback brings back a
+// deleted node's password and drops one that didn't exist then.
+func TestCredentialSnapshotAndRestore(t *testing.T) {
+	c := NewCredentialStore(filepath.Join(t.TempDir(), "credentials.json"), testSecret)
+	c.Set("broker", map[string]string{"password": "then"})
+	snap, err := c.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(snap), "then") {
+		t.Fatal("the snapshot holds the password in plaintext")
+	}
+
+	c.Set("broker", nil)
+	c.Set("later", map[string]string{"token": "now"})
+	if err := c.Restore(snap); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Get("broker")["password"]; got != "then" {
+		t.Fatalf("restored broker password = %q", got)
+	}
+	if c.Get("later") != nil {
+		t.Fatal("Restore merged instead of replacing")
+	}
+
+	// Under another secret it fails, and changes nothing.
+	other := NewCredentialStore(filepath.Join(t.TempDir(), "c.json"), "a-different-secret-entirely")
+	other.Set("keep", map[string]string{"k": "v"})
+	if err := other.Restore(snap); !errors.Is(err, ErrBadSecret) {
+		t.Fatalf("err = %v, want ErrBadSecret", err)
+	}
+	if other.Get("keep")["k"] != "v" {
+		t.Fatal("a failed Restore changed the store")
+	}
+}

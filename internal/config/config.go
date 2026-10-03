@@ -31,6 +31,7 @@ type Config struct {
 	Files     Files     `yaml:"files"`
 	Logging   Logging   `yaml:"logging"`
 	Metrics   Metrics   `yaml:"metrics"`
+	History   History   `yaml:"history"`
 }
 
 // Server is the HTTP listener.
@@ -152,6 +153,14 @@ type Files struct {
 	AllowedPaths []string `yaml:"allowedPaths"`
 }
 
+// History controls the deployment log under data.dir/deployments.
+type History struct {
+	// Retain is how many deployment records are kept. Zero keeps every one,
+	// which is a decision about disk space, not about safety: each record is a
+	// copy of the flow file plus the encrypted credentials.
+	Retain int `yaml:"retain"`
+}
+
 // Logging controls the runtime log.
 type Logging struct {
 	Level  string `yaml:"level"`
@@ -198,6 +207,7 @@ func Default() Config {
 		},
 		Logging: Logging{Level: "info", Format: "text"},
 		Metrics: Metrics{Enabled: true, Path: "/metrics"},
+		History: History{Retain: 100},
 	}
 }
 
@@ -348,6 +358,9 @@ func (c *Config) Validate() error {
 	if c.Data.BackupGenerations < 0 {
 		return fmt.Errorf("data.backupGenerations must not be negative")
 	}
+	if c.History.Retain < 0 {
+		return fmt.Errorf("history.retain must not be negative; 0 keeps every deployment")
+	}
 
 	switch c.Runtime.Overflow {
 	case "block", "drop-newest", "drop-oldest", "error":
@@ -431,6 +444,9 @@ func (c *Config) FlowPath() string { return filepath.Join(c.Data.Dir, c.Data.Flo
 func (c *Config) CredentialsPath() string {
 	return filepath.Join(c.Data.Dir, c.Data.CredentialsFile)
 }
+
+// HistoryDir is where the deployment log lives.
+func (c *Config) HistoryDir() string { return filepath.Join(c.Data.Dir, "deployments") }
 
 // Addr is the listen address.
 func (c *Config) Addr() string { return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port) }
