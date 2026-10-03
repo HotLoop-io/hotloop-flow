@@ -1192,6 +1192,15 @@ rename, and the only change to those nodes since is what they're called.
 **Race detector clean**, every package, on Linux with cgo, on every push to
 `main` and every pull request.
 
+**Cookies and multipart answer the way Node-RED's own libraries do**, because
+they were checked against them. Express, cookie-parser, form-data, multer and
+tough-cookie, at the versions Node-RED pins, ran over a hundred cases with
+Node-RED's node code copied in between, and the answers went into a golden file
+the tests replay through real sockets. That includes the ugly ones: a UTF-8 filename
+comes out garbled exactly as multer garbles it, and a cookie named `value`
+loses its value in `msg.responseCookies`, same as there. Matching the bugs is
+the point. A flow that leans on one breaks the day it stops being there.
+
 **Not done yet**, roughly in the order it bothers me:
 
 - **No industrial protocol nodes.** `scan` finds a Modbus or EtherNet/IP device
@@ -1204,9 +1213,6 @@ rename, and the only change to those nodes since is what they're called.
 - **Editor click-through for the newer nodes.** The dialogs are built from each
   node's descriptor, so they render, but nobody has clicked through the HTTP,
   WebSocket, TCP or UDP ones by hand yet.
-- **Multipart uploads on HTTP In**, and cookies on HTTP Response. A multipart
-  body arrives as raw bytes, not `msg.files`, and `msg.cookies` does nothing,
-  so set a `Set-Cookie` header instead.
 - **It has never run on a real plant floor.** Shepherd Boy Farms is the intended
   first site. Everything past the deploy line is unproven in the field, and I'm
   not calling it production-hardened until a plant has had a real go at
