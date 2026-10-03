@@ -144,7 +144,11 @@ jobs:
             echo "::error::an MQTT test skipped; the broker is not reachable"
             exit 1
           fi
-          for t in TestPartialDeployKeepsTheMQTTSessionUp TestIntegrationMQTTRoundTrip; do
+          for t in TestPartialDeployKeepsTheMQTTSessionUp TestIntegrationMQTTRoundTrip \
+            TestMQTTWillOnAConnectionThatDies TestMQTTCleanCloseSendsTheCloseMessageAndNoWill \
+            TestMQTTv5PropertiesBothWays TestMQTTv5SubscriptionOptions \
+            TestMQTTv5SessionExpiryKeepsMessagesAcrossADrop TestMQTTTwoNodesOnOneTopic \
+            TestMQTTv5OverlappingSubscriptionsDeliverOnce TestMQTTv311StillRoundTrips; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 
