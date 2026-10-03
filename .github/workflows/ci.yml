@@ -65,6 +65,28 @@ jobs:
           test "$(git -C "$RUNNER_TEMP/jsonata-js" rev-parse HEAD)" = 6c7e95fdbf4405a1e741852a7cd8cd985b4305bb
           echo "HOTLOOP_FLOW_JSONATA_SUITE=$RUNNER_TEMP/jsonata-js/test/test-suite" >> "$GITHUB_ENV"
 
+      - name: Start a Mosquitto that requires a password
+        # The rollback test deletes an MQTT subscriber, rolls back, and checks
+        # it logs in again with the password the deployment record kept. This
+        # broker refuses anonymous clients, so a rollback that lost the
+        # password fails here instead of passing by accident. It sits on 1884
+        # beside the open one above.
+        run: |
+          M="$RUNNER_TEMP/mosq"
+          mkdir -p "$M" && chmod 0755 "$M"
+          {
+            echo 'listener 1883'
+            echo 'allow_anonymous false'
+            echo 'password_file /mosquitto/config/passwd'
+          } > "$M/mosquitto.conf"
+          touch "$M/passwd"
+          sudo podman run --rm -v "$M:/mosquitto/config" docker.io/library/eclipse-mosquitto:2 \
+            mosquitto_passwd -b /mosquitto/config/passwd line3 ci-broker-pass
+          sudo chown 1883:1883 "$M/passwd" && sudo chmod 0700 "$M/passwd"
+          sudo podman run -d --name mosquitto-auth -p 127.0.0.1:1884:1883 -v "$M:/mosquitto/config" docker.io/library/eclipse-mosquitto:2
+          for i in $(seq 1 20); do (echo > /dev/tcp/127.0.0.1/1884) 2>/dev/null && break; sleep 1; done
+          sudo podman logs mosquitto-auth
+
       - name: Test with race detector
         # The race detector needs cgo. This is the test build only — the shipped
         # binary is built CGO_ENABLED=0 in the Dockerfile so it stays static and
@@ -72,7 +94,26 @@ jobs:
         env:
           CGO_ENABLED: "1"
           HOTLOOP_FLOW_TEST_MQTT: localhost:1883
+          HOTLOOP_FLOW_TEST_MQTT_AUTH: 127.0.0.1:1884
+          HOTLOOP_FLOW_TEST_MQTT_USER: line3
+          HOTLOOP_FLOW_TEST_MQTT_PASSWORD: ci-broker-pass
         run: go test -race -count=1 -coverprofile=coverage.out ./...
+
+      - name: The broker test actually ran
+        # A skipped integration test reads as a passing one. This is the test
+        # behind "a rollback brings the broker password back".
+        env:
+          HOTLOOP_FLOW_TEST_MQTT_AUTH: 127.0.0.1:1884
+          HOTLOOP_FLOW_TEST_MQTT_USER: line3
+          HOTLOOP_FLOW_TEST_MQTT_PASSWORD: ci-broker-pass
+        run: |
+          OUT=$(go test ./cmd/hotloop-flow/ -count=1 -v -run TestIntegrationRollbackLogsBackInToARealBroker 2>&1)
+          echo "$OUT" | tail -5
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::the broker rollback test was skipped"; exit 1
+          fi
+          echo "$OUT" | grep -q -- "--- PASS: TestIntegrationRollbackLogsBackInToARealBroker" || {
+            echo "::error::the broker rollback test did not pass"; exit 1; }
 
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -n 1

@@ -260,6 +260,13 @@ func (c *CredentialStore) Restore(snapshot []byte) error {
 	return nil
 }
 
+// Check reports whether a snapshot can be restored with this store's secret,
+// without restoring it.
+func (c *CredentialStore) Check(snapshot []byte) error {
+	_, _, err := c.decode(snapshot, "the snapshot")
+	return err
+}
+
 // decode turns file bytes into credentials, in whichever of the three formats
 // they arrived. A nil map with no error means the input was empty.
 func (c *CredentialStore) decode(data []byte, name string) (map[string]map[string]string, bool, error) {
