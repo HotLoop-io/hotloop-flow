@@ -324,23 +324,26 @@ func TestPartialDeployAddsRemovesAndDisables(t *testing.T) {
 }
 
 // The no-loss claim. A source keeps sending through a node while that node is
-// replaced. Every message has to come out the far end, in order: the ones
-// queued before the swap through the old instance, the ones after through the
-// new one.
+// replaced, three times over. Every message has to come out the far end, in
+// order: the ones queued before a swap through the old instance, the ones sent
+// during it through the new one. Traffic is paced so it is genuinely in transit
+// at every deploy, not sitting in a queue that drains before the swap starts.
 func TestPartialDeployLosesNoMessagesInFlight(t *testing.T) {
 	l := newLives()
 	tr := lifeRegistry(l)
 
-	// slow holds every message for a moment, so the old instance has a real
-	// backlog when the deploy lands.
-	var slowBuilds atomic.Int64
+	// mid takes a moment per message, so the old instance has a small backlog
+	// when a deploy lands and goes idle between messages as well. It also takes
+	// a while to close, the way a broker connection does, which is the window a
+	// message sent mid-swap could fall into.
+	var midBuilds atomic.Int64
 	tr.add("slow", 1, 1, func(string) node.Node {
-		slowBuilds.Add(1)
-		return nodeFunc(func(_ context.Context, m *engine.Msg, out node.Emitter) error {
-			time.Sleep(50 * time.Microsecond)
+		midBuilds.Add(1)
+		return slowCloser{nodeFunc(func(_ context.Context, m *engine.Msg, out node.Emitter) error {
+			time.Sleep(20 * time.Microsecond)
 			out.Send(0, m)
 			return nil
-		})
+		})}
 	})
 
 	flow := func(label string) string {
@@ -356,36 +359,58 @@ func TestPartialDeployLosesNoMessagesInFlight(t *testing.T) {
 	rt.Start(context.Background())
 	defer rt.Stop(context.Background())
 
-	const n = 2000
+	const n = 3000
+	deployAt := map[int]string{600: "v2", 1400: "v3", 2200: "v4"}
+	deployNow := make(chan string)
+	deployed := make(chan struct{})
 	sent := make(chan struct{})
 	go func() {
 		defer close(sent)
 		for i := range n {
+			if label, ok := deployAt[i]; ok {
+				deployNow <- label
+			}
 			rt.Inject("src", engine.NewMsgWithPayload(float64(i)))
+			time.Sleep(30 * time.Microsecond)
 		}
 	}()
 
-	// Deploy three times while the messages are moving.
-	for i := 2; i <= 4; i++ {
-		time.Sleep(2 * time.Millisecond)
-		update(t, rt, flow(fmt.Sprintf("v%d", i)), UpdateOptions{})
+	sink := l.latest(t, "sink")
+	for range deployAt {
+		label := <-deployNow
+		// Let the sender start again before the deploy runs, so messages are
+		// moving the whole time it does.
+		go func() {
+			update(t, rt, flow(label), UpdateOptions{})
+			deployed <- struct{}{}
+		}()
+		<-deployed
+		if c := sink.count(); c == 0 || c >= n {
+			t.Fatalf("the deploy did not land mid-stream: %d of %d messages through", c, n)
+		}
 	}
 	<-sent
 
-	sink := l.latest(t, "sink")
 	waitFor(t, "every message at the sink", func() bool { return sink.count() == n })
-	got := sink.payloads()
-	for i, p := range got {
+	for i, p := range sink.payloads() {
 		if p != float64(i) {
 			t.Fatalf("message %d arrived as %v: order was not kept across the deploys", i, p)
 		}
 	}
-	if slowBuilds.Load() != 4 {
-		t.Errorf("mid was built %d times, want 4", slowBuilds.Load())
+	if midBuilds.Load() != 4 {
+		t.Errorf("mid was built %d times, want 4", midBuilds.Load())
 	}
 	if d := events.byTopic(TopicDropped); len(d) > 0 {
 		t.Errorf("%d messages were dropped during the deploys: %v", len(d), d[0].Data)
 	}
+}
+
+// slowCloser takes 20ms to close.
+type slowCloser struct{ nodeFunc }
+
+func (slowCloser) Close(context.Context, bool) error {
+	time.Sleep(20 * time.Millisecond)
+	return nil
 }
 
 // A message that reaches a deleted node mid-deploy has nowhere to go. It is
