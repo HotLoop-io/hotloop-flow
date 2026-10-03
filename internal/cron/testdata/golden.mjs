@@ -84,9 +84,11 @@ if (process.argv[2]) {
   const { CronosExpression } = require('cronosjs')
   const starts = [...generic]
   for (const t of zones[process.argv[2]]) {
-    // An hour and a half before a change, and five minutes before it.
+    // An hour and a half before a change, five minutes before it, and half an
+    // hour after it, which in autumn is inside the hour that repeats.
     starts.push(new Date(Date.parse(t) - 90 * 60000).toISOString())
     starts.push(new Date(Date.parse(t) - 5 * 60000).toISOString())
+    starts.push(new Date(Date.parse(t) + 30 * 60000).toISOString())
   }
   const cases = []
   for (const expr of exprs) {
