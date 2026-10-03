@@ -1,3 +1,8 @@
+// newTLSConfig is ported from Node-RED 5.0.7 @node-red/nodes
+// core/network/05-tls.js (the TLSConfig constructor and addTLSOptions)
+// (Apache-2.0), Copyright JS Foundation and other contributors,
+// http://js.foundation. Modified. The rest of this file is HotLoop Flow's own.
+
 package nodes
 
 import (

@@ -1,3 +1,8 @@
+// knownMediaTypes is ported from Node-RED 5.0.7 @node-red/nodes
+// core/network/10-mqtt.js (Apache-2.0), Copyright JS Foundation and other
+// contributors, http://js.foundation. Modified. The rest of this file is
+// HotLoop Flow's own.
+
 package nodes
 
 import (

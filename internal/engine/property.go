@@ -1,3 +1,8 @@
+// ParsePath is ported from Node-RED's @node-red/util lib/util.js
+// (normalisePropertyExpression; checked against 5.0.7) (Apache-2.0), Copyright
+// JS Foundation and other contributors, http://js.foundation. Modified. The
+// rest of this file is HotLoop Flow's own.
+
 // Package engine implements the HotLoop Flow flow runtime: messages, the flow graph,
 // the scheduler and message dispatch.
 //

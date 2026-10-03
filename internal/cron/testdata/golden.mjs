@@ -1,3 +1,7 @@
+// The crontabs marked "From cronosjs's own tests" are taken from the test
+// suite of cronosjs 1.7.1 (ISC), Copyright (c) 2019, James Clarke. The ISC
+// permission notice is in NOTICE.
+
 // Writes cronosjs-1.7.1.json: what cronosjs 1.7.1, the scheduler inside Node-RED
 // 5's Inject node, says comes next for a set of crontabs, start times and zones.
 // The Go port has to give the same answer for every one of them.

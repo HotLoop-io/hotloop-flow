@@ -1,3 +1,7 @@
+// Ported from Node-RED 5.0.7 @node-red/nodes core/sequence/19-batch.js
+// (Apache-2.0), Copyright JS Foundation and other contributors,
+// http://js.foundation. Modified.
+
 package nodes
 
 import (

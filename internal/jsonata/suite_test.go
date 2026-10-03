@@ -1,3 +1,6 @@
+// runCase is ported from jsonata-js 2.2.2 test/run-test-suite.js (MIT),
+// Copyright IBM Corp. 2016. Modified. The MIT notice is in NOTICE.
+
 package jsonata
 
 import (

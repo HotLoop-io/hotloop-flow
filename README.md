@@ -1435,6 +1435,7 @@ touches it. Run it at work, ship it in a product, fork it. That's what Apache
 
 ## Licence
 
-Apache 2.0. HotLoop Flow is an independent implementation and contains no
-Node-RED source. See [NOTICE](NOTICE) for the attribution, and
+Apache 2.0. A few pieces are ported from Node-RED and from the libraries its
+nodes use, because an imported flow has to get exactly the answer it got before.
+[NOTICE](NOTICE) lists every one of them, with its copyright and license. See
 [docs/compatibility.md](docs/compatibility.md) for every deliberate divergence.

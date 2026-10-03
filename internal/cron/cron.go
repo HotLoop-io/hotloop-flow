@@ -1,3 +1,7 @@
+// Ported from cronosjs 1.7.1 src/parser.ts, src/expression.ts and src/date.ts
+// (ISC), Copyright (c) 2019, James Clarke. Modified. The ISC permission notice
+// is in NOTICE.
+
 // Package cron reads the crontab an Inject node carries and says when it fires
 // next.
 //

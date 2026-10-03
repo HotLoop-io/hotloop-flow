@@ -1,3 +1,9 @@
+// The blocks marked verbatim below are ported from Node-RED @node-red/nodes
+// core/network/21-httpin.js and 21-httprequest.js (Apache-2.0), Copyright JS
+// Foundation and other contributors, http://js.foundation. They read the same
+// in 4.1.15 and 5.0.7. Modified: reformatted, the form gets an error listener,
+// and the upload error handler sets a header instead of calling node.warn.
+
 // Writes node-red-4-http.json: what the libraries inside Node-RED 4's HTTP nodes
 // do with cookies and multipart bodies, for a set of inputs. The Go port has to
 // give the same answer for every one of them.

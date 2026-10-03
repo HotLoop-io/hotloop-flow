@@ -1,3 +1,7 @@
+// Ported from Node-RED 5.0.7 @node-red/nodes core/sequence/17-split.js
+// (JoinNode and its reduce functions) (Apache-2.0), Copyright JS Foundation and
+// other contributors, http://js.foundation. Modified.
+
 package nodes
 
 import (
