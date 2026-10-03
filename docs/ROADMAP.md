@@ -82,7 +82,7 @@ a line stops, and today the answer is three `.bak` files.
       with who and from where. The deployment log is its first table
 - [x] MFA (TOTP), free and on for anyone who wants it. Nothing about signing in
       safely gets gated, ever
-- [ ] Login rate limiting and lockout, sessions that survive a restart, and no
+- [x] Login rate limiting and lockout, sessions that survive a restart, and no
       more tokens in query strings where access logs can keep them
 
 ### Phase 2: flow tests

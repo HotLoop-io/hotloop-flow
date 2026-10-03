@@ -160,3 +160,49 @@ func TestResettingSomebodyElsesSecondFactor(t *testing.T) {
 		t.Fatalf("the reset in the trail: %+v", resets)
 	}
 }
+
+// A right password with wrong codes counts against the sign-in limits like a
+// wrong password does: otherwise a stolen password is a free run at a
+// one-in-a-million guess, a million times.
+func TestWrongCodesCountTowardsTheLockout(t *testing.T) {
+	app, _ := newApp(t)
+	e := serveApp(t, app, map[string][]string{"dana": {"*"}})
+	now := time.Date(2026, 10, 3, 6, 0, 0, 0, time.UTC)
+	e.mfa.SetClock(func() time.Time { return now })
+	dana := e.login(t, "dana")
+	_, out := e.call(t, "POST", "/auth/mfa/setup", dana, nil)
+	var setup struct{ Secret string }
+	_ = json.Unmarshal(out, &setup)
+	c, _ := mfa.Code(setup.Secret, mfa.Step(now))
+	if code, _ := e.call(t, "POST", "/auth/mfa/confirm", dana, []byte(`{"code":"`+c+`"}`)); code != http.StatusOK {
+		t.Fatal("confirm failed")
+	}
+	now = now.Add(mfa.Period)
+	good, _ := mfa.Code(setup.Secret, mfa.Step(now))
+	wrong := "000000"
+	if good == wrong {
+		wrong = "111111"
+	}
+	for i := 0; i < 5; i++ {
+		if status, _, _ := e.signIn(t, "dana", e2ePassword, wrong); status != http.StatusUnauthorized {
+			t.Fatalf("wrong code %d: %d", i+1, status)
+		}
+	}
+	if status, tok, _ := e.signIn(t, "dana", e2ePassword, good); status != http.StatusTooManyRequests || tok != "" {
+		t.Fatalf("the right code after five wrong ones: %d", status)
+	}
+	// Asking for the code, with no code sent, is not a failure.
+	app2, _ := newApp(t)
+	e2 := serveApp(t, app2, map[string][]string{"sam": {"*"}})
+	e2.mfa.SetClock(func() time.Time { return now })
+	sam := e2.login(t, "sam")
+	_, out = e2.call(t, "POST", "/auth/mfa/setup", sam, nil)
+	_ = json.Unmarshal(out, &setup)
+	c, _ = mfa.Code(setup.Secret, mfa.Step(now))
+	e2.call(t, "POST", "/auth/mfa/confirm", sam, []byte(`{"code":"`+c+`"}`))
+	for i := 0; i < 6; i++ {
+		if status, _, body := e2.signIn(t, "sam", e2ePassword, ""); status != http.StatusUnauthorized || body["mfa"] != "required" {
+			t.Fatalf("password only, attempt %d: %d %v", i+1, status, body)
+		}
+	}
+}

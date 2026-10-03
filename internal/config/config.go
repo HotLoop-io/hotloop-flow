@@ -116,6 +116,21 @@ type Auth struct {
 
 	// SessionTTL bounds how long an issued token is good for.
 	SessionTTL time.Duration `yaml:"sessionTTL"`
+
+	// Lockout slows password guessing down to something useless.
+	Lockout Lockout `yaml:"lockout"`
+}
+
+// Lockout bounds failed sign-ins.
+type Lockout struct {
+	// Attempts is how many failures one account may have from one address
+	// within Window before it is locked out from that address for Duration.
+	Attempts int `yaml:"attempts"`
+	// PerAddress is how many failures one address may have within Window,
+	// whatever account it tried, before the address is locked out.
+	PerAddress int           `yaml:"perAddress"`
+	Window     time.Duration `yaml:"window"`
+	Duration   time.Duration `yaml:"duration"`
 }
 
 // Token is an API token. Only its hash is configured, like a password, so the
@@ -302,6 +317,10 @@ func Default() Config {
 		Auth: Auth{
 			Enabled:    true,
 			SessionTTL: 7 * 24 * time.Hour,
+			Lockout: Lockout{
+				Attempts: 5, PerAddress: 20,
+				Window: 15 * time.Minute, Duration: 15 * time.Minute,
+			},
 		},
 		Runtime: Runtime{
 			InboxCapacity: 1024,
@@ -474,6 +493,10 @@ func (c *Config) Validate() error {
 	if c.Data.BackupGenerations < 0 {
 		return fmt.Errorf("data.backupGenerations must not be negative")
 	}
+	if lo := c.Auth.Lockout; lo.Attempts < 1 || lo.PerAddress < lo.Attempts || lo.Window <= 0 || lo.Duration <= 0 {
+		return fmt.Errorf("auth.lockout needs attempts of at least 1, perAddress of at least attempts, " +
+			"and a window and duration above zero; there is no setting that turns it off")
+	}
 	if c.Audit.MaxBytes < 4096 {
 		return fmt.Errorf("audit.maxBytes must be at least 4096; a trail that rotates on every line is no trail")
 	}
@@ -594,6 +617,9 @@ func (c *Config) CredentialsPath() string {
 
 // AuditPath is where the audit trail lives.
 func (c *Config) AuditPath() string { return filepath.Join(c.Data.Dir, "audit.log") }
+
+// SessionsPath is where sign-in sessions are kept across restarts.
+func (c *Config) SessionsPath() string { return filepath.Join(c.Data.Dir, "sessions.json") }
 
 // HistoryDir is where the deployment log lives.
 func (c *Config) HistoryDir() string { return filepath.Join(c.Data.Dir, "deployments") }
