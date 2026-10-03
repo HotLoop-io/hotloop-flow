@@ -303,3 +303,43 @@ func TestPartialDeployKeepsLinksResolvable(t *testing.T) {
 		t.Fatal("a link out naming a deleted link in raised no error")
 	}
 }
+
+// The save-before-stop promise holds for a partial deploy too: a deploy that
+// cannot write the flow file must not touch a single running node.
+func TestPartialDeployThatCannotSaveTouchesNothing(t *testing.T) {
+	app := newTestApp(t)
+	hub := app.hub.(*eventHub)
+	flow := func(name string) string {
+		return `[{"id":"t1","type":"tab","label":"Line 3"},` +
+			`{"id":"d1","type":"debug","z":"t1","x":1,"y":1,"name":"` + name + `","complete":"payload","wires":[]}]`
+	}
+	deployJSON(t, app, flow("first"), runtime.DeployNodes)
+
+	path := app.cfg.FlowPath()
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	second, err := engine.ParseFlows([]byte(flow("second")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.deploy(context.Background(), api.DeployRequest{Flows: second, Mode: runtime.DeployNodes}); err == nil {
+		t.Fatal("a partial deploy succeeded with the flow file replaced by a directory")
+	}
+
+	if err := app.currentRuntime().Inject("d1", engine.NewMsgWithPayload("still here")); err != nil {
+		t.Fatal(err)
+	}
+	fromFirst := func(e runtime.Event) bool {
+		return e.Topic == runtime.TopicDebug && e.Data["id"] == "d1" && e.Data["name"] == "first"
+	}
+	fromSecond := func(e runtime.Event) bool {
+		return e.Topic == runtime.TopicDebug && e.Data["name"] == "second"
+	}
+	if !hub.next(t, 5*time.Second, fromFirst, fromSecond) {
+		t.Fatal("the running debug node did not answer after a deploy that failed to save")
+	}
+}
