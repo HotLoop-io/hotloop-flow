@@ -60,7 +60,7 @@ Every deploy is a record: who, when, a note, the exact bytes, and what changed.
 "What changed, who changed it, put it back" is the first thing anybody asks after
 a line stops, and today the answer is three `.bak` files.
 
-- [ ] Deployment log: every deploy is an immutable record with the user, the
+- [x] Deployment log: every deploy is an immutable record with the user, the
       time, an optional note, the flow bytes and the encrypted credentials as
       they stood. Retention is a setting. `GET /deployments`
 - [ ] Semantic diff: node by node, property by property. Added, removed,

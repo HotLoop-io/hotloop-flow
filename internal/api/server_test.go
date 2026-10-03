@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
-	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
@@ -59,8 +58,8 @@ func newTestServer(t *testing.T, users map[string][]string, mutate ...func(*conf
 		Flows:    fs,
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Runtime:  nilRuntime,
-		Deploy: func(_ context.Context, f *engine.Flows, rev string) (DeployResult, error) {
-			newRev, err := fs.Save(f, rev)
+		Deploy: func(_ context.Context, req DeployRequest) (DeployResult, error) {
+			newRev, err := fs.Save(req.Flows, req.ExpectedRev)
 			return DeployResult{Rev: newRev}, err
 		},
 		Version: "test",

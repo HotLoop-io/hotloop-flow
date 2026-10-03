@@ -12,8 +12,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/HotLoop-io/hotloop-flow/internal/api"
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/history"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
@@ -66,14 +68,33 @@ func newApp(t *testing.T) (*application, *recorder) {
 	cfg.Data.Dir = t.TempDir()
 	cfg.Runtime.CloseTimeout = 2 * time.Second
 
+	return newAppIn(t, cfg)
+}
+
+// newAppIn builds the application on an existing configuration, which is how
+// a test restarts the process against the same data directory.
+func newAppIn(t *testing.T, cfg config.Config) (*application, *recorder) {
+	t.Helper()
 	flowStore := store.NewFlowStore(cfg.FlowPath())
 	flowStore.SetBackupGenerations(cfg.Data.BackupGenerations)
+	if _, err := flowStore.Load(); err != nil {
+		t.Fatal(err)
+	}
+	creds := store.NewCredentialStore(cfg.CredentialsPath(), "a-secret-long-enough-to-count")
+	if err := creds.Load(); err != nil {
+		t.Fatal(err)
+	}
+	deployments, warnings, err := history.Open(cfg.HistoryDir(), cfg.History.Retain)
+	if err != nil || len(warnings) > 0 {
+		t.Fatalf("opening the deployment log: %v %v", err, warnings)
+	}
 	rec := &recorder{}
 	app := &application{
 		cfg:       cfg,
 		log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 		flowStore: flowStore,
-		creds:     store.NewCredentialStore(cfg.CredentialsPath(), "a-secret-long-enough-to-count"),
+		creds:     creds,
+		history:   deployments,
 		registry:  node.Default,
 		contexts:  store.NewScopedContexts(),
 		hub:       rec,
@@ -121,7 +142,7 @@ func TestDeployThatCannotSaveLeavesTheOldFlowsRunning(t *testing.T) {
 	app, rec := newApp(t)
 	ctx := context.Background()
 
-	if _, err := app.deploy(ctx, parse(t, debugFlow("first")), ""); err != nil {
+	if _, err := app.deploy(ctx, api.DeployRequest{Flows: parse(t, debugFlow("first"))}); err != nil {
 		t.Fatalf("first deploy: %v", err)
 	}
 	before := app.currentRuntime()
@@ -136,7 +157,7 @@ func TestDeployThatCannotSaveLeavesTheOldFlowsRunning(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := app.deploy(ctx, parse(t, debugFlow("second")), "")
+	_, err := app.deploy(ctx, api.DeployRequest{Flows: parse(t, debugFlow("second"))})
 	if err == nil {
 		t.Fatal("deploy succeeded with the flow file replaced by a directory")
 	}
@@ -159,17 +180,17 @@ func TestStaleDeployLeavesTheOldFlowsRunning(t *testing.T) {
 	app, _ := newApp(t)
 	ctx := context.Background()
 
-	res, err := app.deploy(ctx, parse(t, debugFlow("first")), "")
+	res, err := app.deploy(ctx, api.DeployRequest{Flows: parse(t, debugFlow("first"))})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.deploy(ctx, parse(t, debugFlow("second")), res.Rev); err != nil {
+	if _, err := app.deploy(ctx, api.DeployRequest{Flows: parse(t, debugFlow("second")), ExpectedRev: res.Rev}); err != nil {
 		t.Fatal(err)
 	}
 	running := app.currentRuntime()
 
 	// A third editor still holding the first revision.
-	_, err = app.deploy(ctx, parse(t, debugFlow("third")), res.Rev)
+	_, err = app.deploy(ctx, api.DeployRequest{Flows: parse(t, debugFlow("third")), ExpectedRev: res.Rev})
 	if !errors.Is(err, store.ErrRevisionConflict) {
 		t.Fatalf("err = %v, want ErrRevisionConflict", err)
 	}
@@ -191,11 +212,11 @@ func TestDeployReplacesTheFileAndTheRuntime(t *testing.T) {
 	app, rec := newApp(t)
 	ctx := context.Background()
 
-	if _, err := app.deploy(ctx, parse(t, debugFlow("first")), ""); err != nil {
+	if _, err := app.deploy(ctx, api.DeployRequest{Flows: parse(t, debugFlow("first"))}); err != nil {
 		t.Fatal(err)
 	}
 	old := app.currentRuntime()
-	res, err := app.deploy(ctx, parse(t, debugFlow("second")), "")
+	res, err := app.deploy(ctx, api.DeployRequest{Flows: parse(t, debugFlow("second"))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +253,7 @@ func TestDeploySplitsCredentialsOutOfTheFlowFile(t *testing.T) {
 	// credentials are handled exactly like a broker's.
 	doc := `[{"id":"t1","type":"tab","label":"Line 3"},` +
 		`{"id":"b1","type":"vendor-broker","credentials":{"user":"line3","password":"hunter2-but-longer"}}]`
-	if _, err := app.deploy(context.Background(), parse(t, doc), ""); err != nil {
+	if _, err := app.deploy(context.Background(), api.DeployRequest{Flows: parse(t, doc)}); err != nil {
 		t.Fatal(err)
 	}
 	flowFile, err := os.ReadFile(app.cfg.FlowPath())

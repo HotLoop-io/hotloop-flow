@@ -22,9 +22,9 @@ What that means on a bad night:
   on the box.
 - **The flow file is something you can review.** It loads and saves byte for
   byte, an edit to one property is a one-line diff, and every save is atomic with
-  three backups behind it. Put it in git and a pull request on a flow reads like
-  one. Deploy history, a node-by-node diff and one-click rollback are being built
-  on top of that right now, and they're first on the [roadmap](docs/ROADMAP.md).
+  three backups behind it. Every deploy is [a record](#every-deploy-is-a-record):
+  who, when, why and the exact bytes. A node-by-node diff and one-click rollback
+  are being built on top of it right now, first on the [roadmap](docs/ROADMAP.md).
 - **It won't start unlocked.** No authentication is a startup error, not a
   default. The `exec` node ships switched off, the file nodes are fenced into the
   data directory, and credentials are AES-256-GCM under an Argon2id key.
@@ -163,6 +163,49 @@ Know what that buys you today, though. The only store is in memory. Context
 survives a deploy and is gone on every restart, so a counter or a latch in a flow
 resets when the pod moves. A SQLite store that survives restarts is Phase 4 of
 the [roadmap](docs/ROADMAP.md).
+
+---
+
+## Every deploy is a record
+
+"What changed, who changed it, put it back" is the first thing anybody asks
+after a line stops. Three `.bak` files answer none of it. They don't know who,
+they roll over after three saves, and the one you need is always the fourth.
+
+So every deploy writes an immutable record under `data/deployments/`: who
+deployed it (from their token, never from anything the client claims), from
+where, when, the note they left, the revision it replaced, the flow file byte
+for byte, and the credentials as they stood after the deploy, encrypted exactly
+like the credential file. Records are append-only. The log keeps the last 100 by
+default (`history.retain`, and 0 keeps all of them), and it never prunes the
+newest, because the newest is what's running.
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:1880/deployments
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:1880/deployments/42/flows > flows-42.json
+```
+
+A note goes in with the deploy, as `"note"` in the wrapped document
+(`{"rev": ..., "flows": [...], "note": "..."}`) or as a
+`HotLoop-Flow-Deployment-Note` header. The document form is there because a
+browser won't put anything outside Latin-1 in a header, and people write notes
+in their own language.
+
+Two things it does that you'd only miss once they bit you:
+
+- **A hand edit gets caught.** If the flow file on disk isn't the last thing the
+  log recorded, because somebody edited it while the process was down, startup
+  records it as a `baseline` entry that says so. Same on the first start with a
+  flow file already there. Otherwise a hand edit quietly becomes a past nobody
+  wrote down.
+- **A log that can't be written doesn't stop the line.** The flow file is
+  already saved by then, so refusing the deploy would leave the disk and the
+  running flows disagreeing until the next restart. The deploy goes ahead, and
+  the response and the log both say, in words, that this one has no record.
+
+The API never hands out the credentials in a record, encrypted or not. They're
+kept for one job, putting them back, and a history endpoint isn't a way to walk
+off with them.
 
 ---
 
@@ -397,12 +440,15 @@ server:
   maxRequestBytes: 33554432 # 32 MiB, bounds a flow deploy
 
 data:
-  dir: /data                # the PVC. Flows and credentials live here. Context doesn't, it's memory only
+  dir: /data                # the PVC. Flows, credentials and the deployment log live here. Context doesn't, it's memory only
   flowFile: flows.json
   credentialsFile: credentials.json
   credentialSecret: ""      # empty means plaintext, which is refused by default
   allowPlaintextCredentials: false
   backupGenerations: 3
+
+history:
+  retain: 100               # deployment records kept under data.dir/deployments; 0 keeps all
 
 auth:
   enabled: true             # off refuses to start unless HOTLOOP_FLOW_INSECURE=true
@@ -490,7 +536,10 @@ timeouts.
 | `GET /settings` | `settings.read` | |
 | `GET /nodes` | `nodes.read` | The registry, which is what drives the editor's palette and its dialogs. |
 | `GET /flows` | `flows.read` | |
-| `POST /flows` | `flows.write` | Deploy. |
+| `POST /flows` | `flows.write` | Deploy. Takes an optional note for the deployment log. |
+| `GET /deployments` | `flows.read` | The deployment log, newest first, without the payloads. `?limit=N` bounds it. |
+| `GET /deployments/{seq}` | `flows.read` | One record, with its flows parsed. Never its credentials. |
+| `GET /deployments/{seq}/flows` | `flows.read` | That deployment's flow file, byte for byte. |
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
 | `GET /comms` | `status.read` | The editor's status and debug websocket. |

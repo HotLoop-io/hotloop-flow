@@ -217,28 +217,69 @@ func (c *CredentialStore) Load() error {
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", c.path, err)
 	}
-	if len(data) == 0 {
+	creds, legacy, err := c.decode(data, c.path)
+	if err != nil {
+		return err
+	}
+	if creds == nil {
 		return nil
+	}
+	c.mu.Lock()
+	c.creds = creds
+	c.legacy = legacy
+	c.mu.Unlock()
+	return nil
+}
+
+// Snapshot returns the credentials exactly as Save would write them: the
+// encrypted envelope when a secret is set, plaintext JSON when the operator has
+// opted into that. The deployment log keeps one per deploy, so a rollback can
+// bring a deleted node back with its password, and it never holds anything the
+// credential file itself wouldn't.
+func (c *CredentialStore) Snapshot() ([]byte, error) {
+	return c.encode()
+}
+
+// Restore replaces every credential with the ones in a snapshot. It is all or
+// nothing: a snapshot that fails to decrypt leaves the store as it was.
+//
+// A snapshot taken under a different secret fails here with ErrBadSecret, which
+// is the right answer. Rolling back to credentials nobody can read would look
+// like a successful rollback until the first broker refused the login.
+func (c *CredentialStore) Restore(snapshot []byte) error {
+	creds, _, err := c.decode(snapshot, "the snapshot")
+	if err != nil {
+		return err
+	}
+	if creds == nil {
+		creds = map[string]map[string]string{}
+	}
+	c.mu.Lock()
+	c.creds = creds
+	c.mu.Unlock()
+	return nil
+}
+
+// decode turns file bytes into credentials, in whichever of the three formats
+// they arrived. A nil map with no error means the input was empty.
+func (c *CredentialStore) decode(data []byte, name string) (map[string]map[string]string, bool, error) {
+	if len(data) == 0 {
+		return nil, false, nil
 	}
 
 	var envelope map[string]any
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return fmt.Errorf("parsing %s: %w", c.path, err)
+		return nil, false, fmt.Errorf("parsing %s: %w", name, err)
 	}
 
 	// Node-RED's format is a single "$" key holding hex IV + base64 ciphertext.
 	if legacy, ok := envelope["$"].(string); ok {
 		plain, err := c.decryptLegacy(legacy)
 		if err != nil {
-			return err
+			return nil, false, err
 		}
-		if err := c.ingest(plain); err != nil {
-			return err
-		}
-		c.mu.Lock()
-		c.legacy = true
-		c.mu.Unlock()
-		return nil
+		creds, err := parsePlain(plain)
+		return creds, true, err
 	}
 
 	// An encrypted file carries its format as a string. A plaintext file cannot,
@@ -246,22 +287,24 @@ func (c *CredentialStore) Load() error {
 	// that happens to be called "format" is not mistaken for one.
 	if format, ok := envelope["format"].(string); ok {
 		if format != credFormatGCM {
-			return unknownFormatError(c.path, format)
+			return nil, false, unknownFormatError(name, format)
 		}
 		var f credFile
 		if err := json.Unmarshal(data, &f); err != nil {
-			return fmt.Errorf("parsing %s: %w", c.path, err)
+			return nil, false, fmt.Errorf("parsing %s: %w", name, err)
 		}
 		plain, err := c.decryptGCM(f)
 		if err != nil {
-			return err
+			return nil, false, err
 		}
-		return c.ingest(plain)
+		creds, err := parsePlain(plain)
+		return creds, false, err
 	}
 
 	// An unencrypted file. Node-RED writes one when no credentialSecret is set,
-	// and so do we — but it is worth being explicit that this is what happened.
-	return c.ingest(data)
+	// and so do we, but it is worth being explicit that this is what happened.
+	creds, err := parsePlain(data)
+	return creds, false, err
 }
 
 // unknownFormatError says what is wrong with the file and what to do about it.
@@ -273,45 +316,25 @@ func unknownFormatError(path, format string) error {
 	return fmt.Errorf("%w: %s is in format %q, which this version does not recognize", ErrUnknownFormat, path, format)
 }
 
-func (c *CredentialStore) ingest(plain []byte) error {
+func parsePlain(plain []byte) (map[string]map[string]string, error) {
 	var raw map[string]map[string]string
 	if err := json.Unmarshal(plain, &raw); err != nil {
-		return fmt.Errorf("parsing decrypted credentials: %w", err)
+		return nil, fmt.Errorf("parsing decrypted credentials: %w", err)
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	if raw == nil {
 		raw = map[string]map[string]string{}
 	}
-	c.creds = raw
-	return nil
+	return raw, nil
 }
 
 // Save encrypts and writes the credential file.
 func (c *CredentialStore) Save() error {
-	c.mu.RLock()
-	plain, err := json.Marshal(c.creds)
-	c.mu.RUnlock()
+	out, err := c.encode()
 	if err != nil {
-		return fmt.Errorf("serialising credentials: %w", err)
+		return err
 	}
-
 	if err := os.MkdirAll(filepath.Dir(c.path), 0o700); err != nil {
 		return fmt.Errorf("creating %s: %w", filepath.Dir(c.path), err)
-	}
-
-	var out []byte
-	if !c.HasSecret() {
-		out = plain
-	} else {
-		env, err := c.encryptGCM(plain)
-		if err != nil {
-			return err
-		}
-		out, err = json.MarshalIndent(env, "", "  ")
-		if err != nil {
-			return fmt.Errorf("serialising credential envelope: %w", err)
-		}
 	}
 
 	// 0600 without exception: this file is the whole point of the exercise.
@@ -323,6 +346,28 @@ func (c *CredentialStore) Save() error {
 	c.legacy = false
 	c.mu.Unlock()
 	return nil
+}
+
+// encode renders the current credentials in the on-disk format.
+func (c *CredentialStore) encode() ([]byte, error) {
+	c.mu.RLock()
+	plain, err := json.Marshal(c.creds)
+	c.mu.RUnlock()
+	if err != nil {
+		return nil, fmt.Errorf("serialising credentials: %w", err)
+	}
+	if !c.HasSecret() {
+		return plain, nil
+	}
+	env, err := c.encryptGCM(plain)
+	if err != nil {
+		return nil, err
+	}
+	out, err := json.MarshalIndent(env, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("serialising credential envelope: %w", err)
+	}
+	return out, nil
 }
 
 func (c *CredentialStore) encryptGCM(plain []byte) (credFile, error) {
