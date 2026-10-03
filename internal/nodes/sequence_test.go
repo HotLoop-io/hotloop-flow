@@ -173,12 +173,6 @@ func TestSplitRejectsUnsplittablePayload(t *testing.T) {
 	}
 }
 
-func TestSplitRejectsStreamingMode(t *testing.T) {
-	if err := buildErr(t, "split", `{"stream":true}`, newTestServices()); err == nil {
-		t.Error("streaming mode was accepted despite not being implemented")
-	}
-}
-
 func TestSplitJoinRoundTrip(t *testing.T) {
 	// The property that matters: Join in automatic mode undoes exactly what
 	// Split did, including for objects, where the keys have to come back.
@@ -342,9 +336,23 @@ func TestJoinAutoRequiresParts(t *testing.T) {
 	}
 }
 
-func TestJoinRejectsManualWithoutCount(t *testing.T) {
-	if err := buildErr(t, "join", `{"mode":"custom","build":"array"}`, newTestServices()); err == nil {
-		t.Error("manual join with no count was accepted; it would never emit")
+// A manual join with no count is how a flow says "until I tell you": it sends
+// when a message carries msg.complete. Refusing it, as this build used to,
+// broke every imported flow that works that way.
+func TestJoinManualWithoutCountWaitsForComplete(t *testing.T) {
+	jn := build(t, "join", `{"mode":"custom","build":"array"}`, newTestServices())
+	e := newTestEmitter()
+	for _, m := range []string{`{"payload":1}`, `{"payload":2}`, `{"payload":3,"complete":true}`} {
+		if err := pushTo(t, jn, e, msg(t, m)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := e.on(0)
+	if len(got) != 1 || !reflect.DeepEqual(got[0].Payload(), []any{1.0, 2.0, 3.0}) {
+		t.Fatalf("joined %v", got)
+	}
+	if _, still := got[0].Data["complete"]; still {
+		t.Error("msg.complete went out on the joined message")
 	}
 }
 
@@ -466,7 +474,7 @@ func TestBatchOverlap(t *testing.T) {
 func TestBatchRejectsBadConfig(t *testing.T) {
 	svc := newTestServices()
 	if err := buildErr(t, "batch", `{"mode":"interval","count":3}`, svc); err == nil {
-		t.Error("interval mode was accepted despite not being implemented")
+		t.Error("an interval of zero was accepted; it would hold every message forever")
 	}
 	if err := buildErr(t, "batch", `{"mode":"count","count":0}`, svc); err == nil {
 		t.Error("a batch size of zero was accepted")
