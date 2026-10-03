@@ -285,6 +285,33 @@ already removed is a 404. And a record whose credentials can't be decrypted with
 the current credential secret is a 422, because flows that can't log in to
 anything are a rollback that only looks like it worked.
 
+### In the editor
+
+**Deploy doesn't deploy.** It opens a review: the engine's diff against what's
+running, drawn on the canvas and listed in words, with a box for the note. Green
+is added, amber is changed, blue is only moved, and red ghosts sit where removed
+nodes and wires used to be. A tab with anything changed on it gets a dot. The
+second Deploy button is the one that deploys, and the note goes in the log. Edit
+anything while the review is open and it closes, because a review of something
+you've since changed is a lie about what you're about to push.
+
+**The history panel** lists every deployment with who, when and the note.
+*Changes* opens that deployment on a read-only canvas with what it changed drawn
+on it, over the top of your working copy, which stays exactly as you left it.
+*Roll back* asks why, warns you if you're about to throw away unsaved edits, and
+deploys it.
+
+**A deploy conflict shows what the other person did.** It used to be a browser
+`confirm()` asking you to overwrite theirs or lose yours without saying what
+theirs was. Now it says who deployed, when, their note, and their change node by
+node, then lets you load theirs, overwrite with yours, or keep editing.
+
+All of it is clicked through in a real browser on every pull request, against the
+real binary with the editor embedded. Playwright is a dev dependency of
+`web/e2e` only and never reaches the bundle. Writing those tests found that
+double-clicking a node to open its dialog had never worked in Chromium, which is
+about as embarrassing as a bug gets in a visual editor. Fixed.
+
 ---
 
 ## Security posture
@@ -484,7 +511,7 @@ gets code execution to pivot with.
 
 Then open <http://localhost:1880>. Drop a `flows.json` into the data directory
 and restart, or just build the flow in the editor. The editor is vanilla
-TypeScript and native SVG, 35.3 kB of JS and 16.9 kB of CSS minified.
+TypeScript and native SVG, 44.7 kB of JS and 19.7 kB of CSS minified.
 
 ### The commands
 
@@ -974,10 +1001,11 @@ What CI does check, beyond vet and the race detector, is the set of things I hav
 personally been burned by: that `go mod tidy` is committed, that the sandbox
 tests genuinely ran rather than silently skipping, that the editor bundle is
 actually inside the binary, that the binary is under 40MiB and statically linked,
-a 60-second fuzz run against the property expression parser, and a 30-second
-one proving a flow never differs from itself. Every one of
-those exists because the alternative was a green checkmark over something broken,
-and a green checkmark is worse than a red one.
+a 60-second fuzz run against the property expression parser, a 30-second one
+proving a flow never differs from itself, a rollback against a real broker that
+refuses anonymous clients, and the editor clicked through in a real browser.
+Every one of those exists because the alternative was a green checkmark over
+something broken, and a green checkmark is worse than a red one.
 
 Images and charts publish from **version tags only**, and both workflows refuse
 anything else twice: once in the trigger, once in a step that re-checks the ref.

@@ -9,8 +9,12 @@ import {
   type FlowEntry, type Graph, type Point,
   NODE_HEIGHT, NODE_WIDTH, PORT_RADIUS, inputPort, outputPort, snap, wirePath,
 } from './graph';
+import { type DiffOverlay, wireKey } from './diff';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** Two presses on one node within this long are a double-click. */
+const DOUBLE_PRESS_MS = 400;
 
 /** What the canvas is currently doing. */
 type Mode =
@@ -25,6 +29,15 @@ export interface CanvasCallbacks {
   onSelectionChange: () => void;
 }
 
+export interface CanvasOptions {
+  /**
+   * Looking, not editing: pan, zoom and select, and nothing that changes the
+   * graph. For a deployment from the history, where an edit would be an edit
+   * to the past.
+   */
+  readOnly?: boolean;
+}
+
 export class Canvas {
   private svg: SVGSVGElement;
   private layers: {
@@ -37,12 +50,17 @@ export class Canvas {
   private view = { x: 0, y: 0, w: 1200, h: 800 };
   private mode: Mode = { kind: 'idle' };
   private statuses = new Map<string, { fill: string; shape: string; text: string }>();
+  private diff: DiffOverlay | null = null;
+  private readonly readOnly: boolean;
+  private lastPress = { id: '', at: 0 };
 
   constructor(
     private readonly host: HTMLElement,
     private readonly graph: Graph,
     private readonly cb: CanvasCallbacks,
+    opts: CanvasOptions = {},
   ) {
+    this.readOnly = opts.readOnly ?? false;
     this.svg = document.createElementNS(SVG_NS, 'svg');
     this.svg.setAttribute('class', 'canvas');
     this.svg.setAttribute('tabindex', '0');
@@ -108,6 +126,7 @@ export class Canvas {
     this.svg.addEventListener('contextmenu', (e) => e.preventDefault());
     this.svg.addEventListener('keydown', (e) => this.onKeyDown(e));
 
+
     // Dropping a node from the palette.
     this.svg.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -115,6 +134,7 @@ export class Canvas {
     });
     this.svg.addEventListener('drop', (e) => {
       e.preventDefault();
+      if (this.readOnly) return;
       const type = e.dataTransfer?.getData('text/hotloop-flow-node');
       if (!type) return;
       const at = this.toCanvas(e.clientX, e.clientY);
@@ -138,7 +158,7 @@ export class Canvas {
     }
     if (e.button !== 0) return;
 
-    const portEl = target.closest('[data-port]');
+    const portEl = this.readOnly ? null : target.closest('[data-port]');
     if (portEl) {
       const fromId = portEl.getAttribute('data-node')!;
       const port = Number(portEl.getAttribute('data-port'));
@@ -150,6 +170,21 @@ export class Canvas {
     const nodeEl = target.closest('[data-node-id]');
     if (nodeEl) {
       const id = nodeEl.getAttribute('data-node-id')!;
+
+      // Two presses on the same node in quick succession open its dialog.
+      // Counted here, not read off the browser: pointerup's detail is 0 by
+      // spec and Chromium follows it, and the dblclick event never reaches a
+      // node because every press re-renders the node it landed on. So the
+      // editor's double-click did nothing in Chromium until the browser tests
+      // went looking.
+      const now = performance.now();
+      const entry = this.graph.byId(id);
+      if (!this.readOnly && entry && this.lastPress.id === id && now - this.lastPress.at < DOUBLE_PRESS_MS) {
+        this.lastPress = { id: '', at: 0 };
+        this.cb.onEditNode(entry);
+        return;
+      }
+      this.lastPress = { id, at: now };
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
       if (additive) {
         if (this.graph.selection.has(id)) this.graph.selection.delete(id);
@@ -158,6 +193,10 @@ export class Canvas {
         this.graph.selection = new Set([id]);
       }
       this.cb.onSelectionChange();
+      if (this.readOnly) {
+        this.render();
+        return;
+      }
 
       // Checkpoint before the drag rather than after, so moving several nodes
       // is one undo step.
@@ -226,11 +265,6 @@ export class Canvas {
         // Snap once at the end rather than continuously, so dragging feels
         // smooth instead of stepping.
         this.graph.snapSelection();
-      } else {
-        // A click that did not move is a request to edit.
-        const id = [...this.graph.selection][0];
-        const entry = id ? this.graph.byId(id) : undefined;
-        if (entry && e.detail >= 2) this.cb.onEditNode(entry);
       }
     } else if (this.mode.kind === 'marquee') {
       this.selectWithin(this.mode.start, at, e.shiftKey);
@@ -281,6 +315,7 @@ export class Canvas {
 
   private onKeyDown(e: KeyboardEvent): void {
     const mod = e.ctrlKey || e.metaKey;
+    if (this.readOnly) return;
 
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault();
@@ -322,6 +357,16 @@ export class Canvas {
     if (status === null) this.statuses.delete(nodeId);
     else this.statuses.set(nodeId, status);
     this.renderNodes();
+  }
+
+  /**
+   * Draws a semantic diff over the graph: outlines on what was added, changed
+   * or moved, ghosts where removed nodes used to be, and the wires that came
+   * and went. Null clears it.
+   */
+  setDiff(overlay: DiffOverlay | null): void {
+    this.diff = overlay;
+    this.render();
   }
 
   render(): void {
@@ -393,7 +438,8 @@ export class Canvas {
       const total = this.graph.outputCount(from);
       const path = document.createElementNS(SVG_NS, 'path');
       path.setAttribute('d', wirePath(outputPort(from, port, total), inputPort(to)));
-      path.setAttribute('class', 'wire');
+      const added = this.diff?.addedWires.has(wireKey(from.id, port, to.id));
+      path.setAttribute('class', added ? 'wire diff-added' : 'wire');
       path.setAttribute('data-from', from.id);
       path.setAttribute('data-port', String(port));
       path.setAttribute('data-to', to.id);
@@ -401,10 +447,23 @@ export class Canvas {
       // Clicking a wire deletes it. Alt-click rather than plain click, so
       // brushing past one while selecting does not silently break a flow.
       path.addEventListener('click', (e) => {
-        if (!e.altKey) return;
+        if (!e.altKey || this.readOnly) return;
         e.stopPropagation();
         this.graph.disconnect(from.id, port, to.id);
       });
+      frag.append(path);
+    }
+
+    // Wires that are gone, drawn faintly between where their ends are now, or
+    // were, for an end that went with them.
+    for (const { from, port, to } of this.diff?.removedWires ?? []) {
+      if (from.z !== this.graph.activeTab || to.z !== this.graph.activeTab) continue;
+      const total = Math.max(from.wires?.length ?? 0, port + 1);
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', wirePath(outputPort(from, port, total), inputPort(to)));
+      path.setAttribute('class', 'wire diff-removed');
+      path.setAttribute('data-from', from.id);
+      path.setAttribute('data-to', to.id);
       frag.append(path);
     }
     this.layers.wires.append(frag);
@@ -414,6 +473,14 @@ export class Canvas {
     this.layers.nodes.replaceChildren();
     const frag = document.createDocumentFragment();
 
+    for (const ghost of this.diff?.ghosts ?? []) {
+      if (ghost.z !== this.graph.activeTab || ghost.x === undefined) continue;
+      const g = this.renderNode(ghost);
+      g.classList.add('diff-removed');
+      g.removeAttribute('data-node-id');
+      g.setAttribute('data-ghost-id', ghost.id);
+      frag.append(g);
+    }
     for (const n of this.graph.nodesOn(this.graph.activeTab)) {
       frag.append(this.renderNode(n));
     }
@@ -427,7 +494,8 @@ export class Canvas {
     const selected = this.graph.selection.has(n.id);
 
     const g = document.createElementNS(SVG_NS, 'g');
-    g.setAttribute('class', `node${selected ? ' selected' : ''}${n.d ? ' disabled' : ''}`);
+    const mark = this.diff?.marks.get(n.id);
+    g.setAttribute('class', `node${selected ? ' selected' : ''}${n.d ? ' disabled' : ''}${mark ? ` diff-${mark}` : ''}`);
     g.setAttribute('data-node-id', n.id);
 
     const body = document.createElementNS(SVG_NS, 'rect');
