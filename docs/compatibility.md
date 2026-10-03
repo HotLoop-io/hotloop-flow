@@ -60,7 +60,7 @@ stopped with D1012 instead of stalling the node's whole queue.
 | `comment` | full | — |
 | `complete` | full | Watches only the nodes explicitly selected in its scope, as Node-RED does. |
 | `debug` | full | — |
-| `inject` | partial | Interval and startup injection are supported. Cron-style scheduling ("at a specific time", "on these days") is not implemented in this build. Ignored properties: `crontab`. |
+| `inject` | partial | Interval, startup and cron-scheduled injection are supported. The crontab is read the way Node-RED's own scheduler, cronosjs, reads it, in the process's local time, including what it does with the hour that goes missing or repeats when the clocks change. A manual inject from the admin API always sends the configured properties: Node-RED's inject-with-these-values (msg.__user_inject_props__) is not implemented. |
 | `junction` | full | — |
 | `link in` | full | — |
 | `link out` | partial | Link Out in "send to" mode is supported. "Return to calling Link Call" requires the Link Call node, which is not implemented in this build. |

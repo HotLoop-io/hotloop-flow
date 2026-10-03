@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/HotLoop-io/hotloop-flow/internal/cron"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/jsonata"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
@@ -53,6 +54,15 @@ type injectNode struct {
 	once     bool
 	topic    string
 
+	// schedule is the crontab, when the node has one and no repeat interval.
+	// Node-RED gives a repeat interval priority over a crontab, and so does
+	// this.
+	schedule *cron.Expr
+	// clock and recheck are the wall clock the schedule reads and how often it
+	// reads it again: time.Now and scheduleRecheck, swapped only by tests.
+	clock   func() time.Time
+	recheck time.Duration
+
 	svc node.Services
 	mu  sync.Mutex
 }
@@ -75,15 +85,22 @@ func registerInject() {
 		HasButton:    true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
-			Notes: "Interval and startup injection are supported. Cron-style scheduling " +
-				"(\"at a specific time\", \"on these days\") is not implemented in this build.",
-			UnsupportedProps: []string{"crontab"},
+			Notes: "Interval, startup and cron-scheduled injection are supported. The crontab " +
+				"is read the way Node-RED's own scheduler, cronosjs, reads it, in the process's " +
+				"local time, including what it does with the hour that goes missing or repeats " +
+				"when the clocks change. A manual inject from the admin API always sends the " +
+				"configured properties: Node-RED's inject-with-these-values " +
+				"(msg.__user_inject_props__) is not implemented.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
 			{Name: "topic", Kind: node.PropString, Label: "Topic"},
 			{Name: "repeat", Kind: node.PropString, Label: "Repeat (seconds)",
 				Help: "Emit every N seconds. Leave empty to inject only manually or at startup."},
+			{Name: "crontab", Kind: node.PropString, Label: "Cron schedule",
+				Placeholder: "30 06 * * 1-5",
+				Help: "Inject on a schedule instead of an interval: minute hour day month weekday, " +
+					"with an optional leading seconds field. Ignored when Repeat is set."},
 			{Name: "once", Kind: node.PropBool, Label: "Inject once at start"},
 			{Name: "onceDelay", Kind: node.PropString, Label: "Startup delay (seconds)", Default: "0.1"},
 			{Name: "props", Kind: node.PropList, Label: "Properties", Fields: []node.Prop{
@@ -98,9 +115,11 @@ func registerInject() {
 
 func newInject(def *node.Definition) (node.Node, error) {
 	n := &injectNode{
-		svc:   def.Services,
-		topic: def.Node.PropString("topic", ""),
-		once:  def.Node.PropBool("once", false),
+		clock:   time.Now,
+		recheck: scheduleRecheck,
+		svc:     def.Services,
+		topic:   def.Node.PropString("topic", ""),
+		once:    def.Node.PropBool("once", false),
 	}
 
 	if s := strings.TrimSpace(def.Node.PropString("repeat", "")); s != "" {
@@ -112,6 +131,13 @@ func newInject(def *node.Definition) (node.Node, error) {
 			return nil, fmt.Errorf("repeat must be greater than zero, got %v", secs)
 		}
 		n.repeat = time.Duration(secs * float64(time.Second))
+	}
+	if spec := strings.TrimSpace(def.Node.PropString("crontab", "")); spec != "" && n.repeat == 0 {
+		expr, err := cron.Parse(spec)
+		if err != nil {
+			return nil, err
+		}
+		n.schedule = expr
 	}
 
 	// Node-RED defaults the startup delay to 0.1s so that downstream nodes have
@@ -196,20 +222,30 @@ func (n *injectNode) emit(out node.Emitter) error {
 }
 
 func (n *injectNode) Start(ctx context.Context, out node.Emitter) error {
-	if n.once {
-		go func() {
-			select {
-			case <-time.After(n.onceThen):
-			case <-ctx.Done():
-				return
-			}
-			if err := n.emit(out); err != nil {
-				out.Error(err, nil)
-			}
-		}()
+	if !n.once {
+		n.startRepeating(ctx, out)
+		return nil
 	}
+	go func() {
+		select {
+		case <-time.After(n.onceThen):
+		case <-ctx.Done():
+			return
+		}
+		if err := n.emit(out); err != nil {
+			out.Error(err, nil)
+		}
+		// The interval or the schedule starts after the startup injection, not
+		// alongside it, the order Node-RED's own Inject node uses.
+		n.startRepeating(ctx, out)
+	}()
+	return nil
+}
 
-	if n.repeat > 0 {
+// startRepeating starts whichever of the interval or the crontab the node has.
+func (n *injectNode) startRepeating(ctx context.Context, out node.Emitter) {
+	switch {
+	case n.repeat > 0:
 		go func() {
 			t := time.NewTicker(n.repeat)
 			defer t.Stop()
@@ -224,8 +260,46 @@ func (n *injectNode) Start(ctx context.Context, out node.Emitter) error {
 				}
 			}
 		}()
+	case n.schedule != nil:
+		go n.runSchedule(ctx, out)
 	}
-	return nil
+}
+
+// scheduleRecheck is the longest the schedule sleeps before looking at the
+// clock again.
+//
+// A timer measures elapsed time, and a schedule is about the time on the wall.
+// They drift apart whenever the clock is set, and an edge box with no
+// battery-backed clock is set every boot, when NTP finally answers, sometimes
+// by hours. Sleeping a minute at a time means a schedule computed against the
+// wrong clock is corrected within a minute instead of firing hours late.
+const scheduleRecheck = time.Minute
+
+func (n *injectNode) runSchedule(ctx context.Context, out node.Emitter) {
+	for {
+		next, ok := n.schedule.Next(n.clock(), time.Local)
+		if !ok {
+			out.Status(node.Status{Fill: "grey", Shape: "ring", Text: "schedule has ended"})
+			out.Log(node.LogWarn, "crontab %q has no more dates to fire on", n.schedule.String())
+			return
+		}
+		for {
+			wait := next.Sub(n.clock())
+			if wait <= 0 {
+				break
+			}
+			t := time.NewTimer(min(wait, n.recheck))
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return
+			case <-t.C:
+			}
+		}
+		if err := n.emit(out); err != nil {
+			out.Error(err, nil)
+		}
+	}
 }
 
 // parseSeconds reads a duration expressed in seconds, which is how Node-RED
