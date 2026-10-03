@@ -31,6 +31,9 @@ func nilRuntime() *runtime.Runtime { return nil }
 type testServer struct {
 	*httptest.Server
 	flows *store.FlowStore
+
+	// modes records the deployment type every deploy was handed.
+	modes []runtime.DeployMode
 }
 
 func newTestServer(t *testing.T, users map[string][]string, mutate ...func(*config.Config)) *testServer {
@@ -52,6 +55,7 @@ func newTestServer(t *testing.T, users map[string][]string, mutate ...func(*conf
 	if _, err := fs.Load(); err != nil {
 		t.Fatal(err)
 	}
+	ts := &testServer{flows: fs}
 	s := New(Deps{
 		Config:   cfg,
 		Registry: node.Default,
@@ -59,14 +63,15 @@ func newTestServer(t *testing.T, users map[string][]string, mutate ...func(*conf
 		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Runtime:  nilRuntime,
 		Deploy: func(_ context.Context, req DeployRequest) (DeployResult, error) {
+			ts.modes = append(ts.modes, req.Mode)
 			newRev, err := fs.Save(req.Flows, req.ExpectedRev)
-			return DeployResult{Rev: newRev}, err
+			return DeployResult{Rev: newRev, Update: runtime.UpdateResult{Mode: req.Mode}}, err
 		},
 		Version: "test",
 	})
-	srv := httptest.NewServer(s.Handler())
-	t.Cleanup(srv.Close)
-	return &testServer{Server: srv, flows: fs}
+	ts.Server = httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Server.Close)
+	return ts
 }
 
 func (ts *testServer) do(t *testing.T, method, path, token string, body []byte, hdr ...string) (*http.Response, []byte) {

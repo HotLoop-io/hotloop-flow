@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
@@ -47,32 +48,23 @@ const (
 type Runtime struct {
 	reg *node.Registry
 
-	// flows is the graph that runs: the parsed flow file with every subflow
-	// instance replaced by a copy of its template. For a flow set with no
-	// subflows it is the parsed file itself.
-	flows *engine.Flows
-
-	// expansion carries what instantiating the subflows produced besides the
-	// graph — the environment chain per node, and which scope contains which
-	// instance.
-	expansion *engine.Expansion
-
 	opts Options
 
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// runners holds every started flow node, keyed by node id. Written once
-	// during Start and read-only afterwards, so delivery needs no lock.
-	runners map[string]*runner
+	// cur is the graph that is running now. Every reader loads it once and
+	// works from that snapshot; a deploy builds a new one and swaps it in, so
+	// delivery and error routing never take a lock and never see a graph that
+	// is half rebuilt.
+	cur atomic.Pointer[graph]
 
-	// configs holds started configuration-node instances.
-	configs map[string]node.Node
-
-	// Routing tables, resolved at start.
-	catches   []*handler
-	statuses  []*handler
-	completes []*completeHandler
+	// configs holds started configuration-node instances. It lives outside the
+	// graph snapshot because it fills in while a graph is being built: a
+	// config node's factory, and every flow node's, may look up a config node
+	// built a moment earlier.
+	configsMu sync.RWMutex
+	configs   map[string]node.Node
 
 	contexts *store.ScopedContexts
 
@@ -117,41 +109,80 @@ type completeHandler struct {
 	scope map[string]bool
 }
 
+// graph is one immutable snapshot of what is running: the flow set, the runners
+// built from it, and the routing tables resolved against those runners.
+type graph struct {
+	// flows is the graph that runs: the parsed flow file with every subflow
+	// instance replaced by a copy of its template. For a flow set with no
+	// subflows it is the parsed file itself.
+	flows *engine.Flows
+
+	// expansion carries what instantiating the subflows produced besides the
+	// graph — the environment chain per node, and which scope contains which
+	// instance.
+	expansion *engine.Expansion
+
+	// runners holds every started flow node, keyed by node id. Never written
+	// once the snapshot is published, so delivery needs no lock.
+	runners map[string]*runner
+
+	// Routing tables, resolved against runners.
+	catches   []*handler
+	statuses  []*handler
+	completes []*completeHandler
+
+	// failures are the nodes that are configured to run and are not running,
+	// with the reason. Kept with the graph rather than handed out once,
+	// because a partial deploy leaves a broken node it did not touch exactly
+	// as broken as it was, and the deploy response has to say so rather than
+	// reporting a clean deploy over a node that still is not there.
+	failures map[string]StartError
+}
+
 // New builds a runtime for a parsed flow set. Nothing starts until Start.
 func New(reg *node.Registry, flows *engine.Flows, opts Options) *Runtime {
+	rt := &Runtime{
+		reg:      reg,
+		opts:     opts.withDefaults(),
+		configs:  map[string]node.Node{},
+		contexts: store.NewScopedContexts(),
+		events:   make(chan Event, 1024),
+	}
 	// Subflows are instantiated here rather than at start, so a caller can read
 	// the warnings before anything runs and so Start has one kind of graph to
 	// walk instead of two.
-	expansion := engine.ExpandSubflows(flows)
+	rt.cur.Store(newGraph(engine.ExpandSubflows(flows)))
+	return rt
+}
 
-	return &Runtime{
-		reg:       reg,
-		flows:     expansion.Flows,
-		expansion: expansion,
-		opts:      opts.withDefaults(),
+func newGraph(ex *engine.Expansion) *graph {
+	return &graph{
+		flows:     ex.Flows,
+		expansion: ex,
 		runners:   map[string]*runner{},
-		configs:   map[string]node.Node{},
-		contexts:  store.NewScopedContexts(),
-		events:    make(chan Event, 1024),
+		failures:  map[string]StartError{},
 	}
 }
+
+// graph returns the snapshot that is running now.
+func (rt *Runtime) graph() *graph { return rt.cur.Load() }
 
 // Warnings returns anything the subflow expansion found worth saying: a template
 // declaring more inputs than a v1 wire can address, an output wired from a node
 // that is not in the template, a subflow that contains itself.
 func (rt *Runtime) Warnings() []string {
-	if rt.expansion == nil {
-		return nil
+	if g := rt.graph(); g.expansion != nil {
+		return g.expansion.Warnings
 	}
-	return rt.expansion.Warnings
+	return nil
 }
 
 // Instances returns the scope id of every expanded subflow instance.
 func (rt *Runtime) Instances() []string {
-	if rt.expansion == nil {
-		return nil
+	if g := rt.graph(); g.expansion != nil {
+		return g.expansion.Instances
 	}
-	return rt.expansion.Instances
+	return nil
 }
 
 // SetContexts replaces the context stores, which is how a persistent store is
@@ -201,69 +232,51 @@ func (rt *Runtime) Start(ctx context.Context) []StartError {
 	rt.started = true
 	rt.ctx, rt.cancel = context.WithCancel(ctx)
 
-	var failures []StartError
+	ng := newGraph(rt.graph().expansion)
 
 	// Configuration nodes first: a flow node's factory may look one up.
-	for _, id := range rt.flows.ConfigNodes() {
-		n := rt.flows.Nodes[id]
-		if n.Disabled {
-			continue
-		}
-		inst, err := rt.build(n)
-		if err != nil {
-			failures = append(failures, StartError{NodeID: id, Type: n.Type, Err: err})
-			continue
-		}
-		rt.configs[id] = inst
-	}
+	failures := rt.startConfigs(ng, ng.flows.ConfigNodes())
 
 	// Flow nodes. Build every runner before wiring any, because a wire may
 	// point forward in file order.
-	for _, id := range rt.flows.Order {
-		n, ok := rt.flows.Nodes[id]
-		if !ok || n.IsConfig || n.Disabled || !rt.scopeEnabled(n.Z) {
+	var fresh []*runner
+	for _, id := range ng.flows.Order {
+		n, ok := ng.flows.Nodes[id]
+		if !ok || !ng.shouldRun(n) {
 			continue
 		}
-		inst, err := rt.build(n)
-		if err != nil {
-			failures = append(failures, StartError{NodeID: id, Type: n.Type, Err: err})
+		r := rt.newRunner(ng, n)
+		if f, ok := rt.attachNew(ng, r, n); !ok {
+			failures = append(failures, f)
 			continue
 		}
-		rt.runners[id] = rt.newRunner(n, inst)
+		ng.runners[id] = r
+		fresh = append(fresh, r)
 	}
 
-	rt.wire()
-	rt.buildRoutingTables()
+	rt.wire(ng)
+	rt.buildRoutingTables(ng)
+	rt.cur.Store(ng)
 
-	// Launch the goroutines, then start the message sources. Sources start last
-	// so that no message can be produced before every consumer is draining.
-	for _, r := range rt.runners {
-		go r.loop(rt.ctx)
-	}
-	for _, id := range rt.sortedRunnerIDs() {
-		r := rt.runners[id]
-		s, ok := r.node.(node.Starter)
-		if !ok {
-			continue
-		}
-		if err := s.Start(rt.ctx, r.emitter()); err != nil {
-			failures = append(failures, StartError{NodeID: r.id, Type: r.typ, Err: err})
-		}
-	}
+	return append(failures, rt.launch(ng, fresh)...)
+}
 
-	return failures
+// shouldRun reports whether a flow node is meant to be running in this graph:
+// not a config node, not disabled, and not on a disabled tab.
+func (g *graph) shouldRun(n *engine.Node) bool {
+	return !n.IsConfig && !n.Disabled && g.scopeEnabled(n.Z)
 }
 
 // scopeEnabled reports whether a node's containing tab is enabled. A node on a
 // disabled tab is built into no runner at all.
-func (rt *Runtime) scopeEnabled(z string) bool {
+func (g *graph) scopeEnabled(z string) bool {
 	if z == "" {
 		return true
 	}
-	if tab, ok := rt.flows.Tabs[z]; ok {
+	if tab, ok := g.flows.Tabs[z]; ok {
 		return !tab.Disabled
 	}
-	if _, ok := rt.flows.Subflows[z]; ok {
+	if _, ok := g.flows.Subflows[z]; ok {
 		return true
 	}
 	// A node whose scope is missing entirely was already reported as a parse
@@ -271,8 +284,68 @@ func (rt *Runtime) scopeEnabled(z string) bool {
 	return false
 }
 
+// startConfigs builds the listed configuration nodes, in the order given, and
+// makes each resolvable as soon as it exists so the next one can find it.
+func (rt *Runtime) startConfigs(g *graph, ids []string) []StartError {
+	var failures []StartError
+	for _, id := range ids {
+		n := g.flows.Nodes[id]
+		if n.Disabled {
+			continue
+		}
+		inst, err := rt.build(g, n)
+		if err != nil {
+			f := StartError{NodeID: id, Type: n.Type, Err: err}
+			g.failures[id] = f
+			failures = append(failures, f)
+			continue
+		}
+		rt.configsMu.Lock()
+		rt.configs[id] = inst
+		rt.configsMu.Unlock()
+	}
+	return failures
+}
+
+// attachNew builds the node instance for a runner. On failure the failure is
+// recorded against the graph and returned.
+func (rt *Runtime) attachNew(g *graph, r *runner, n *engine.Node) (StartError, bool) {
+	inst, err := rt.build(g, n)
+	if err != nil {
+		f := StartError{NodeID: n.ID, Type: n.Type, Err: err}
+		g.failures[n.ID] = f
+		return f, false
+	}
+	r.attach(inst)
+	return StartError{}, true
+}
+
+// launch starts the goroutines of freshly built runners, then their message
+// sources. Sources start last so that no message can be produced before every
+// consumer is draining. The graph must already be published, because a source
+// may send the moment it starts.
+func (rt *Runtime) launch(g *graph, fresh []*runner) []StartError {
+	for _, r := range fresh {
+		go r.loop()
+	}
+	sort.Slice(fresh, func(i, j int) bool { return fresh[i].id < fresh[j].id })
+	var failures []StartError
+	for _, r := range fresh {
+		s, ok := r.node.(node.Starter)
+		if !ok {
+			continue
+		}
+		if err := s.Start(r.ctx, r.emitter()); err != nil {
+			f := StartError{NodeID: r.id, Type: r.typ, Err: err}
+			g.failures[r.id] = f
+			failures = append(failures, f)
+		}
+	}
+	return failures
+}
+
 // build instantiates one node from its flow entry.
-func (rt *Runtime) build(n *engine.Node) (node.Node, error) {
+func (rt *Runtime) build(g *graph, n *engine.Node) (node.Node, error) {
 	if tmpl, isInstance := n.SubflowTemplateID(); isInstance {
 		// The instance node survives expansion as the entry point: upstream
 		// wires still target its id, and its own wires now point at the copies
@@ -282,7 +355,7 @@ func (rt *Runtime) build(n *engine.Node) (node.Node, error) {
 		// edit dialog, no palette entry and no compatibility story. Registering
 		// it would put scheduler plumbing in the editor's palette and in the
 		// compatibility matrix.
-		if _, ok := rt.flows.Subflows[tmpl]; !ok {
+		if _, ok := g.flows.Subflows[tmpl]; !ok {
 			return nil, fmt.Errorf("subflow template %q is missing", tmpl)
 		}
 		return subflowEntry{}, nil
@@ -298,7 +371,9 @@ func (rt *Runtime) build(n *engine.Node) (node.Node, error) {
 	})
 }
 
-func (rt *Runtime) newRunner(n *engine.Node, inst node.Node) *runner {
+// newRunner makes the runner for a flow node, without its node instance yet:
+// see attach.
+func (rt *Runtime) newRunner(g *graph, n *engine.Node) *runner {
 	capacity := rt.opts.InboxCapacity
 	overflow := rt.opts.Overflow
 
@@ -312,65 +387,65 @@ func (rt *Runtime) newRunner(n *engine.Node, inst node.Node) *runner {
 		overflow = p
 	}
 
-	r := &runner{
+	ctx, cancel := context.WithCancel(rt.ctx)
+	return &runner{
 		id:       n.ID,
 		typ:      n.Type,
 		name:     n.Name,
 		z:        n.Z,
-		groups:   rt.flows.GroupChain(n.ID),
-		node:     inst,
+		groups:   g.flows.GroupChain(n.ID),
 		rt:       rt,
+		ctx:      ctx,
+		cancel:   cancel,
 		inbox:    make(chan delivery, capacity),
 		capacity: capacity,
 		overflow: overflow,
 		quit:     make(chan struct{}),
 		done:     make(chan struct{}),
 	}
-	if d, ok := inst.(node.Deferrer); ok {
-		r.deferred = d
-	}
-	return r
 }
 
 // wire resolves every node's wires from ids to runner pointers. Wires pointing
 // at a node that was not started — unknown type, disabled, failed to build — are
 // dropped here, which is why delivery itself never has to check.
-func (rt *Runtime) wire() {
-	for id, r := range rt.runners {
-		n := rt.flows.Nodes[id]
-		r.wires = make([][]*runner, len(n.Wires))
+func (rt *Runtime) wire(g *graph) {
+	for id, r := range g.runners {
+		n := g.flows.Nodes[id]
+		wires := make([][]*runner, len(n.Wires))
 		for port, targets := range n.Wires {
 			for _, tid := range targets {
-				if t, ok := rt.runners[tid]; ok {
-					r.wires[port] = append(r.wires[port], t)
+				if t, ok := g.runners[tid]; ok {
+					wires[port] = append(wires[port], t)
 				}
 			}
 		}
+		r.wires.Store(&wires)
 	}
 }
 
 // buildRoutingTables collects the Catch, Status and Complete nodes.
-func (rt *Runtime) buildRoutingTables() {
-	for _, id := range rt.sortedRunnerIDs() {
-		r := rt.runners[id]
-		n := rt.flows.Nodes[id]
+func (rt *Runtime) buildRoutingTables(g *graph) {
+	g.catches, g.statuses, g.completes = nil, nil, nil
+	for _, id := range g.sortedRunnerIDs() {
+		r := g.runners[id]
+		n := g.flows.Nodes[id]
 
 		switch r.typ {
 		case TypeCatch:
-			rt.catches = append(rt.catches, &handler{
+			g.catches = append(g.catches, &handler{
 				r:        r,
 				scope:    scopeSet(n),
 				uncaught: n.PropBool("uncaught", false),
 				group:    n.G,
 			})
 		case TypeStatus:
-			rt.statuses = append(rt.statuses, &handler{
+			g.statuses = append(g.statuses, &handler{
 				r:     r,
 				scope: scopeSet(n),
 				group: n.G,
 			})
 		case TypeComplete:
-			rt.completes = append(rt.completes, &completeHandler{r: r, scope: scopeSet(n)})
+			g.completes = append(g.completes, &completeHandler{r: r, scope: scopeSet(n)})
 		}
 	}
 }
@@ -398,13 +473,8 @@ func scopeSet(n *engine.Node) map[string]bool {
 	return set
 }
 
-func (rt *Runtime) sortedRunnerIDs() []string {
-	out := make([]string, 0, len(rt.runners))
-	for id := range rt.runners {
-		out = append(out, id)
-	}
-	sort.Strings(out)
-	return out
+func (g *graph) sortedRunnerIDs() []string {
+	return sortedKeys(g.runners)
 }
 
 // Stop shuts the runtime down: sources first so nothing new is produced, then
@@ -417,11 +487,43 @@ func (rt *Runtime) Stop(ctx context.Context) []error {
 	}
 	rt.stopped = true
 
+	// Cancel first so Starter goroutines wind down and stop producing.
+	rt.cancel()
+
+	g := rt.graph()
+	runners := make([]*runner, 0, len(g.runners))
+	for _, id := range g.sortedRunnerIDs() {
+		runners = append(runners, g.runners[id])
+	}
+	rt.configsMu.RLock()
+	configIDs := sortedKeys(rt.configs)
+	rt.configsMu.RUnlock()
+
+	errs := rt.retire(ctx, runners, configIDs, nil)
+
+	rt.eventsMu.Lock()
+	rt.eventsClosed = true
+	close(rt.events)
+	rt.eventsMu.Unlock()
+
+	return errs
+}
+
+// retire takes a set of runners and configuration nodes out of service: their
+// sources stop, the work already moving between them finishes, their
+// goroutines exit, and then their resources are released, flow nodes before
+// the configuration nodes they lean on. A full stop retires everything; a
+// partial deploy retires only what changed.
+//
+// removed marks the nodes that are gone from the flow altogether rather than
+// being replaced, which is what Close's removed argument tells a node.
+func (rt *Runtime) retire(ctx context.Context, runners []*runner, configIDs []string, removed map[string]bool) []error {
 	closeCtx, cancel := context.WithTimeout(ctx, rt.opts.CloseTimeout)
 	defer cancel()
 
-	// Cancel first so Starter goroutines wind down and stop producing.
-	rt.cancel()
+	for _, r := range runners {
+		r.cancel()
+	}
 
 	// Then let the graph go quiet before signalling anyone to exit.
 	//
@@ -431,11 +533,11 @@ func (rt *Runtime) Stop(ctx context.Context) []error {
 	// and is silently lost. Waiting for every node to be simultaneously idle is
 	// what makes "a redeploy finishes work in flight" true rather than
 	// usually-true.
-	rt.quiesce(closeCtx)
+	rt.quiesce(closeCtx, runners)
 
 	var errs []error
 	var wg sync.WaitGroup
-	for _, r := range rt.runners {
+	for _, r := range runners {
 		wg.Add(1)
 		go func(r *runner) {
 			defer wg.Done()
@@ -446,42 +548,42 @@ func (rt *Runtime) Stop(ctx context.Context) []error {
 
 	// Close nodes after their inboxes have drained, so a node still holds its
 	// resources while it finishes the work already queued for it.
-	for _, id := range rt.sortedRunnerIDs() {
-		r := rt.runners[id]
+	for _, r := range runners {
 		if c, ok := r.node.(node.Closer); ok {
-			if err := c.Close(closeCtx, false); err != nil {
+			if err := c.Close(closeCtx, removed[r.id]); err != nil {
 				errs = append(errs, StartError{NodeID: r.id, Type: r.typ, Err: err})
 			}
 		}
 	}
-	for _, id := range sortedKeys(rt.configs) {
-		if c, ok := rt.configs[id].(node.Closer); ok {
-			if err := c.Close(closeCtx, false); err != nil {
+	for _, id := range configIDs {
+		rt.configsMu.Lock()
+		inst, ok := rt.configs[id]
+		delete(rt.configs, id)
+		rt.configsMu.Unlock()
+		if !ok {
+			continue
+		}
+		if c, ok := inst.(node.Closer); ok {
+			if err := c.Close(closeCtx, removed[id]); err != nil {
 				errs = append(errs, StartError{NodeID: id, Err: err})
 			}
 		}
 	}
-
-	rt.eventsMu.Lock()
-	rt.eventsClosed = true
-	close(rt.events)
-	rt.eventsMu.Unlock()
-
 	return errs
 }
 
-// quiesce waits until every runner is simultaneously idle — nothing queued and
-// nothing inside a handler — so that messages still moving between nodes reach
-// their destination before anything shuts down.
+// quiesce waits until every listed runner is simultaneously idle — nothing
+// queued and nothing inside a handler — so that messages still moving between
+// nodes reach their destination before anything shuts down.
 //
 // A flow containing a self-sustaining cycle never goes quiet. That is what the
 // context deadline is for: shutdown proceeds anyway rather than hanging, and the
 // close timeout bounds how long a deploy can be held up by one runaway loop.
-func (rt *Runtime) quiesce(ctx context.Context) {
+func (rt *Runtime) quiesce(ctx context.Context, runners []*runner) {
 	const pollInterval = 250 * time.Microsecond
 	for {
 		allIdle := true
-		for _, r := range rt.runners {
+		for _, r := range runners {
 			if !r.idle() {
 				allIdle = false
 				break
@@ -494,6 +596,30 @@ func (rt *Runtime) quiesce(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(pollInterval):
+		}
+	}
+}
+
+// salvage empties the inbox of a runner whose goroutine has exited.
+//
+// A partial deploy replaces a node while its upstream keeps running, and a
+// sender that picked up the old wire a moment before the swap can still deliver
+// to the old runner after it has gone. Those messages belong to the runner that
+// replaced it, so they go there. A node that was deleted outright has nowhere
+// for them to go, and they are counted and announced as dropped rather than
+// left in a channel nobody will ever read.
+func (rt *Runtime) salvage(old *runner) {
+	for {
+		select {
+		case d := <-old.inbox:
+			if next, ok := rt.graph().runners[old.id]; ok && next != old && !next.exited.Load() {
+				next.enqueue(rt.ctx, d.msg, nil)
+				continue
+			}
+			old.stats.Dropped.Add(1)
+			rt.onDropped(old, d.msg, "node-stopped")
+		default:
+			return
 		}
 	}
 }
@@ -516,10 +642,11 @@ func sortedKeys[V any](m map[string]V) []string {
 // bounded by engine.ImmutableBytes, which shares rather than copies the large
 // binary payloads where it would actually hurt.
 func (rt *Runtime) deliver(from *runner, port int, msg *engine.Msg) {
-	if port < 0 || port >= len(from.wires) {
+	wp := from.wires.Load()
+	if wp == nil || port < 0 || port >= len(*wp) {
 		return
 	}
-	targets := from.wires[port]
+	targets := (*wp)[port]
 	if len(targets) == 0 {
 		return
 	}
@@ -533,7 +660,7 @@ func (rt *Runtime) deliver(from *runner, port int, msg *engine.Msg) {
 // Inject pushes a message into a node from outside the graph. Used by the
 // editor's manual Inject button and by tests.
 func (rt *Runtime) Inject(nodeID string, msg *engine.Msg) error {
-	r, ok := rt.runners[nodeID]
+	r, ok := rt.graph().runners[nodeID]
 	if !ok {
 		return fmt.Errorf("node %s is not running", nodeID)
 	}
@@ -578,13 +705,14 @@ func (rt *Runtime) raiseError(from *runner, err error, msg *engine.Msg) {
 		"error": err.Error(),
 	}})
 
-	targets := rt.selectHandlers(rt.catches, from)
+	g := rt.graph()
+	targets := rt.selectHandlers(g.catches, from)
 	if len(targets) == 0 {
 		// Nothing inside this scope handled it. If the scope is a subflow
 		// instance, the flow that called it gets the chance — otherwise an
 		// error inside a subflow is invisible to the flow using it, and the
 		// Catch node the author put on the tab never fires.
-		targets = rt.selectHandlersInCallingFlow(from)
+		targets = rt.selectHandlersInCallingFlow(g, from)
 	}
 	for _, h := range targets {
 		var out *engine.Msg
@@ -616,23 +744,23 @@ func (rt *Runtime) raiseError(from *runner, err error, msg *engine.Msg) {
 // handler is selected against the instance node rather than the failing node, so
 // the group-distance rule is applied where the subflow actually sits on the
 // calling tab.
-func (rt *Runtime) selectHandlersInCallingFlow(from *runner) []*handler {
-	if rt.expansion == nil {
+func (rt *Runtime) selectHandlersInCallingFlow(g *graph, from *runner) []*handler {
+	if g.expansion == nil {
 		return nil
 	}
 	scope := from.z
 	for range maxSubflowDepth {
-		parent, ok := rt.expansion.ParentScope[scope]
+		parent, ok := g.expansion.ParentScope[scope]
 		if !ok {
 			return nil
 		}
 		// An instance's scope id is the instance node's id, so the runner
 		// standing in for the subflow on the calling tab is found directly.
-		caller, ok := rt.runners[scope]
+		caller, ok := g.runners[scope]
 		if !ok {
 			return nil
 		}
-		if targets := rt.selectHandlers(rt.catches, caller); len(targets) > 0 {
+		if targets := rt.selectHandlers(g.catches, caller); len(targets) > 0 {
 			return targets
 		}
 		scope = parent
@@ -661,7 +789,7 @@ func (rt *Runtime) onStatus(from *runner, s node.Status) {
 		"cleared": s.Cleared(),
 	}})
 
-	for _, h := range rt.selectHandlers(rt.statuses, from) {
+	for _, h := range rt.selectHandlers(rt.graph().statuses, from) {
 		m := engine.NewMsg()
 		m.Data["status"] = map[string]any{
 			"fill": s.Fill, "shape": s.Shape, "text": s.Text,
@@ -677,7 +805,7 @@ func (rt *Runtime) onComplete(from *runner, msg *engine.Msg, err error) {
 		rt.raiseError(from, err, msg)
 		return
 	}
-	for _, h := range rt.completes {
+	for _, h := range rt.graph().completes {
 		if h.scope == nil || !h.scope[from.id] {
 			// Unlike Catch, a Complete node with no scope watches nothing.
 			// Node-RED requires an explicit selection here, and defaulting to
@@ -811,25 +939,39 @@ func (rt *Runtime) observeQueueLatency(r *runner, d time.Duration) {
 
 // Snapshots returns per-node counters for every running node, sorted by id.
 func (rt *Runtime) Snapshots() []Snapshot {
-	out := make([]Snapshot, 0, len(rt.runners))
-	for _, id := range rt.sortedRunnerIDs() {
-		out = append(out, rt.runners[id].Snapshot())
+	g := rt.graph()
+	out := make([]Snapshot, 0, len(g.runners))
+	for _, id := range g.sortedRunnerIDs() {
+		out = append(out, g.runners[id].Snapshot())
 	}
 	return out
 }
 
 // NodeStatus returns the retained badge for a node.
 func (rt *Runtime) NodeStatus(nodeID string) (node.Status, bool) {
-	r, ok := rt.runners[nodeID]
+	r, ok := rt.graph().runners[nodeID]
 	if !ok {
 		return node.Status{}, false
 	}
 	return r.currentStatus(), true
 }
 
+// RunningIDs lists every flow node and configuration node that is running,
+// sorted.
+func (rt *Runtime) RunningIDs() []string {
+	ids := rt.graph().sortedRunnerIDs()
+	rt.configsMu.RLock()
+	for id := range rt.configs {
+		ids = append(ids, id)
+	}
+	rt.configsMu.RUnlock()
+	sort.Strings(ids)
+	return ids
+}
+
 // Running reports whether a node id has a live runner.
 func (rt *Runtime) Running(nodeID string) bool {
-	_, ok := rt.runners[nodeID]
+	_, ok := rt.graph().runners[nodeID]
 	return ok
 }
 
@@ -863,6 +1005,8 @@ func (s *services) Credential(key string) (string, bool) {
 }
 
 func (s *services) ConfigNode(id string) (node.Node, bool) {
+	s.rt.configsMu.RLock()
+	defer s.rt.configsMu.RUnlock()
 	n, ok := s.rt.configs[id]
 	return n, ok
 }
@@ -876,19 +1020,20 @@ func (s *services) ConfigNode(id string) (node.Node, bool) {
 // behave differently per instance — without it, subflow properties are
 // decoration.
 func (s *services) Env(name string) (string, bool) {
-	if s.rt.expansion != nil {
-		for _, scope := range s.rt.expansion.EnvChains[s.nodeID] {
+	g := s.rt.graph()
+	if g.expansion != nil {
+		for _, scope := range g.expansion.EnvChains[s.nodeID] {
 			if v, ok := lookupEnvVar(scope.Vars, name); ok {
 				return v, true
 			}
 		}
 	}
-	if tab, ok := s.rt.flows.Tabs[s.z]; ok {
+	if tab, ok := g.flows.Tabs[s.z]; ok {
 		if v, ok := lookupEnvVar(tab.Env, name); ok {
 			return v, true
 		}
 	}
-	if sf, ok := s.rt.flows.Subflows[s.z]; ok {
+	if sf, ok := g.flows.Subflows[s.z]; ok {
 		if v, ok := lookupEnvVar(sf.Env, name); ok {
 			return v, true
 		}
@@ -917,7 +1062,7 @@ func lookupEnvVar(vars []engine.EnvVar, name string) (string, bool) {
 }
 
 func (s *services) Log(level node.LogLevel, msg string, args ...any) {
-	if r, ok := s.rt.runners[s.nodeID]; ok {
+	if r, ok := s.rt.graph().runners[s.nodeID]; ok {
 		s.rt.log(r, level, msg, args...)
 		return
 	}

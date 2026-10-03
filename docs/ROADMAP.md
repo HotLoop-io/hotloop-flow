@@ -182,7 +182,7 @@ biggest hole in a product built for plants.
 These run alongside the phases. Nobody picks a flow engine because it has them,
 but plenty of people drop one that doesn't.
 
-- [ ] Partial deploy: only changed nodes and their wires restart. Today every
+- [x] Partial deploy: only changed nodes and their wires restart. Today every
       save drops every MQTT session and every in-flight message, which teaches
       operators not to deploy during a shift
 - [ ] JSONata, proven against the published examples, since it's the most common

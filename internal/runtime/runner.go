@@ -169,13 +169,29 @@ type runner struct {
 	// than dropping it. nil for the nodes that never defer, which is most.
 	deferred node.Deferrer
 
+	// ctx is this node's own lifetime, a child of the runtime's. A partial
+	// deploy cancels it to stop one node's sources without touching the rest of
+	// the graph; a full stop cancels the parent, which takes every child with
+	// it.
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	inbox    chan delivery
 	capacity int
 	overflow OverflowPolicy
 
 	// wires[port] holds the runners a message sent on that port goes to.
-	// Resolved once at start so delivery never touches a map.
-	wires [][]*runner
+	// Resolved when the graph is built so delivery never touches a map.
+	//
+	// It is a pointer swapped atomically because a partial deploy rewires a
+	// node that is still running: the node keeps sending while its targets
+	// change underneath it, and a plain slice there is a data race.
+	wires atomic.Pointer[[][]*runner]
+
+	// exited is set once the goroutine has gone and will never read the inbox
+	// again. Anything that lands in the inbox after that is salvaged by
+	// whoever notices, rather than sitting in a channel nobody reads.
+	exited atomic.Bool
 
 	stats Stats
 
@@ -211,6 +227,17 @@ type runner struct {
 // the sender's Catch scope rather than appearing from nowhere.
 func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 	d := delivery{msg: msg, enqueued: r.rt.opts.Now()}
+
+	// A sender can hold a wire to this runner from before a partial deploy
+	// replaced it. Checked after the message is in, not before: the runner
+	// retiring between a check and the send is exactly the gap that loses a
+	// message, and checking afterwards closes it. Whichever side sees the
+	// other second does the salvage.
+	defer func() {
+		if r.exited.Load() {
+			r.rt.salvage(r)
+		}
+	}()
 
 	// Fast path: room available right now.
 	select {
@@ -285,8 +312,9 @@ func (r *runner) recordQueueDepth() {
 //
 // On quit it drains whatever is already queued before exiting, so a redeploy
 // finishes work in flight rather than silently discarding it.
-func (r *runner) loop(ctx context.Context) {
+func (r *runner) loop() {
 	defer close(r.done)
+	ctx := r.ctx
 
 	for {
 		select {
@@ -387,11 +415,31 @@ func (r *runner) currentStatus() node.Status {
 //
 // Draining rather than cancelling means messages already queued are still
 // processed, so a redeploy does not silently discard work in flight.
-func (r *runner) stop(ctx context.Context) {
+//
+// It reports whether the goroutine is gone. When it is, the runner is marked
+// exited and anything that slipped into the inbox after the last drain is
+// salvaged.
+func (r *runner) stop(ctx context.Context) bool {
 	r.quitOnce.Do(func() { close(r.quit) })
 	select {
 	case <-r.done:
+		r.exited.Store(true)
+		r.rt.salvage(r)
+		return true
 	case <-ctx.Done():
+		return false
+	}
+}
+
+// attach gives a runner its node instance. A partial deploy creates the runner
+// first, so its upstream can be pointed at it and queue into it while the
+// instance it replaces is still shutting down, and attaches the new instance
+// once the old one has let go of whatever they would otherwise fight over: a
+// listening port, an MQTT client id, an HTTP route.
+func (r *runner) attach(inst node.Node) {
+	r.node = inst
+	if d, ok := inst.(node.Deferrer); ok {
+		r.deferred = d
 	}
 }
 

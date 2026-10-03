@@ -533,6 +533,17 @@ func (lr *LinkRegistry) registerIn(id string, n *linkInNode) {
 	lr.inputs[id] = n
 }
 
+// unregisterIn removes a Link In, but only if the registry still points at that
+// instance. A partial deploy builds the replacement after the old one closes,
+// but a node must never be able to unregister the one that replaced it.
+func (lr *LinkRegistry) unregisterIn(id string, n *linkInNode) {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+	if lr.inputs[id] == n {
+		delete(lr.inputs, id)
+	}
+}
+
 func (lr *LinkRegistry) lookup(id string) (*linkInNode, bool) {
 	lr.mu.RLock()
 	defer lr.mu.RUnlock()
@@ -542,6 +553,7 @@ func (lr *LinkRegistry) lookup(id string) (*linkInNode, bool) {
 
 // linkInNode receives from Link Out nodes and emits into its own flow.
 type linkInNode struct {
+	id  string
 	mu  sync.Mutex
 	out node.Emitter
 }
@@ -565,9 +577,24 @@ func registerLinkIn() {
 }
 
 func newLinkIn(def *node.Definition) (node.Node, error) {
-	n := &linkInNode{}
+	n := &linkInNode{id: def.Node.ID}
 	Links.registerIn(def.Node.ID, n)
 	return n, nil
+}
+
+// Close takes the node out of the registry and forgets its emitter.
+//
+// A full deploy resets the whole registry, but a partial deploy closes one Link
+// In while every Link Out stays running. Without this a Link Out naming a
+// deleted Link In keeps delivering through the emitter of a runner that has
+// gone, and the message disappears with nothing said. With it, the Link Out
+// finds no target and raises the error that says which one.
+func (n *linkInNode) Close(context.Context, bool) error {
+	Links.unregisterIn(n.id, n)
+	n.mu.Lock()
+	n.out = nil
+	n.mu.Unlock()
+	return nil
 }
 
 func (n *linkInNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {

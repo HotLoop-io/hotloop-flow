@@ -493,6 +493,10 @@ func (n *tcpInNode) emit(raw []byte, s *tcpSession, out node.Emitter) {
 }
 
 func (n *tcpInNode) Close(context.Context, bool) error {
+	// Out of the reply registry first. A partial deploy closes this node while
+	// every TCP Out stays running, and a reply aimed at a session set that is
+	// shutting down should find nothing rather than a dead connection.
+	TCPReplies.unregister(n.sessions)
 	n.mu.Lock()
 	ln := n.listener
 	n.mu.Unlock()
@@ -539,6 +543,18 @@ func (r *tcpReplyRegistry) register(s *tcpSessions) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.sets = append(r.sets, s)
+}
+
+// unregister removes one session set.
+func (r *tcpReplyRegistry) unregister(s *tcpSessions) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i, set := range r.sets {
+		if set == s {
+			r.sets = append(r.sets[:i], r.sets[i+1:]...)
+			return
+		}
+	}
 }
 
 // Reset clears the registry. Called when a runtime stops, so a session set

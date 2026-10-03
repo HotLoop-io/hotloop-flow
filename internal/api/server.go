@@ -54,8 +54,9 @@ type Deps struct {
 	// handler needs the live one rather than the one that existed at startup.
 	Runtime func() *runtime.Runtime
 
-	// Deploy swaps in a new flow set. It owns stopping the old runtime,
-	// persisting, recording the deployment, and starting the new one.
+	// Deploy swaps in a new flow set. It owns persisting it, recording the
+	// deployment, and bringing the runtime in line with it: everything
+	// restarted for a full deploy, only what changed for a partial one.
 	Deploy func(ctx context.Context, req DeployRequest) (DeployResult, error)
 
 	// FlowRoutes holds the paths the flow's HTTP In nodes have claimed. It is
@@ -78,6 +79,10 @@ type DeployRequest struct {
 	Remote string
 	// Note is the deployer's sentence for whoever reads the history next.
 	Note string
+	// Mode is how much of the running graph to restart. Empty means a full
+	// deploy, which is what every caller got before partial deploys existed;
+	// the API always says, and defaults an editor's deploy to DeployNodes.
+	Mode runtime.DeployMode
 }
 
 // DeployResult reports what a deploy did.
@@ -88,6 +93,10 @@ type DeployResult struct {
 	Deployment int64                `json:"deployment,omitempty"`
 	Failures   []runtime.StartError `json:"-"`
 	Warnings   []string             `json:"warnings,omitempty"`
+
+	// Update says which nodes the deploy started, restarted and stopped, and
+	// how many it left alone.
+	Update runtime.UpdateResult `json:"-"`
 }
 
 // Server is the HTTP surface.
@@ -499,12 +508,26 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// How much to restart. Nothing said means only what changed. Node-RED's
+	// header is read as well, so a deploy script written against its admin API
+	// gets the restart it asked for rather than whatever the default is here.
+	modeHeader := r.Header.Get("HotLoop-Flow-Deployment-Type")
+	if modeHeader == "" {
+		modeHeader = r.Header.Get("Node-RED-Deployment-Type")
+	}
+	mode, err := runtime.ParseDeployMode(modeHeader)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	res, err := s.deps.Deploy(r.Context(), DeployRequest{
 		Flows:       flows,
 		ExpectedRev: expectedRev,
 		User:        requestUser(r),
 		Remote:      r.RemoteAddr,
 		Note:        note,
+		Mode:        mode,
 	})
 	switch {
 	case errors.Is(err, store.ErrRevisionConflict):
@@ -526,9 +549,14 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	out := map[string]any{
-		"rev":      res.Rev,
-		"warnings": res.Warnings,
-		"failures": failures,
+		"rev":       res.Rev,
+		"warnings":  res.Warnings,
+		"failures":  failures,
+		"type":      res.Update.Mode,
+		"started":   nonNil(res.Update.Started),
+		"restarted": nonNil(res.Update.Restarted),
+		"stopped":   nonNil(res.Update.Stopped),
+		"unchanged": res.Update.Unchanged,
 	}
 	if res.Deployment > 0 {
 		out["deployment"] = res.Deployment
@@ -712,6 +740,15 @@ func deploymentView(rec history.Record) deploymentJSON {
 		flows = json.RawMessage("[]")
 	}
 	return deploymentJSON{Record: rec.Meta(), Flows: flows, HasCredentials: len(rec.Credentials) > 0}
+}
+
+// nonNil turns a nil list into an empty one, so a client reads [] rather than
+// null for "nothing restarted".
+func nonNil(ids []string) []string {
+	if ids == nil {
+		return []string{}
+	}
+	return ids
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {

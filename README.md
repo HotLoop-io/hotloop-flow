@@ -612,6 +612,31 @@ last read and a deploy racing another editor is rejected with a 409 instead of
 silently overwriting somebody's work, which is the failure mode you only find out
 about from whoever lost their afternoon.
 
+A deploy restarts only what you changed. A node stays up when nothing it leans
+on moved: its settings, its tab, its group, its environment, its credentials,
+and every config node it names. Dragging it across the canvas or rewiring it
+doesn't count, because new wires go onto the running node. So fixing a typo in
+one function node no longer drops every MQTT session on the box, and a Delay
+node sitting on ten minutes of readings keeps sitting on them. That's the whole
+reason it exists: when every save bounces the plant, operators stop saving
+during a shift, and the fix waits for Saturday.
+
+Pick how much restarts with a `HotLoop-Flow-Deployment-Type` header. Node-RED's
+`Node-RED-Deployment-Type` works too, so a deploy script you already have gets
+the restart it asks for.
+
+| Type | What restarts |
+|---|---|
+| `nodes` (the default) | The nodes you changed, plus anything that names a config node you changed. |
+| `flows` | Every node on any flow that has a change in it. |
+| `full` | Everything. Same as restarting the process. |
+
+The response says what it did: `type`, `started`, `restarted`, `stopped` and
+`unchanged`. Nothing in flight gets lost on the way. Work already queued at a
+node being replaced finishes on the old instance, anything that shows up during
+the swap waits for the new one, and a message headed for a node you deleted is
+counted and shows up as a drop instead of vanishing.
+
 ---
 
 ## Metrics
@@ -810,10 +835,6 @@ rename, and the only change to those nodes since is what they're called.
 
 - **No industrial protocol nodes.** `scan` finds a Modbus or EtherNet/IP device
   and nothing in the palette can then talk to it. Phase 5.
-- **Partial deploy.** A deploy stops and restarts every node, not just the ones
-  you changed. Every MQTT connection drops and reconnects, and a Delay node
-  holding messages lets them go early rather than lose them. Until that closes,
-  you'll learn not to deploy mid-shift.
 - **Persistent context.** Context lives in memory only, so flow and global
   context are gone every time the process restarts, and a counter or a latch in a
   flow resets when the pod moves. SQLite, Phase 4.
