@@ -67,7 +67,7 @@ RUN test -x /out/hotloop-flow && \
 FROM gcr.io/distroless/static-debian13:nonroot
 
 LABEL org.opencontainers.image.title="HotLoop Flow" \
-      org.opencontainers.image.description="A flow engine. Node-RED's idea, one static Go binary." \
+      org.opencontainers.image.description="A visual flow engine for the plant floor. One static Go binary." \
       org.opencontainers.image.vendor="HotLoop" \
       org.opencontainers.image.source="https://github.com/HotLoop-io/hotloop-flow" \
       org.opencontainers.image.licenses="Apache-2.0"

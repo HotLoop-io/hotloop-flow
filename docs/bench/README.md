@@ -1,131 +1,19 @@
 # Benchmarks
 
-Every comparative number in this repository came out of `hotloop-flow bench`. None
-of them came off a forum.
-
-That is the whole reason this directory exists. The throughput and memory
-figures people quote for Node-RED are anecdotes — different hardware, different
-flows, different Node versions, nothing controlled — and repeating one with our
-name on it would be passing a rumour off as a measurement. So: one box, one
-session, one load generator, one flow file, both runtimes.
+Every number in this repository came out of `hotloop-flow bench` or `go test
+-bench`, and every one is printed next to the command that made it. Absolute
+numbers only. A side-by-side table moves every time the box changes, and it ends
+up describing the other thing more than this one.
 
 ## The flow
 
 [`bench-flow.json`](bench-flow.json). Five nodes: an HTTP endpoint, three
-property edits, a reply.
-
-It is deployed to **both** runtimes **unchanged**. That is not a convenience, it
-is the point — the file is Node-RED v1 and HotLoop Flow reads it as-is, so there is
-no translation step to argue about. Both answer `ok` with a 200 to the same
-request.
-
-Nothing in the flow is fast on purpose. It is the shape of a small real flow,
-which is what the comparison is supposed to be about.
+property edits, a reply. Nothing in it is fast on purpose. It's the shape of a
+small real flow, which is what a benchmark of a flow engine should be about.
 
 ## Running it
 
-Both runtimes as containers, so the comparison is between two things deployed
-the way they are actually deployed:
-
-```bash
-podman build -t localhost/hotloop-flow:bench .
-podman pull docker.io/nodered/node-red:latest
-
-mkdir -p /tmp/ewbench /tmp/nrbench
-cp docs/bench/bench-flow.json /tmp/ewbench/flows.json
-cp docs/bench/bench-flow.json /tmp/nrbench/flows.json
-
-HASH=$(podman run --rm localhost/hotloop-flow:bench hash-password -password benchbench123)
-podman run -d --name ew-bench -p 18811:1880 -v /tmp/ewbench:/data:Z \
-  -e HOTLOOP_FLOW_DATA_DIR=/data -e HOTLOOP_FLOW_ADMIN_USER=admin \
-  -e HOTLOOP_FLOW_ADMIN_PASSWORD_HASH="$HASH" \
-  -e HOTLOOP_FLOW_CREDENTIAL_SECRET=bench-secret -e HOTLOOP_FLOW_LOG_LEVEL=warn \
-  localhost/hotloop-flow:bench
-
-podman run -d --name nr-bench -p 18812:1880 -v /tmp/nrbench:/data:Z \
-  docker.io/nodered/node-red:latest
-```
-
-Then the same command against each, from the same shell:
-
-```bash
-hotloop-flow bench -mode http -target http://127.0.0.1:18811 -path /bench \
-  -duration 30s -warmup 5s -connections 8
-hotloop-flow bench -mode http -target http://127.0.0.1:18812 -path /bench \
-  -duration 30s -warmup 5s -connections 8
-```
-
-Memory is not taken from this setup any more. It used to be read with
-`podman stats`, and that turned out not to measure what the rows claimed; see
-[Memory](#memory) for why and for how it's measured now.
-
-The load generator is closed-loop: each client sends the next request when the
-last one came back. That measures what the far end can absorb, which is the
-question, and it cannot produce the misleading coordinated-omission latency an
-open-loop generator reports when the target falls behind.
-
-The five-second warm-up is discarded. Node's JIT needs it. Ours does not, and it
-costs nothing to be even-handed about it.
-
-## Results
-
-**Measured 2026-08-08.** Linux, 12 CPUs, both runtimes in rootless podman on the
-same host, `nodered/node-red:latest` (Node-RED 4.x), HotLoop Flow at `05d4235`.
-
-| | HotLoop Flow | Node-RED | |
-|---|---|---|---|
-| Image size | **25.1 MB** | 717 MB | 29× |
-| Throughput | **3,460 req/s** | 1,290 req/s | 2.7× |
-| Latency p50 | **1.03 ms** | 4.61 ms | 4.5× |
-| Latency p95 | **9.19 ms** | 14.72 ms | 1.6× |
-| Latency p99 | **16.72 ms** | 23.14 ms | 1.4× |
-| Cold start | **2.1–2.3 s** | 4.6–5.5 s | ~2.3× |
-
-Requests completed in the 30-second window: 103,800 against HotLoop Flow, 38,700
-against Node-RED.
-
-### What these numbers are not
-
-**Cold start includes container start.** Roughly two seconds of it is podman
-bringing up the container, and that is common to both — so the runtime-only
-difference is the delta, about 2.5–3 seconds, not the ratio.
-
-**Throughput here includes the HTTP stack.** That is deliberate: it is the only
-surface both runtimes present identically, and it is what somebody using the app
-experiences. It is not a measurement of either scheduler in isolation. For that:
-
-```
-hotloop-flow bench -mode engine -chain 5 -messages 200000
-```
-
-which pushes messages through a five-node chain with no I/O in the path and
-reports messages per second, nanoseconds per message, and bytes allocated per
-message. There is no equivalent for Node-RED, so **that number is never quoted
-comparatively.**
-
-**One flow shape, one payload size, one concurrency.** A flow doing real I/O —
-an MQTT publish, a database write — would be dominated by the I/O and both
-runtimes would converge. The claim being made is about the runtime's own
-overhead, not about every workload.
-
-**The p95 and p99 gaps are much smaller than the p50 gap.** Worth saying out
-loud rather than quoting the p50 alone: under saturation both runtimes queue,
-and queueing dominates the tail. The median is where the difference in
-per-request cost actually shows.
-
-## Memory
-
-This run's table used to carry two memory rows: 4.8 MB idle and 12.3 MB under
-load for HotLoop Flow, 54.6 MB and 179.6 MB for Node-RED, all read off
-`podman stats` as described above. They're gone. `podman stats` reports what the
-kernel charges to the container, not what the process has resident, and the
-4.8 MB never reproduced for anyone. Remeasured on 2026-09-28, the
-published 2.0.4 image read 2.6 MB in `podman stats` while the same process had
-14.7 MB in `VmRSS`. A figure that moves that far with the tool isn't one to
-print next to a ratio.
-
-What goes here instead is the process's own RSS, from the native binary with no
-container, using the harness's `-launch` mode:
+Build the native binary the way CI does, then let the harness launch it:
 
 ```bash
 cd web && npm ci && npm run build && cd ..
@@ -139,28 +27,79 @@ export HOTLOOP_FLOW_DATA_DIR="$W" HOTLOOP_FLOW_ADMIN_USER=admin \
 
 ./hotloop-flow bench -mode http -launch ./hotloop-flow -target http://127.0.0.1:18897 \
   -path /bench -duration 30s -warmup 5s -connections 8
+./hotloop-flow bench -mode engine -chain 5 -messages 200000
 ```
 
-`-launch` starts the binary, waits for the flow to answer, sleeps two seconds and
-reads `VmRSS` from `/proc` (idle), then samples it through the load and keeps the
-peak (under load). Linux only, since that's where `/proc` is.
+`-launch` starts the binary and times how long until the flow answers (cold
+start), sleeps two seconds and reads `VmRSS` from `/proc` (idle), then samples it
+through the load and keeps the peak (under load). Linux only, since that's where
+`/proc` is.
 
-**Measured 2026-09-28.** Linux under WSL2, 24 CPUs (Ryzen 9 7900X), built from
-`main` at `5469d34`. Three runs:
+`-target` without `-launch` drives an instance that's already running, a
+container or a pod, over HTTP. You get throughput and latency, but not RSS or
+cold start, because the harness can't see inside somebody else's process.
+
+The load generator is closed-loop: each client sends the next request when the
+last one came back. That measures what the far end can absorb, which is the
+question, and it can't produce the misleading coordinated-omission latency an
+open-loop generator reports when the target falls behind. The five-second
+warm-up is discarded.
+
+## Results
+
+**Measured 2026-10-02.** Linux under WSL2, 24 CPUs (Ryzen 9 7900X), the native
+binary built from `main` at `950076b`. Three runs of each command above.
 
 | | Run 1 | Run 2 | Run 3 |
 |---|---|---|---|
-| RSS, idle | 16.7 MiB | 16.6 MiB | 16.5 MiB |
-| RSS, peak under load | 26.6 MiB | 26.2 MiB | 27.5 MiB |
+| Cold start | 0.05 s | 0.05 s | 0.05 s |
+| RSS, idle | 16.7 MiB | 16.7 MiB | 16.4 MiB |
+| RSS, peak under load | 26.4 MiB | 26.4 MiB | 28.5 MiB |
+| HTTP throughput | 15.0k req/s | 15.3k req/s | 13.0k req/s |
+| HTTP latency p50 / p95 / p99 | 0.39 / 1.22 / 1.82 ms | 0.39 / 1.20 / 1.78 ms | 0.41 / 1.49 / 4.03 ms |
+| Engine, per message | 2.61 µs | 3.11 µs | 2.20 µs |
+| Engine, allocated per message | 3,868 bytes | 3,869 bytes | 3,868 bytes |
+| Engine, peak heap | 127.2 MiB | 130.0 MiB | 146.2 MiB |
 
-There's no Node-RED column because nobody has run Node-RED through `-launch` on
-the same box yet, and dividing this by a number that came from a different
-measurement is exactly the mistake this section exists to undo. So it's quoted
-as an absolute number, not a ratio.
+Sizes from the same session: the static linux/amd64 binary is 22,012,066 bytes,
+and the published `2.0.5` amd64 image is 25,442,861 bytes as `podman image
+inspect` reports it.
+
+### What these numbers are not
+
+**HTTP throughput includes the HTTP stack.** On purpose: it's what a client of
+your flow experiences. It is not a measurement of the scheduler. The engine mode
+is, with no I/O in the path at all.
+
+**The engine's peak heap is a burst, not a resting state.** It fires 200,000
+messages into the chain at once, and with the default `block` policy the bounded
+inboxes fill and hold the rest back. Feed it at a sensor's pace and memory sits
+where the RSS rows say.
+
+**One flow shape, one payload size, one concurrency.** A flow doing real I/O, an
+MQTT publish or a database write, is dominated by the I/O. These numbers are the
+runtime's own overhead, not a promise about every workload.
+
+**The tail moves more than the median.** Under saturation everything queues and
+queueing owns p99, which is why run 3's p99 is twice the others' while its p50
+barely moved. The median is where the cost of handling a request shows up.
+
+**WSL2 is not a Pi.** A Pi 4 and a Zero 2 W get their own numbers, measured on
+the boards, in Phase 4 of the [roadmap](../ROADMAP.md).
+
+## Memory
+
+RSS is the process's own resident memory, read from `/proc`. It is not what
+`podman stats` reports. That tool shows what the kernel charges to the
+container, and on 2026-09-28 the published 2.0.4 image read 2.6 MB there while the
+same process had 14.7 MB in `VmRSS`. A figure that moves fivefold depending on
+which tool you ask doesn't get printed, which is why this repository used to
+carry a 4.8 MB idle number and doesn't any more. Nobody could reproduce it, me
+included.
 
 ## Re-running after a change
 
-The numbers above are pinned to a commit. If the engine changes, re-run before
-editing them, and re-run **both sides in the same session** — a Node-RED figure
-carried over from an earlier run on a differently-loaded box is exactly the kind
-of number this directory exists to avoid.
+The numbers above are pinned to a commit and a box. If the engine changes,
+re-run before editing them, and replace the whole table from one session rather
+than patching one row. A number carried over from a different day on a
+differently loaded box is exactly what this directory exists to avoid.
