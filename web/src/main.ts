@@ -103,6 +103,16 @@ function renderLogin(message?: string): void {
   const submit = Object.assign(document.createElement('button'), {
     type: 'submit', textContent: 'Sign in',
   });
+  // Shown only once the runtime says this account has two-factor sign-in on.
+  const code = Object.assign(document.createElement('input'), {
+    type: 'text', id: 'c', autocomplete: 'one-time-code', inputMode: 'numeric', maxLength: 6,
+    placeholder: '123456',
+  });
+  const labelC = document.createElement('label');
+  labelC.htmlFor = 'c';
+  labelC.textContent = 'Code from your authenticator app';
+  labelC.hidden = true;
+  code.hidden = true;
 
   const title = document.createElement('h1');
   title.append('Hot');
@@ -122,7 +132,7 @@ function renderLogin(message?: string): void {
   labelP.textContent = 'Password';
 
   const form = document.createElement('form');
-  form.append(title, sub, err, labelU, user, labelP, pass, submit);
+  form.append(title, sub, err, labelU, user, labelP, pass, labelC, code, submit);
 
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -130,13 +140,20 @@ function renderLogin(message?: string): void {
     submit.disabled = true;
     submit.textContent = 'Signing in…';
     try {
-      await api.login(user.value, pass.value);
+      await api.login(user.value, pass.value, code.hidden ? '' : code.value);
       await start();
     } catch (ex) {
       err.textContent = ex instanceof ApiError ? ex.message : 'could not reach the runtime';
       submit.disabled = false;
       submit.textContent = 'Sign in';
-      pass.focus();
+      if (ex instanceof ApiError && ex.mfaRequired) {
+        labelC.hidden = false;
+        code.hidden = false;
+        code.value = '';
+        code.focus();
+      } else {
+        pass.focus();
+      }
     }
   };
 

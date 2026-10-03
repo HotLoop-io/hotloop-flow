@@ -17,6 +17,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/audit"
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
+	"github.com/HotLoop-io/hotloop-flow/internal/mfa"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 )
 
@@ -29,6 +30,7 @@ type e2e struct {
 	*httptest.Server
 	app   *application
 	trail *audit.Log
+	mfa   *mfa.Store
 }
 
 func serveApp(t *testing.T, app *application, users map[string][]string) *e2e {
@@ -52,7 +54,12 @@ func serveAppWith(t *testing.T, app *application, users map[string][]string, adj
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { trail.Close() })
+	second, err := mfa.Open(filepath.Join(app.cfg.Data.Dir, "mfa.json"), "a-secret-long-enough-to-count")
+	if err != nil {
+		t.Fatal(err)
+	}
 	deps := api.Deps{
+		MFA:         second,
 		Audit:       trail,
 		Config:      app.cfg,
 		Registry:    node.Default,
@@ -71,7 +78,7 @@ func serveAppWith(t *testing.T, app *application, users map[string][]string, adj
 	srv := api.New(deps)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
-	return &e2e{Server: ts, app: app, trail: trail}
+	return &e2e{Server: ts, app: app, trail: trail, mfa: second}
 }
 
 func (e *e2e) login(t *testing.T, user string) string {

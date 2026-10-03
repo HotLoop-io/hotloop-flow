@@ -9,6 +9,7 @@ import { type DiffOverlay, overlayFrom, summarise } from './diff';
 import { Graph, type FlowEntry } from './graph';
 import { confirmRollback, describe, resolveConflict } from './history';
 import { setDarkMode } from './theme';
+import { twoFactorDialog } from './account';
 
 export interface EditorHandles {
   destroy(): void;
@@ -41,12 +42,18 @@ export function mountEditor(
     ? el('button', { class: 'ghost' }, 'Sign out')
     : el('span', { class: 'no-auth mono', title: 'Started with HOTLOOP_FLOW_INSECURE: anyone who can reach this port can deploy.' }, 'no login');
 
+  // Two-factor sign-in, for anybody who wants it. Only with a login to protect.
+  const mfaBtn = onSignOut
+    ? el('button', { class: 'ghost', 'data-test': 'mfa-open', title: 'Two-factor sign-in' }, 'Two-factor')
+    : null;
+  if (mfaBtn) mfaBtn.onclick = () => void twoFactorDialog(api);
+
   const topbar = el('div', { class: 'topbar' },
     el('div', { class: 'brand' }, el('span', {}, 'Hot', el('span', { class: 'mark' }, 'Loop'), ' Flow'),
       el('span', { class: 'version' }, version)),
     el('div', { class: 'spacer' }),
     el('div', { class: 'conn mono' }, connDot, connText),
-    fitBtn, themeBtn, deployBtn, signOut,
+    fitBtn, themeBtn, deployBtn, ...(mfaBtn ? [mfaBtn] : []), signOut,
   );
 
   const tabBar = el('div', { class: 'tabbar' });
