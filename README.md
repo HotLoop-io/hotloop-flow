@@ -490,7 +490,8 @@ A test that ran your MQTT Out for real would publish to the plant's broker, and
 at that point it isn't a test, it's a deploy. So under a test, every node that
 talks to the world outside the process gets a stand-in instead: MQTT in and out,
 HTTP in, response and request, PostgreSQL, InfluxDB, TCP and UDP in, out and
-request, WebSocket in and out, the file nodes, `exec`, `scan` and `netinfo`.
+request, WebSocket in and out and the listener and client behind them, the file
+nodes, `exec`, `scan` and `netinfo`.
 
 The node still does its whole job right up to the wire. The MQTT Out still works
 out the topic, the QoS and the bytes; the HTTP Request still renders the URL,

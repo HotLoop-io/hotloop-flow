@@ -232,6 +232,10 @@ type wsListenerNode struct {
 	path   string
 	nodeID string
 	unbind func()
+
+	// standIn is set under a flow test, where the path is never served: what
+	// a client would have sent is whatever the test injects at a WebSocket In.
+	standIn bool
 }
 
 func registerWebSocketListener() {
@@ -243,6 +247,7 @@ func registerWebSocketListener() {
 		IsConfig:     true,
 		PaletteLabel: "websocket-listener",
 		LabelProp:    "path",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Serves a websocket path, in payload mode or whole-message mode. " +
@@ -267,9 +272,10 @@ func registerWebSocketListener() {
 
 func newWebSocketListener(def *node.Definition) (node.Node, error) {
 	n := &wsListenerNode{
-		wsHub:  newWSHub(def.Node.PropString("wholemsg", "false") == "true"),
-		path:   strings.TrimSpace(def.Node.PropString("path", "")),
-		nodeID: def.Node.ID,
+		wsHub:   newWSHub(def.Node.PropString("wholemsg", "false") == "true"),
+		path:    strings.TrimSpace(def.Node.PropString("path", "")),
+		standIn: node.StandInOf(def.Services) != nil,
+		nodeID:  def.Node.ID,
 	}
 	if n.path == "" {
 		return nil, fmt.Errorf("no path configured")
@@ -280,6 +286,9 @@ func newWebSocketListener(def *node.Definition) (node.Node, error) {
 func (n *wsListenerNode) Receive(context.Context, *engine.Msg, node.Emitter) error { return nil }
 
 func (n *wsListenerNode) Start(ctx context.Context, _ node.Emitter) error {
+	if n.standIn {
+		return nil
+	}
 	unbind, err := Routes.Register(n.nodeID, http.MethodGet, n.path,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
@@ -328,6 +337,9 @@ type wsClientNode struct {
 	subprotocol string
 	// client carries a tls-config's settings into the dial, when there is one.
 	client *http.Client
+
+	// standIn is set under a flow test, where nothing is dialled.
+	standIn bool
 }
 
 func registerWebSocketClient() {
@@ -339,6 +351,7 @@ func registerWebSocketClient() {
 		IsConfig:     true,
 		PaletteLabel: "websocket-client",
 		LabelProp:    "path",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Connects out and reconnects on its own when the connection drops, " +
@@ -368,6 +381,7 @@ func newWebSocketClient(def *node.Definition) (node.Node, error) {
 		wsHub:       newWSHub(def.Node.PropString("wholemsg", "false") == "true"),
 		url:         strings.TrimSpace(def.Node.PropString("path", "")),
 		subprotocol: strings.TrimSpace(def.Node.PropString("subprotocol", "")),
+		standIn:     node.StandInOf(def.Services) != nil,
 	}
 	if n.url == "" {
 		return nil, fmt.Errorf("no URL configured")
@@ -393,6 +407,9 @@ func newWebSocketClient(def *node.Definition) (node.Node, error) {
 func (n *wsClientNode) Receive(context.Context, *engine.Msg, node.Emitter) error { return nil }
 
 func (n *wsClientNode) Start(ctx context.Context, out node.Emitter) error {
+	if n.standIn {
+		return nil
+	}
 	go n.dialLoop(ctx, out)
 	return nil
 }
