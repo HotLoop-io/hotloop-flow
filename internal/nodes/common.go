@@ -631,12 +631,16 @@ type LinkRegistry struct {
 	mu      sync.RWMutex
 	inputs  map[string]*linkInNode
 	pending map[string][]*linkOutNode
+	// calls holds the Link Call nodes by id, so a Link Out in return mode can
+	// find the one a message came from.
+	calls map[string]*linkCallNode
 }
 
 // Links is the process-wide link registry.
 var Links = &LinkRegistry{
 	inputs:  map[string]*linkInNode{},
 	pending: map[string][]*linkOutNode{},
+	calls:   map[string]*linkCallNode{},
 }
 
 // Reset clears the registry. Called on redeploy, and by tests.
@@ -645,6 +649,66 @@ func (lr *LinkRegistry) Reset() {
 	defer lr.mu.Unlock()
 	lr.inputs = map[string]*linkInNode{}
 	lr.pending = map[string][]*linkOutNode{}
+	lr.calls = map[string]*linkCallNode{}
+}
+
+func (lr *LinkRegistry) registerCall(id string, n *linkCallNode) {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+	lr.calls[id] = n
+}
+
+// unregisterCall removes a Link Call, only if the registry still points at that
+// instance, for the same reason unregisterIn checks.
+func (lr *LinkRegistry) unregisterCall(id string, n *linkCallNode) {
+	lr.mu.Lock()
+	defer lr.mu.Unlock()
+	if lr.calls[id] == n {
+		delete(lr.calls, id)
+	}
+}
+
+func (lr *LinkRegistry) lookupCall(id string) (*linkCallNode, bool) {
+	lr.mu.RLock()
+	defer lr.mu.RUnlock()
+	n, ok := lr.calls[id]
+	return n, ok
+}
+
+// target resolves what a Link Call is aimed at, the way Node-RED's runtime
+// does. An id always works. In dynamic mode a name works too: a Link In of that
+// name on the caller's own flow wins, and failing that one somewhere on a
+// regular flow, never inside a subflow instance. Two of them is an error,
+// because picking one would be a guess.
+func (lr *LinkRegistry) target(callerFlow, target string, dynamic bool) (*linkInNode, error) {
+	lr.mu.RLock()
+	defer lr.mu.RUnlock()
+	if n, ok := lr.inputs[target]; ok {
+		return n, nil
+	}
+	if dynamic && target != "" {
+		var here, anywhere []*linkInNode
+		for _, n := range lr.inputs {
+			if n.name != target {
+				continue
+			}
+			if n.flow == callerFlow {
+				here = append(here, n)
+			}
+			if !n.inSubflow {
+				anywhere = append(anywhere, n)
+			}
+		}
+		switch {
+		case len(here) == 1:
+			return here[0], nil
+		case len(anywhere) == 1:
+			return anywhere[0], nil
+		case len(anywhere) > 1:
+			return nil, fmt.Errorf("multiple link in nodes are named %q", target)
+		}
+	}
+	return nil, fmt.Errorf("target link in node %q is not running", target)
 }
 
 func (lr *LinkRegistry) registerIn(id string, n *linkInNode) {
@@ -673,7 +737,16 @@ func (lr *LinkRegistry) lookup(id string) (*linkInNode, bool) {
 
 // linkInNode receives from Link Out nodes and emits into its own flow.
 type linkInNode struct {
-	id  string
+	id string
+	// name is what a dynamic Link Call can address it by: its own name, or
+	// its id when it has none, as in Node-RED.
+	name string
+	// flow is the tab or subflow instance it runs in, and inSubflow whether
+	// that is an instance. A Link Call by name looks in its own flow first and
+	// never reaches into a subflow instance from outside.
+	flow      string
+	inSubflow bool
+
 	mu  sync.Mutex
 	out node.Emitter
 }
@@ -697,7 +770,11 @@ func registerLinkIn() {
 }
 
 func newLinkIn(def *node.Definition) (node.Node, error) {
-	n := &linkInNode{id: def.Node.ID}
+	n := &linkInNode{id: def.Node.ID, name: def.Node.Name, flow: def.Node.Z}
+	if n.name == "" {
+		n.name = n.id
+	}
+	_, _, n.inSubflow = engine.SplitDerivedID(def.Node.ID)
 	Links.registerIn(def.Node.ID, n)
 	return n, nil
 }
@@ -767,9 +844,12 @@ func registerLinkOut() {
 		PaletteLabel: "link out",
 		LabelProp:    "name",
 		Compatibility: node.Compatibility{
-			Level: node.CompatPartial,
-			Notes: "Link Out in \"send to\" mode is supported. \"Return to calling Link Call\" " +
-				"requires the Link Call node, which is not implemented in this build.",
+			Level: node.CompatDivergent,
+			Notes: "Both modes are supported: send to Link In nodes, and return to the Link " +
+				"Call that sent the message. One deliberate difference: a Link In that is not " +
+				"running, and a return with no Link Call to go back to, raise an error a Catch " +
+				"node can see. Node-RED drops the first quietly and only logs a warning for the " +
+				"second, which makes a deleted or mistyped link very hard to find.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -798,7 +878,7 @@ func newLinkOut(def *node.Definition) (node.Node, error) {
 
 func (n *linkOutNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
 	if n.returnMode {
-		return fmt.Errorf("link out in return mode requires a link call node, which is not implemented in this build")
+		return returnToCaller(m)
 	}
 	var missing []string
 	for _, id := range n.targets {

@@ -931,8 +931,14 @@ repeats in autumn runs once, not twice. The schedule also rereads the wall
 clock every minute, so a box that boots with the wrong time and gets fixed by
 NTP later starts firing on the right one instead of hours late.
 
-What an imported flow trips over most now: Link Call. It's on the
-[roadmap](docs/ROADMAP.md) and listed under [Where it stands](#where-it-stands).
+Link Call was the last of the three. It works now, Link Out's return mode with
+it: one piece of logic, "look up this batch", "check this interlock", written
+once on its own tab and called from every line, with the way back kept on the
+message as a stack, so a called flow can make calls of its own. A call that
+never comes back raises an error after its timeout instead of hanging. A return
+that turns up late still goes out, as it does in Node-RED. And a return with
+nothing to return to is an error a Catch node sees, instead of the warning
+Node-RED logs and nobody reads.
 
 ---
 
@@ -962,9 +968,6 @@ rename, and the only change to those nodes since is what they're called.
   flow resets when the pod moves. SQLite, Phase 4.
 - **A node that uses the WASM host.** The host is built and tested. Nothing in
   the palette calls it, so WASM guests can't run in a flow today.
-- **Link Call, and Link Out's "return" mode.** Both are refused with an error
-  rather than silently doing nothing. That's the right behaviour while they
-  don't exist, and it's still a gap.
 - **Editor click-through for the newer nodes.** The dialogs are built from each
   node's descriptor, so they render, but nobody has clicked through the HTTP,
   WebSocket, TCP or UDP ones by hand yet.
