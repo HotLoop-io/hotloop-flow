@@ -3,6 +3,7 @@ package nodes
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -245,6 +246,8 @@ type tcpInNode struct {
 	delimiter []byte
 	topic     string
 	trim      bool
+	tls       *tlsConfigNode
+	svc       node.Services
 
 	sessions *tcpSessions
 	listener net.Listener
@@ -270,8 +273,9 @@ func registerTCPIn() {
 				"the number of accepted connections, the size of one delimited message, " +
 				"and the total of a single-mode read. A peer that opens connections " +
 				"and never closes them, or sends without ever sending the delimiter, " +
-				"grows the heap until the pod dies otherwise. TLS is not implemented.",
-			UnsupportedProps: []string{"tls"},
+				"grows the heap until the pod dies otherwise. TLS through a tls-config " +
+				"works both ways: a listener presents the config's certificate, a " +
+				"client checks the server's.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -298,6 +302,8 @@ func registerTCPIn() {
 			{Name: "topic", Kind: node.PropString, Label: "Topic"},
 			{Name: "trim", Kind: node.PropBool, Label: "Trim the delimiter off the payload",
 				Default: true},
+			{Name: "tls", Kind: node.PropConfigRef, ConfigType: "tls-config", Label: "TLS",
+				Help: "Leave empty for plain TCP."},
 		},
 		Help: "Receives over TCP, either as a server or by connecting out. In stream " +
 			"mode each delimiter ends a message; in single mode the whole connection " +
@@ -314,6 +320,7 @@ func newTCPIn(def *node.Definition) (node.Node, error) {
 		datatype: orDefault(def.Node.PropString("datatype", ""), "buffer"),
 		topic:    def.Node.PropString("topic", ""),
 		trim:     def.Node.PropBool("trim", true),
+		svc:      def.Services,
 		sessions: newTCPSessions(),
 	}
 	if err := validatePort(n.port); err != nil {
@@ -323,6 +330,20 @@ func newTCPIn(def *node.Definition) (node.Node, error) {
 	case "server", "client":
 	default:
 		return nil, fmt.Errorf("unknown mode %q", n.mode)
+	}
+	if id := tlsConfigRef(def.Node); id != "" {
+		cfg, err := lookupTLSConfig(def.Services, id)
+		if err != nil {
+			return nil, err
+		}
+		if n.mode == "server" {
+			// Checked here so a listener with no certificate fails the deploy
+			// rather than every handshake after it.
+			if _, err := cfg.serverConfig(); err != nil {
+				return nil, err
+			}
+		}
+		n.tls = cfg
 	}
 	switch n.datamode {
 	case "stream", "single":
@@ -362,11 +383,21 @@ func (n *tcpInNode) Start(ctx context.Context, out node.Emitter) error {
 	if err != nil {
 		return fmt.Errorf("listening on port %d: %w", n.port, err)
 	}
+	listening := "listening on " + ln.Addr().String()
+	if n.tls != nil {
+		cfg, err := n.tls.serverConfig()
+		if err != nil {
+			_ = ln.Close()
+			return err
+		}
+		ln = tls.NewListener(ln, cfg)
+		listening += " (TLS)"
+	}
 	n.mu.Lock()
 	n.listener = ln
 	n.mu.Unlock()
 
-	out.Status(node.Status{Fill: "green", Shape: "ring", Text: "listening on " + ln.Addr().String()})
+	out.Status(node.Status{Fill: "green", Shape: "ring", Text: listening})
 
 	go func() {
 		<-ctx.Done()
@@ -399,14 +430,15 @@ func (n *tcpInNode) Start(ctx context.Context, out node.Emitter) error {
 
 func (n *tcpInNode) dialLoop(ctx context.Context, out node.Emitter) {
 	addr := net.JoinHostPort(n.host, strconv.Itoa(n.port))
-	var d net.Dialer
+	var lastErr string
 
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		conn, err := d.DialContext(ctx, "tcp", addr)
+		conn, err := dialTCP(ctx, addr, n.tls)
 		if err == nil {
+			lastErr = ""
 			out.Status(node.Status{Fill: "green", Shape: "dot", Text: "connected"})
 			if s, addErr := n.sessions.add(conn); addErr == nil {
 				n.readConn(ctx, s, out)
@@ -414,6 +446,16 @@ func (n *tcpInNode) dialLoop(ctx context.Context, out node.Emitter) {
 				_ = conn.Close()
 			}
 			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "disconnected"})
+		} else if ctx.Err() == nil {
+			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "connect failed"})
+			// Logged once per distinct failure, as Node-RED logs it, so a
+			// server that is down for an hour is one line rather than 1,200.
+			// A refused certificate is the case that matters: it never fixes
+			// itself, and without the line the node just sits there red.
+			if msg := err.Error(); msg != lastErr && n.svc != nil {
+				lastErr = msg
+				n.svc.Log(node.LogWarn, "connecting to "+addr+": "+msg)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -517,6 +559,7 @@ type tcpOutNode struct {
 	port   int
 	end    bool
 	base64 bool
+	tls    *tlsConfigNode
 
 	// resolve finds the session a reply belongs to. Set from the TCP In node
 	// registry, because a reply has to go back down the connection the request
@@ -595,8 +638,8 @@ func registerTCPOut() {
 				"node accepted, found through msg._session. Listening for inbound " +
 				"connections purely to write to them, which Node-RED's third mode does, " +
 				"is not implemented — use a TCP In node for the listening half and this " +
-				"node in reply mode. TLS is not implemented.",
-			UnsupportedProps: []string{"tls"},
+				"node in reply mode. TLS through a tls-config applies to client mode; " +
+				"a reply goes back down whatever the TCP In node accepted, TLS or not.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -609,6 +652,8 @@ func registerTCPOut() {
 			{Name: "port", Kind: node.PropNumber, Label: "Port"},
 			{Name: "end", Kind: node.PropBool, Label: "Close the connection after sending"},
 			{Name: "base64", Kind: node.PropBool, Label: "Decode the payload from base64"},
+			{Name: "tls", Kind: node.PropConfigRef, ConfigType: "tls-config", Label: "TLS",
+				Help: "Client mode only. Leave empty for plain TCP."},
 		},
 		Help: "Sends the payload over TCP. In reply mode the message must still " +
 			"carry msg._session from the TCP In node that received it.",
@@ -634,6 +679,13 @@ func newTCPOut(def *node.Definition) (node.Node, error) {
 	case "reply":
 	default:
 		return nil, fmt.Errorf("unknown mode %q; this build supports client and reply", n.mode)
+	}
+	if id := tlsConfigRef(def.Node); id != "" && n.mode == "client" {
+		cfg, err := lookupTLSConfig(def.Services, id)
+		if err != nil {
+			return nil, err
+		}
+		n.tls = cfg
 	}
 	return n, nil
 }
@@ -711,8 +763,7 @@ func (n *tcpOutNode) connection(ctx context.Context) (net.Conn, error) {
 		return n.conn, nil
 	}
 
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(n.host, strconv.Itoa(n.port)))
+	conn, err := dialTCP(ctx, net.JoinHostPort(n.host, strconv.Itoa(n.port)), n.tls)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to %s:%d: %w", n.host, n.port, err)
 	}
@@ -746,6 +797,7 @@ type tcpRequestNode struct {
 	splitc   string
 	timeout  time.Duration
 	datatype string
+	tls      *tlsConfigNode
 	svc      node.Services
 }
 
@@ -766,9 +818,10 @@ func registerTCPRequest() {
 				"or until the peer closes. msg.host and msg.port override the node. " +
 				"Every request opens its own connection — Node-RED's connection-reuse " +
 				"mode is not implemented, and reusing one would change the semantics " +
-				"of the wait modes, which all end at a connection boundary. TLS is not " +
-				"implemented.",
-			UnsupportedProps: []string{"tls"},
+				"of the wait modes, which all end at a connection boundary. With a " +
+				"tls-config the server's certificate is checked unless the config says " +
+				"not to. Node-RED's TCP Request never checks it, whatever the config " +
+				"says, which makes its TLS a padlock painted on the door.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -790,6 +843,8 @@ func registerTCPRequest() {
 					{Value: "base64", Label: "base64"},
 				}},
 			{Name: "ew_timeout", Kind: node.PropNumber, Label: "Timeout (seconds)", Default: 10},
+			{Name: "tls", Kind: node.PropConfigRef, ConfigType: "tls-config", Label: "TLS",
+				Help: "Leave empty for plain TCP."},
 		},
 		Help: "Sends the payload to a host and returns the reply. The wait mode " +
 			"decides when the reply is considered complete.",
@@ -816,6 +871,13 @@ func newTCPRequest(def *node.Definition) (node.Node, error) {
 	}
 	if secs := def.Node.PropFloat("ew_timeout", 0); secs > 0 {
 		n.timeout = time.Duration(secs * float64(time.Second))
+	}
+	if id := tlsConfigRef(def.Node); id != "" {
+		cfg, err := lookupTLSConfig(def.Services, id)
+		if err != nil {
+			return nil, err
+		}
+		n.tls = cfg
 	}
 
 	switch n.out {
@@ -860,8 +922,7 @@ func (n *tcpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.Em
 	dialCtx, cancel := context.WithTimeout(ctx, n.timeout)
 	defer cancel()
 
-	var d net.Dialer
-	conn, err := d.DialContext(dialCtx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	conn, err := dialTCP(dialCtx, net.JoinHostPort(host, strconv.Itoa(port)), n.tls)
 	if err != nil {
 		out.Status(node.Status{Fill: "red", Shape: "ring", Text: "failed"})
 		return fmt.Errorf("connecting to %s:%d: %w", host, port, err)
@@ -896,6 +957,18 @@ func (n *tcpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.Em
 	out.Status(node.Status{})
 	out.Send(0, m)
 	return nil
+}
+
+// dialTCP connects, through TLS when a config is given. The handshake is part
+// of the dial, so a server whose certificate is refused is a failed connect
+// rather than a connection that dies on the first write.
+func dialTCP(ctx context.Context, addr string, cfg *tlsConfigNode) (net.Conn, error) {
+	if cfg == nil {
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", addr)
+	}
+	d := tls.Dialer{Config: cfg.clientConfig()}
+	return d.DialContext(ctx, "tcp", addr)
 }
 
 func (n *tcpRequestNode) readReply(conn net.Conn) ([]byte, error) {

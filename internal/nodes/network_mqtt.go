@@ -125,7 +125,10 @@ func registerMQTTBroker() {
 				"and birth, close and will messages with their QoS, retain flag and, on version 5, " +
 				"their properties and the will delay. On version 5 also the session expiry interval " +
 				"and connect user properties. The receive maximum, maximum packet size and topic " +
-				"alias maximum settings are not implemented, and the broker's defaults apply.",
+				"alias maximum settings are not implemented, and the broker's defaults apply. " +
+				"TLS is Node-RED's usetls with a tls-config for the CA, client certificate " +
+				"and server name; a broker saved by an earlier HotLoop Flow with tls: true " +
+				"still connects over TLS with the system roots.",
 			UnsupportedProps: []string{"receiveMaximum", "maximumPacketSize", "topicAliasMaximum"},
 		},
 		Props: []node.Prop{
@@ -139,9 +142,10 @@ func registerMQTTBroker() {
 					{Value: "4", Label: "MQTT 3.1.1"},
 					{Value: "3", Label: "MQTT 3.1"},
 				}},
-			{Name: "tls", Kind: node.PropBool, Label: "Use TLS"},
-			{Name: "verifyservercert", Kind: node.PropBool, Label: "Verify the server certificate",
-				Default: true},
+			{Name: "usetls", Kind: node.PropBool, Label: "Use TLS"},
+			{Name: "tls", Kind: node.PropConfigRef, ConfigType: "tls-config", Label: "TLS settings",
+				Help: "A CA, a client certificate or a server name. Leave empty to check the " +
+					"broker against the system roots."},
 			{Name: "clientid", Kind: node.PropString, Label: "Client ID",
 				Help: "Leave empty to generate one. Two clients sharing an ID disconnect each other."},
 			{Name: "user", Kind: node.PropString, Label: "Username"},
@@ -195,7 +199,7 @@ func readMQTTBrokerSettings(def *node.Definition) (mqttBrokerSettings, error) {
 		nodeID:       n.ID,
 		host:         n.PropString("broker", ""),
 		port:         n.PropInt("port", 1883),
-		useTLS:       n.PropBool("tls", false),
+		useTLS:       n.PropBool("usetls", false) || n.PropBool("tls", false),
 		clientID:     n.PropString("clientid", ""),
 		cleanSession: n.PropBool("cleansession", true),
 		keepalive:    time.Duration(n.PropInt("keepalive", 60)) * time.Second,
@@ -223,7 +227,14 @@ func readMQTTBrokerSettings(def *node.Definition) (mqttBrokerSettings, error) {
 		s.username = user
 		s.password, s.hasPassword = def.Services.Credential("password")
 	}
-	if s.useTLS {
+	if ref := tlsConfigRef(n); s.useTLS && ref != "" && ref != "true" && ref != "false" {
+		// Node-RED's shape: usetls, and the tls-config it points at.
+		cfg, err := lookupTLSConfig(def.Services, ref)
+		if err != nil {
+			return s, err
+		}
+		s.tlsConfig = cfg.clientConfig()
+	} else if s.useTLS {
 		s.tlsConfig = &tls.Config{
 			// Defaults to verifying. Turning it off is a deliberate act because
 			// an OT network with a self-signed broker is common, and quietly

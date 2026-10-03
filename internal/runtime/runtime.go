@@ -345,11 +345,12 @@ func (g *graph) scopeEnabled(z string) bool {
 	return false
 }
 
-// startConfigs builds the listed configuration nodes, in the order given, and
-// makes each resolvable as soon as it exists so the next one can find it.
+// startConfigs builds the listed configuration nodes, each after any other
+// listed config it points at, and makes each resolvable as soon as it exists so
+// the next one can find it.
 func (rt *Runtime) startConfigs(g *graph, ids []string) []StartError {
 	var failures []StartError
-	for _, id := range ids {
+	for _, id := range configBuildOrder(g, ids) {
 		n := g.flows.Nodes[id]
 		if n.Disabled {
 			continue
@@ -366,6 +367,57 @@ func (rt *Runtime) startConfigs(g *graph, ids []string) []StartError {
 		rt.configsMu.Unlock()
 	}
 	return failures
+}
+
+// configBuildOrder puts each config after the configs it references, keeping
+// file order otherwise.
+//
+// A config can point at another: an MQTT broker at its tls-config. File order
+// says nothing about which comes first, and the editor writes whichever was
+// created first, so a broker saved before its TLS settings would look the TLS
+// config up before it existed and fail the deploy for no reason the user could
+// see. A cycle, which no real config has, falls back to file order for
+// whatever is left.
+func configBuildOrder(g *graph, ids []string) []string {
+	deps := make(map[string][]string, len(ids))
+	for _, id := range ids {
+		for _, other := range ids {
+			if other != id && references(g.flows.Nodes[id].Raw, map[string]bool{other: true}, id) {
+				deps[id] = append(deps[id], other)
+			}
+		}
+	}
+	out := make([]string, 0, len(ids))
+	placed := make(map[string]bool, len(ids))
+	for len(out) < len(ids) {
+		progress := false
+		for _, id := range ids {
+			if placed[id] {
+				continue
+			}
+			ready := true
+			for _, d := range deps[id] {
+				if !placed[d] {
+					ready = false
+					break
+				}
+			}
+			if ready {
+				out = append(out, id)
+				placed[id] = true
+				progress = true
+			}
+		}
+		if !progress {
+			for _, id := range ids {
+				if !placed[id] {
+					out = append(out, id)
+					placed[id] = true
+				}
+			}
+		}
+	}
+	return out
 }
 
 // attachNew builds the node instance for a runner. On failure the failure is
