@@ -531,6 +531,48 @@ in well under a second. What a test can't move is the CPU: a flow still busy
 after a minute of real time fails the test rather than hanging the suite. JSONata
 `$now()` and `$millis()` still read the wall clock.
 
+### Context and credentials
+
+Every test starts with empty context, whatever the test before it left behind. A
+counter one test pushed to 42 is not where the next one starts, because a suite
+where the second test only passes when the first ran first is a suite that lies
+the day somebody runs one test on its own. So a test that needs a counter at 41
+says so, and says what context has to hold when it's done:
+
+```yaml
+  - name: picks up where the line left off
+    context:                        # what the test starts with
+      global: {limit: 90}
+      flow: {Line 3: {count: 41}}   # flow context, by tab label or id
+    credentials:                    # by node name or id; never the real ones
+      historian: {token: test-token}
+      plc api: {password: s3cret}
+    inject: [{node: count, msg: {payload: 95}}]
+    expect:
+      - {node: out, msg: {count: 42}}
+      - context:                    # what it holds at the end
+          global: {alarm: true}
+          flow: {Line 3: {count: 42}}
+          node: {count: {last: 95}} # node context, by node name or id
+```
+
+`context` in an expectation is matched like `msg`, and `null` means the key must
+not be set. A failure says what the scope does hold, since the usual answer is a
+typo: `flow context of "Line 3" (t1): cuont: not set; it holds count`.
+
+A test never sees the real credentials. It runs with the ones it names, which
+is what makes a test safe to commit, and they reach a node exactly as the real
+ones would: an HTTP request's password shows up in the `Authorization` header it
+would have sent, and an InfluxDB configuration that won't start without a token
+starts with the test's. A node that reads a password from a mounted file through
+`ew_credentialFiles` gets the test's credential for that field instead, because
+a test reads nothing off the disk, and an empty one when the test names none.
+
+Context lives in memory for a test, the same store a flow uses today. Nothing
+here is a file format, on purpose: persistent context is SQLite, on the
+[roadmap](docs/ROADMAP.md), and a fixture is YAML in the test, not a file
+pretending to be a database.
+
 ### Nothing leaves the test
 
 A test that ran your MQTT Out for real would publish to the plant's broker, and

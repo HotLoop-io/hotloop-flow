@@ -64,6 +64,50 @@ type Case struct {
 	// sent, and answers with what's scripted here. Unscripted, the answer is
 	// nothing and success.
 	Replies []Reply `yaml:"replies,omitempty" json:"replies,omitempty"`
+
+	// Context is what flow, global and node context hold when the test
+	// starts. Every test starts from empty context otherwise, whatever the
+	// test before it left behind, so a test that needs a counter at 41 says
+	// so here rather than leaning on another test to get it there.
+	Context *ContextValues `yaml:"context,omitempty" json:"context,omitempty"`
+
+	// Credentials are the secrets a node runs with during the test, by node
+	// name or id, the same fields its edit dialog has: a broker's password,
+	// an HTTP request's, an InfluxDB token. A test never sees the real ones.
+	Credentials map[string]map[string]any `yaml:"credentials,omitempty" json:"credentials,omitempty"`
+}
+
+// ContextValues is context, by scope: global, flow context by tab (label or
+// id), node context by node (name or id). In a test's context it's what the
+// test starts with; in an expectation it's what has to be there at the end,
+// matched like msg, where null means the key must not be set at all.
+type ContextValues struct {
+	Global map[string]any            `yaml:"global,omitempty" json:"global,omitempty"`
+	Flow   map[string]map[string]any `yaml:"flow,omitempty" json:"flow,omitempty"`
+	Node   map[string]map[string]any `yaml:"node,omitempty" json:"node,omitempty"`
+}
+
+func (cv *ContextValues) empty() bool {
+	return cv == nil || (len(cv.Global) == 0 && len(cv.Flow) == 0 && len(cv.Node) == 0)
+}
+
+// shaped normalises every value the way a message's are.
+func (cv *ContextValues) shaped() error {
+	if cv == nil {
+		return nil
+	}
+	var err error
+	if cv.Global, err = jsonShaped(cv.Global); err != nil {
+		return err
+	}
+	for _, scope := range []map[string]map[string]any{cv.Flow, cv.Node} {
+		for k, v := range scope {
+			if scope[k], err = jsonShaped(v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // Reply is one scripted answer from the outside world. The first reply listed
@@ -136,6 +180,10 @@ type Expectation struct {
 	// Empty means any time before the test's timeout.
 	Within string `yaml:"within,omitempty" json:"within,omitempty"`
 
+	// Context, instead of a node, checks what context holds once the test is
+	// over: a counter a Function node kept, a latch a Change node set.
+	Context *ContextValues `yaml:"context,omitempty" json:"context,omitempty"`
+
 	// Count, when set, is exactly how many messages the port sends during the
 	// test, matching or not. Nothing is the same as a count of zero.
 	Count   *int `yaml:"count,omitempty" json:"count,omitempty"`
@@ -186,6 +234,14 @@ func Parse(data []byte) (*Suite, error) {
 				return nil, fmt.Errorf("test %q, reply %d: %w", c.Name, j+1, err)
 			}
 			c.Replies[j].Reply = m
+		}
+		if err := c.Context.shaped(); err != nil {
+			return nil, fmt.Errorf("test %q, context: %w", c.Name, err)
+		}
+		for j := range c.Expect {
+			if err := c.Expect[j].Context.shaped(); err != nil {
+				return nil, fmt.Errorf("test %q, expect %d: %w", c.Name, j+1, err)
+			}
 		}
 	}
 	if err := s.Check(); err != nil {
@@ -249,6 +305,17 @@ func (s *Suite) Check() error {
 }
 
 func (e *Expectation) check() error {
+	if e.Context != nil {
+		if e.Node != "" || e.Port != 0 || e.Msg != nil || e.Sent != nil || e.Assert != "" ||
+			e.Error != "" || e.Within != "" || e.Count != nil || e.Nothing {
+			return fmt.Errorf("context checks what context holds at the end, on its own; " +
+				"give it an expectation of its own, with no node")
+		}
+		if e.Context.empty() {
+			return fmt.Errorf("context names nothing to check")
+		}
+		return nil
+	}
 	if e.Node == "" {
 		return fmt.Errorf("no node")
 	}
@@ -287,7 +354,7 @@ func (e *Expectation) check() error {
 
 // positive reports whether the expectation waits for a message, as opposed to
 // counting them.
-func (e *Expectation) positive() bool { return !e.Nothing && e.Count == nil }
+func (e *Expectation) positive() bool { return !e.Nothing && e.Count == nil && e.Context == nil }
 
 func (c *Case) timeout() (time.Duration, error) {
 	if c.Timeout == "" {

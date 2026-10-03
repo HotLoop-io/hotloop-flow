@@ -175,6 +175,8 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	g := newGraphView(flows, opts.Registry)
 
 	injections, watches, replies, problems := g.resolve(c)
+	fx, more := g.resolveFixtures(c)
+	problems = append(problems, more...)
 	if len(problems) > 0 {
 		res.Problems = problems
 		return res
@@ -201,7 +203,13 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	clock := newVirtualClock(start)
 
 	rt := runtime.New(opts.Registry, flows, opts.Runtime)
-	rt.SetContexts(store.NewScopedContexts())
+	ctxs := store.NewScopedContexts()
+	if err := startContext(ctxs, fx.start); err != nil {
+		return problem("%v", err)
+	}
+	rt.SetContexts(ctxs)
+	rt.SetCredentials(func(id string) map[string]string { return fx.credentials[id] })
+	rt.SetSecretFiles(secretFiles(g.expanded, fx.credentials))
 	rt.SetClock(clock)
 	rec := newRecorder(watches, clock.Now)
 	rt.SetObserver(rec)
@@ -289,6 +297,10 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	}
 
 	res.Problems = rec.evaluate(ctx)
+	// Read before the runtime stops: what a Delay lets go of on the way out
+	// is not something the flow did during the test.
+	res.Problems = append(res.Problems, checkContext(ctxs, fx.end)...)
+	sort.SliceStable(res.Problems, func(i, j int) bool { return res.Problems[i].Expect < res.Problems[j].Expect })
 	if len(res.Problems) == 0 {
 		res.Status = Pass
 	} else {
@@ -544,6 +556,11 @@ func (g *graphView) resolve(c *Case) ([]injection, []watch, map[string][]Reply, 
 	var watches []watch
 	for i := range c.Expect {
 		e := &c.Expect[i]
+		if e.Context != nil {
+			// Checked at the end, against the context store; see
+			// resolveFixtures.
+			continue
+		}
 		w := watch{index: i + 1, exp: e}
 		n, err := g.find(e.Node)
 		if err == nil {
@@ -595,6 +612,38 @@ func (g *graphView) resolve(c *Case) ([]injection, []watch, map[string][]Reply, 
 		watches = append(watches, w)
 	}
 	return injections, watches, replies, problems
+}
+
+// fixtures are what a test starts with besides the flow, and the context it
+// expects at the end.
+type fixtures struct {
+	start       []contextEntry
+	end         []contextEntry
+	credentials map[string]map[string]string
+}
+
+func (g *graphView) resolveFixtures(c *Case) (fixtures, []Problem) {
+	var fx fixtures
+	var problems []Problem
+	var err error
+	if fx.start, err = g.resolveContext(c.Context, 0); err != nil {
+		problems = append(problems, Problem{Message: "context: " + err.Error()})
+	}
+	if fx.credentials, err = g.resolveCredentials(c.Credentials); err != nil {
+		problems = append(problems, Problem{Message: "credentials: " + err.Error()})
+	}
+	for i := range c.Expect {
+		if c.Expect[i].Context == nil {
+			continue
+		}
+		end, err := g.resolveContext(c.Expect[i].Context, i+1)
+		if err != nil {
+			problems = append(problems, Problem{Expect: i + 1, Message: err.Error()})
+			continue
+		}
+		fx.end = append(fx.end, end...)
+	}
+	return fx, problems
 }
 
 // reachingOut lists the nodes that would run in a test, talk to something
