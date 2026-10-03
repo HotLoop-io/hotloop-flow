@@ -228,6 +228,10 @@ type runner struct {
 func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 	d := delivery{msg: msg, enqueued: r.rt.opts.Now()}
 
+	// Counted before the node can see it, and taken back on every path below
+	// where it never reaches the inbox. See Runtime.outstanding.
+	r.rt.outstanding.Add(1)
+
 	// A sender can hold a wire to this runner from before a partial deploy
 	// replaced it. Checked after the message is in, not before: the runner
 	// retiring between a check and the send is exactly the gap that loses a
@@ -249,6 +253,7 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 
 	switch r.overflow {
 	case OverflowDropNewest:
+		r.rt.outstanding.Add(-1)
 		r.stats.Dropped.Add(1)
 		r.rt.onDropped(r, msg, "drop-newest")
 		return
@@ -259,6 +264,7 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 		// anyway.
 		select {
 		case old := <-r.inbox:
+			r.rt.outstanding.Add(-1)
 			r.stats.Dropped.Add(1)
 			r.rt.onDropped(r, old.msg, "drop-oldest")
 		default:
@@ -267,10 +273,12 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 		case r.inbox <- d:
 			r.recordQueueDepth()
 		case <-ctx.Done():
+			r.rt.outstanding.Add(-1)
 		}
 		return
 
 	case OverflowError:
+		r.rt.outstanding.Add(-1)
 		r.stats.Dropped.Add(1)
 		err := fmt.Errorf("%w: %s (%s) queue is at capacity %d", ErrInboxFull, r.id, r.typ, r.capacity)
 		r.rt.raiseError(from, err, msg)
@@ -284,10 +292,12 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 		case r.inbox <- d:
 			r.recordQueueDepth()
 		case <-ctx.Done():
+			r.rt.outstanding.Add(-1)
 		case <-timer.C:
 			// A cycle of saturated inboxes would otherwise deadlock here
 			// permanently. Report it and drop, so the flow keeps running and
 			// the operator finds out.
+			r.rt.outstanding.Add(-1)
 			r.stats.Dropped.Add(1)
 			err := fmt.Errorf("%w: %s (%s) after %s", ErrBlockTimeout, r.id, r.typ, r.rt.opts.BlockTimeout)
 			r.rt.raiseError(from, err, msg)
@@ -336,6 +346,13 @@ func (r *runner) loop() {
 // handle runs one message through the node, converting a panic into an error
 // rather than taking the process down.
 func (r *runner) handle(ctx context.Context, d delivery) {
+	// Deferred first so it runs last: the count drops only once everything
+	// this message caused, including an error raised to a Catch node, has been
+	// queued and counted in its own right.
+	defer r.rt.outstanding.Add(-1)
+	if o := r.rt.observer; o != nil {
+		o.Received(r.id, d.msg.Clone())
+	}
 	r.stats.Received.Add(1)
 	r.inFlight.Add(1)
 	defer r.inFlight.Add(-1)

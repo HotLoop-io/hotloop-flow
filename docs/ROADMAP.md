@@ -90,7 +90,7 @@ a line stops, and today the answer is three `.bak` files.
 "Did my change break the line?" gets answered before the deploy, not after.
 Tests are YAML next to the flows, so they diff and review the same way.
 
-- [ ] `hotloop-flow test`: the real runtime and the real nodes, in process.
+- [x] `hotloop-flow test`: the real runtime and the real nodes, in process.
       Inject a message, expect what comes out of a port within a deadline,
       expect nothing, expect an error to reach a Catch. JUnit output for CI
 - [ ] Virtualized I/O: an MQTT out, a database write or an HTTP request in a test

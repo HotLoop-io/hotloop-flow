@@ -397,6 +397,102 @@ in CI still has room.
 
 ---
 
+## Tests next to the flows
+
+"Did my change break the line?" should get answered before the deploy, by the
+person making the change, not at 3 AM by the person on call. So a flow can have
+tests, and they're YAML that lives next to the flow file and goes through the
+same review:
+
+```yaml
+# line3.test.yaml
+flows: line3.json            # relative to this file; flows.json if you leave it out
+tests:
+  - name: a high reading raises the alarm and nothing else
+    inject:
+      - node: reading                  # by name or by id
+        msg: {topic: line3/temp, payload: 92.5}
+    expect:
+      - node: over limit?              # the Switch
+        port: 1
+        msg: {payload: 92.5}
+        within: 500ms
+      - node: over limit?
+        port: 2
+        nothing: true
+      - node: alarm out                # a Debug: checked on what it received
+        msg: {payload: HIGH}
+
+  - name: a negative reading is caught, not alarmed on
+    inject:
+      - node: reading
+        msg: {payload: -4}
+    expect:
+      - node: errors                   # a Catch node
+        error: "out of range"
+```
+
+```bash
+hotloop-flow test -junit report.xml line3.test.yaml
+```
+
+```
+--- PASS: a high reading raises the alarm and nothing else (0.00s)
+--- PASS: a negative reading is caught, not alarmed on (0.00s)
+ok	line3.test.yaml	2 passed, 0 failed, 0 errors (0.00s)
+```
+
+That's the real runtime and the real nodes, in the process, with no server and
+no editor. Every test gets a runtime of its own, so nothing one test leaves in a
+Delay or a context can leak into the next.
+
+- **`inject`** puts messages in, in order, each one handled before the next goes
+  in. A node with an input gets it there. A source like an Inject or an MQTT In
+  sends it out of its first output as if it had produced it, and an Inject node
+  given no message gets its button pressed.
+- **`expect`** watches a node's output, counting ports from 1 the way the editor
+  does. A node with no outputs, like a Debug, is checked on what it received. A
+  subflow instance is watched on its own outputs, wherever inside it they come
+  from.
+- **`msg`** is what the message has to contain. Every property you give has to be
+  there with that value, all the way down, and anything else on the message is
+  ignored, so a test about the payload doesn't break when somebody starts setting
+  `msg.topic`. **`assert`** is a JSONata expression that has to come out true,
+  for the checks a literal can't make. **`error`** is text the error a Catch node
+  caught has to contain.
+- **`within`** is a deadline. A message that turns up late fails, and the failure
+  says how late. **`nothing: true`** and **`count: N`** are checked once the flow
+  has gone quiet, which is the only time "nothing came out" means anything. Two
+  expectations on one port are two messages, in that order.
+
+A test ends as soon as everything it waits for has happened and the flow has
+nothing left to do, so most take a millisecond. The `timeout` (5 seconds unless
+you say) is only what a broken test costs you.
+
+A failure says what came out instead and where it differs:
+
+```
+--- FAIL: the alarm says LOW (0.30s)
+    expect 1: debug "alarm out" (alarm-out): 1 message(s) received and none matched; the first one differs at msg.payload: wanted "LOW", got "HIGH"
+      at 283µs: {"payload":"HIGH","topic":"line3/temp"}
+```
+
+A test that can't run is an error, not a pass: a node it names that isn't in the
+flow, a name two nodes share, a port the node hasn't got, or a node in the flow
+that won't start. So is a misspelt key. `expcet:` is refused when the file is
+read, because a typo that was quietly skipped would leave a test with nothing to
+check, and a test with nothing to check passes. Exit status 1 for anything
+short of all passing, and `-junit` writes the report every CI system reads.
+
+**What it won't run yet:** a node that talks to the outside world. An MQTT Out,
+a database write, an HTTP request, a socket, a file or `exec` in the flow and the
+test refuses to start, naming the node, because a test that ran them would
+publish to the real broker and write to the real database, and at that point
+it isn't a test, it's a deploy. Standing in for them is next on the
+[roadmap](docs/ROADMAP.md).
+
+---
+
 ## Security posture
 
 The rule underneath all of this: anyone who can deploy a flow can make the box do
@@ -662,6 +758,7 @@ TypeScript and native SVG, 48.5 kB of JS and 20.1 kB of CSS minified.
 | `hotloop-flow hash-password` | bcrypt hash for a password. Takes `-password` or `HOTLOOP_FLOW_PASSWORD`. Refuses anything under 8 characters. |
 | `hotloop-flow import <flows.json>` | Reports what would happen before you deploy it. |
 | `hotloop-flow diff <old> <new>` | Node-by-node diff of two flow files. Also git's diff driver and difftool. |
+| `hotloop-flow test <tests.yaml>` | Runs [flow tests](#tests-next-to-the-flows) in process. `-junit` for CI. |
 | `hotloop-flow deploy -file <flows.json>` | Shows the diff against a running instance, then deploys with a note. For CI. |
 | `hotloop-flow export` | The running flow file, byte for byte, or `-deployment N` from the history. |
 | `hotloop-flow token` | A new API token and the hash to configure for it. |
@@ -1129,6 +1226,7 @@ hotloop-flow/
     node/            what a node type is: Descriptor, registry, contracts
     nodes/           the built-in palette
     runtime/         the scheduler, delivery, error and status routing
+    flowtest/        flow tests: the YAML, the runner, JUnit
     store/           context, flow file, credentials
     js/              goja host
     wasmhost/        wazero host, tested, not used by any node yet
