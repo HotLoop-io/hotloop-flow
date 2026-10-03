@@ -207,6 +207,7 @@ func registerPostgres() {
 		Outputs:      1,
 		PaletteLabel: "postgres",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatOnly,
 			Notes: "HotLoop Flow's own node. Writes to and reads from PostgreSQL or " +
@@ -367,6 +368,14 @@ func (n *postgresNode) Receive(ctx context.Context, m *engine.Msg, out node.Emit
 	ctx, cancel := context.WithTimeout(ctx, n.timeout)
 	defer cancel()
 
+	if si := node.StandInOf(n.svc); si != nil {
+		if err := n.standIn(si, m, out); err != nil {
+			out.Status(node.Status{Fill: "red", Shape: "dot", Text: truncate(err.Error(), 32)})
+			return err
+		}
+		return nil
+	}
+
 	pool, err := n.resolvePool(ctx)
 	if err != nil {
 		out.Status(node.Status{Fill: "red", Shape: "ring", Text: "not connected"})
@@ -386,19 +395,75 @@ func (n *postgresNode) Receive(ctx context.Context, m *engine.Msg, out node.Emit
 	return nil
 }
 
-func (n *postgresNode) runQuery(ctx context.Context, pool *pgxpool.Pool, m *engine.Msg, out node.Emitter) error {
+// queryArgs evaluates the query's $1, $2 parameters against the message.
+func (n *postgresNode) queryArgs(m *engine.Msg) ([]any, error) {
 	ec := EvalContext{Msg: m, Services: n.svc}
-
 	args := make([]any, 0, len(n.params))
 	for i, p := range n.params {
 		v, ok, err := p.Eval(ec)
 		if err != nil {
-			return fmt.Errorf("parameter $%d: %w", i+1, err)
+			return nil, fmt.Errorf("parameter $%d: %w", i+1, err)
 		}
 		if !ok {
 			v = nil
 		}
 		args = append(args, v)
+	}
+	return args, nil
+}
+
+// standIn is Receive under a flow test: the same SQL and the same parameters
+// the database would have been sent, handed to the test instead, and the rows
+// the test scripted coming back the way the database's would.
+func (n *postgresNode) standIn(si node.StandIn, m *engine.Msg, out node.Emitter) error {
+	if n.mode == "query" {
+		args, err := n.queryArgs(m)
+		if err != nil {
+			return err
+		}
+		reply, err := si.Call("postgres", map[string]any{"query": n.sql, "params": args})
+		if err != nil {
+			return fmt.Errorf("query: %w", err)
+		}
+		rows, err := replyList(reply, "rows")
+		if err != nil {
+			return err
+		}
+		payload := append([]any{}, rows...)
+		m.SetPayload(payload)
+		m.Data["rowCount"] = float64(len(payload))
+		out.Status(node.Status{Fill: "green", Shape: "dot", Text: strconv.Itoa(len(payload)) + " rows"})
+		out.Send(0, m)
+		return nil
+	}
+
+	rows, err := n.rowsFor(m)
+	if err != nil {
+		return err
+	}
+	if len(rows) == 0 {
+		out.Send(0, m)
+		return nil
+	}
+	sql, args := n.buildInsert(rows)
+	reply, err := si.Call("postgres", map[string]any{"query": sql, "params": args})
+	if err != nil {
+		return fmt.Errorf("insert into %s: %w", n.table, err)
+	}
+	affected, err := replyNumber(reply, "rowCount", float64(len(rows)))
+	if err != nil {
+		return err
+	}
+	m.Data["rowCount"] = affected
+	out.Status(node.Status{Fill: "green", Shape: "dot", Text: fmt.Sprintf("%d row(s)", int64(affected))})
+	out.Send(0, m)
+	return nil
+}
+
+func (n *postgresNode) runQuery(ctx context.Context, pool *pgxpool.Pool, m *engine.Msg, out node.Emitter) error {
+	args, err := n.queryArgs(m)
+	if err != nil {
+		return err
 	}
 
 	rows, err := pool.Query(ctx, n.sql, args...)

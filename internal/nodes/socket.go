@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/base64"
@@ -252,6 +253,10 @@ type tcpInNode struct {
 	sessions *tcpSessions
 	listener net.Listener
 	mu       sync.Mutex
+
+	// standIn is set under a flow test, where nothing listens or dials: what
+	// a peer would have sent is whatever the test injects here.
+	standIn bool
 }
 
 func registerTCPIn() {
@@ -264,6 +269,7 @@ func registerTCPIn() {
 		Outputs:      1,
 		PaletteLabel: "tcp in",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatDivergent,
 			Notes: "Listens or connects out, in stream mode with a delimiter or single " +
@@ -322,6 +328,7 @@ func newTCPIn(def *node.Definition) (node.Node, error) {
 		trim:     def.Node.PropBool("trim", true),
 		svc:      def.Services,
 		sessions: newTCPSessions(),
+		standIn:  node.StandInOf(def.Services) != nil,
 	}
 	if err := validatePort(n.port); err != nil {
 		return nil, err
@@ -373,6 +380,9 @@ func newTCPIn(def *node.Definition) (node.Node, error) {
 func (n *tcpInNode) Receive(context.Context, *engine.Msg, node.Emitter) error { return nil }
 
 func (n *tcpInNode) Start(ctx context.Context, out node.Emitter) error {
+	if n.standIn {
+		return nil
+	}
 	if n.mode == "client" {
 		go n.dialLoop(ctx, out)
 		return nil
@@ -567,6 +577,9 @@ type tcpOutNode struct {
 	mu      sync.Mutex
 	conn    net.Conn
 	dialing bool
+
+	// standIn takes the bytes under a flow test instead of a socket.
+	standIn node.StandIn
 }
 
 // tcpReplyRegistry maps a session id to the connection it belongs to, so a TCP
@@ -632,6 +645,7 @@ func registerTCPOut() {
 		Align:        "right",
 		PaletteLabel: "tcp out",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Connects to a host and sends, or replies on the connection a TCP In " +
@@ -662,11 +676,12 @@ func registerTCPOut() {
 
 func newTCPOut(def *node.Definition) (node.Node, error) {
 	n := &tcpOutNode{
-		mode:   def.Node.PropString("beserver", "client"),
-		host:   strings.TrimSpace(def.Node.PropString("host", "")),
-		port:   def.Node.PropInt("port", 0),
-		end:    def.Node.PropBool("end", false),
-		base64: def.Node.PropBool("base64", false),
+		mode:    def.Node.PropString("beserver", "client"),
+		host:    strings.TrimSpace(def.Node.PropString("host", "")),
+		port:    def.Node.PropInt("port", 0),
+		end:     def.Node.PropBool("end", false),
+		base64:  def.Node.PropBool("base64", false),
+		standIn: node.StandInOf(def.Services),
 	}
 	switch n.mode {
 	case "client":
@@ -696,6 +711,23 @@ func (n *tcpOutNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitte
 		return err
 	}
 	if len(data) == 0 {
+		return nil
+	}
+
+	if n.standIn != nil {
+		sent := map[string]any{"payload": wireValue(data)}
+		where := fmt.Sprintf("%s:%d", n.host, n.port)
+		if n.mode == "reply" {
+			sess, _ := m.Data["_session"].(map[string]any)
+			sent["session"] = sess["id"]
+			where = fmt.Sprintf("tcp session %v", sess["id"])
+		} else {
+			sent["host"], sent["port"] = n.host, float64(n.port)
+		}
+		if _, err := n.standIn.Call("tcp", sent); err != nil {
+			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "write failed"})
+			return fmt.Errorf("writing to %s: %w", where, err)
+		}
 		return nil
 	}
 
@@ -811,6 +843,7 @@ func registerTCPRequest() {
 		Outputs:      1,
 		PaletteLabel: "tcp request",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Connects, sends the payload and waits for the reply, in any of " +
@@ -919,6 +952,37 @@ func (n *tcpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.Em
 		return err
 	}
 
+	if si := node.StandInOf(n.svc); si != nil {
+		reply, err := si.Call("tcp", map[string]any{
+			"host": host, "port": float64(port), "payload": wireValue(data),
+		})
+		if err != nil {
+			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "failed"})
+			return fmt.Errorf("connecting to %s:%d: %w", host, port, err)
+		}
+		if n.out == "immed" {
+			return nil
+		}
+		raw, err := replyBytes(reply["payload"])
+		if err != nil {
+			return err
+		}
+		// Read the way a real reply is read, so a test scripting four bytes
+		// at a node that waits for eight sees the same failure the device
+		// would cause.
+		if raw, err = n.readReply(bytes.NewReader(raw)); err != nil {
+			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "no reply"})
+			return fmt.Errorf("reading from %s:%d: %w", host, port, err)
+		}
+		payload, err := socketPayload(raw, n.datatype)
+		if err != nil {
+			return err
+		}
+		m.SetPayload(payload)
+		out.Send(0, m)
+		return nil
+	}
+
 	dialCtx, cancel := context.WithTimeout(ctx, n.timeout)
 	defer cancel()
 
@@ -971,7 +1035,7 @@ func dialTCP(ctx context.Context, addr string, cfg *tlsConfigNode) (net.Conn, er
 	return d.DialContext(ctx, "tcp", addr)
 }
 
-func (n *tcpRequestNode) readReply(conn net.Conn) ([]byte, error) {
+func (n *tcpRequestNode) readReply(conn io.Reader) ([]byte, error) {
 	switch n.out {
 	case "count":
 		count, _ := strconv.Atoi(strings.TrimSpace(n.splitc))
@@ -1026,6 +1090,9 @@ type udpInNode struct {
 
 	mu   sync.Mutex
 	conn *net.UDPConn
+
+	// standIn is set under a flow test, where nothing binds a port.
+	standIn bool
 }
 
 func registerUDPIn() {
@@ -1038,6 +1105,7 @@ func registerUDPIn() {
 		Outputs:      1,
 		PaletteLabel: "udp in",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Receives datagrams, optionally joining a multicast group, with " +
@@ -1078,6 +1146,7 @@ func newUDPIn(def *node.Definition) (node.Node, error) {
 		multicast: def.Node.PropString("multicast", "false"),
 		group:     strings.TrimSpace(def.Node.PropString("group", "")),
 		datatype:  orDefault(def.Node.PropString("datatype", ""), "buffer"),
+		standIn:   node.StandInOf(def.Services) != nil,
 	}
 	if err := validatePort(n.port); err != nil {
 		return nil, err
@@ -1100,6 +1169,9 @@ func newUDPIn(def *node.Definition) (node.Node, error) {
 func (n *udpInNode) Receive(context.Context, *engine.Msg, node.Emitter) error { return nil }
 
 func (n *udpInNode) Start(ctx context.Context, out node.Emitter) error {
+	if n.standIn {
+		return nil
+	}
 	var (
 		conn *net.UDPConn
 		err  error
@@ -1213,6 +1285,9 @@ type udpOutNode struct {
 
 	mu   sync.Mutex
 	conn *net.UDPConn
+
+	// standIn takes the datagram under a flow test instead of a socket.
+	standIn node.StandIn
 }
 
 func registerUDPOut() {
@@ -1226,6 +1301,7 @@ func registerUDPOut() {
 		Align:        "right",
 		PaletteLabel: "udp out",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Sends datagrams to a host, a broadcast address or a multicast group, " +
@@ -1258,6 +1334,7 @@ func newUDPOut(def *node.Definition) (node.Node, error) {
 		multicast: def.Node.PropString("multicast", "false"),
 		iface:     strings.TrimSpace(def.Node.PropString("iface", "")),
 		base64:    def.Node.PropBool("base64", false),
+		standIn:   node.StandInOf(def.Services),
 	}
 	switch n.multicast {
 	case "false", "broad", "multi":
@@ -1307,6 +1384,16 @@ func (n *udpOutNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter)
 	if len(data) > maxDatagramBytes {
 		return fmt.Errorf("the payload is %d bytes; a UDP datagram holds at most %d",
 			len(data), maxDatagramBytes)
+	}
+
+	if n.standIn != nil {
+		if _, err := n.standIn.Call("udp", map[string]any{
+			"host": addr, "port": float64(port), "payload": wireValue(data),
+		}); err != nil {
+			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "send failed"})
+			return fmt.Errorf("sending to %s:%d: %w", addr, port, err)
+		}
+		return nil
 	}
 
 	conn, err := n.socket()

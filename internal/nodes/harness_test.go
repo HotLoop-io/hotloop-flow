@@ -19,6 +19,25 @@ type testServices struct {
 	env      map[string]string
 	nodeID   string
 	flowID   string
+
+	// standIn, when set, is what node.StandInOf finds, the way a flow test
+	// hands one to every node.
+	standIn node.StandIn
+}
+
+func (s *testServices) StandIn() node.StandIn { return s.standIn }
+
+// recordingStandIn is a stand-in that keeps every call and answers nothing.
+type recordingStandIn struct {
+	mu    sync.Mutex
+	calls []map[string]any
+}
+
+func (r *recordingStandIn) Call(kind string, sent map[string]any) (map[string]any, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.calls = append(r.calls, map[string]any{"kind": kind, "sent": sent})
+	return nil, nil
 }
 
 func newTestServices() *testServices {

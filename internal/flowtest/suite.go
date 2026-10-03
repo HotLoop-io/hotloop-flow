@@ -49,6 +49,31 @@ type Case struct {
 
 	// Expect is what has to come out.
 	Expect []Expectation `yaml:"expect,omitempty" json:"expect,omitempty"`
+
+	// Replies script the outside world. Nothing a test runs reaches a broker,
+	// a database, a web service, a socket, a file or a command: every node
+	// that would have is handed a stand-in that records what it would have
+	// sent, and answers with what's scripted here. Unscripted, the answer is
+	// nothing and success.
+	Replies []Reply `yaml:"replies,omitempty" json:"replies,omitempty"`
+}
+
+// Reply is one scripted answer from the outside world. The first reply listed
+// for a node answers its first call, the second its second, and the last one
+// keeps answering after that.
+type Reply struct {
+	// Node is the node that makes the call, by id or by name.
+	Node string `yaml:"node" json:"node"`
+
+	// Reply is what comes back. Its shape is the node's: statusCode, headers
+	// and payload for an HTTP request; rows for a query; payload for a TCP
+	// request or a file read; stdout, stderr and code for exec; devices for a
+	// scan; interfaces for netinfo.
+	Reply map[string]any `yaml:"reply,omitempty" json:"reply,omitempty"`
+
+	// Error makes the call fail with this text, the way a database that's
+	// down or a host that refuses the connection would.
+	Error string `yaml:"error,omitempty" json:"error,omitempty"`
 }
 
 // Injection puts one message into the flow.
@@ -78,6 +103,12 @@ type Expectation struct {
 	// there with that value, objects are compared the same way all the way
 	// down, and anything the message carries beyond that is ignored.
 	Msg map[string]any `yaml:"msg,omitempty" json:"msg,omitempty"`
+
+	// Sent is what the node would have sent to the outside world, matched the
+	// same way msg is: an MQTT Out's topic, payload, qos and retain; an HTTP
+	// request's method, url, headers and payload; the query and params a
+	// database would have run; a line of InfluxDB line protocol.
+	Sent map[string]any `yaml:"sent,omitempty" json:"sent,omitempty"`
 
 	// Assert is a JSONata expression evaluated against the message, which has
 	// to come out true. For the checks a literal can't make: a range, a
@@ -132,6 +163,16 @@ func Parse(data []byte) (*Suite, error) {
 				return nil, fmt.Errorf("test %q, expect %d: %w", c.Name, j+1, err)
 			}
 			c.Expect[j].Msg = m
+			if c.Expect[j].Sent, err = jsonShaped(c.Expect[j].Sent); err != nil {
+				return nil, fmt.Errorf("test %q, expect %d: %w", c.Name, j+1, err)
+			}
+		}
+		for j := range c.Replies {
+			m, err := jsonShaped(c.Replies[j].Reply)
+			if err != nil {
+				return nil, fmt.Errorf("test %q, reply %d: %w", c.Name, j+1, err)
+			}
+			c.Replies[j].Reply = m
 		}
 	}
 	if err := s.Check(); err != nil {
@@ -174,6 +215,14 @@ func (s *Suite) Check() error {
 				return fmt.Errorf("test %q, expect %d: %w", c.Name, j+1, err)
 			}
 		}
+		for j, r := range c.Replies {
+			switch {
+			case r.Node == "":
+				return fmt.Errorf("test %q, reply %d: no node", c.Name, j+1)
+			case r.Reply != nil && r.Error != "":
+				return fmt.Errorf("test %q, reply %d: a call either answers or fails; give reply or error, not both", c.Name, j+1)
+			}
+		}
 	}
 	return nil
 }
@@ -192,7 +241,13 @@ func (e *Expectation) check() error {
 	if e.Nothing && e.Count != nil {
 		return fmt.Errorf("nothing and count say the same thing; give one")
 	}
-	if quiet && (e.Msg != nil || e.Assert != "" || e.Error != "") {
+	if e.Sent != nil && (e.Msg != nil || e.Error != "") {
+		// One expectation looks at one thing: the message the node was
+		// handed, or what it would have sent on. Two things is two
+		// expectations.
+		return fmt.Errorf("sent checks what the node would have sent; msg and error check a message. Use two expectations")
+	}
+	if quiet && (e.Msg != nil || e.Sent != nil || e.Assert != "" || e.Error != "") {
 		// "Exactly three, and one looks like this" is two expectations, and
 		// reads better as two.
 		return fmt.Errorf("a count or nothing checks how many messages, not what they hold; " +

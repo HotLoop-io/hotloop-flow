@@ -113,6 +113,14 @@ func newTLSConfig(def *node.Definition) (node.Node, error) {
 		serverName: strings.TrimSpace(p.PropString("servername", "")),
 		alpn:       strings.TrimSpace(p.PropString("alpnprotocol", "")),
 	}
+	if node.StandInOf(def.Services) != nil {
+		// Under a flow test nothing is dialled or served, so nothing is
+		// encrypted and there's no certificate to present or check. Loading
+		// one would read secret files off the disk the test runs on, which a
+		// test doesn't touch, and would refuse to start wherever they aren't.
+		return n, nil
+	}
+
 	certType := orDefault(p.PropString("certType", ""), "files")
 	passphrase, _ := def.Services.Credential("passphrase")
 
