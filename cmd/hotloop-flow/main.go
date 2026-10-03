@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
@@ -446,15 +447,27 @@ func (a *application) recordBaseline(rev string) {
 // the flow file is written *before* the old runtime is stopped, so that a
 // failure to persist leaves the previous flows running rather than taking the
 // line down for a bad save.
+//
+// A full deploy stops everything and starts a fresh runtime. Anything else is a
+// partial deploy: the running runtime restarts only the nodes that changed, and
+// the MQTT sessions, listeners and queues of everything else carry on.
 func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.DeployResult, error) {
 	a.deployMu.Lock()
 	defer a.deployMu.Unlock()
 
-	flows, expectedRev := req.Flows, req.ExpectedRev
+	flows, expectedRev, mode := req.Flows, req.ExpectedRev, req.Mode
+	if mode == "" {
+		mode = runtime.DeployFull
+	}
 	parentRev := a.flowStore.Rev()
 	incoming := flows.StripCredentials()
+	credsChanged := map[string]bool{}
 	for id, c := range incoming {
+		before := a.creds.Get(id)
 		a.creds.Merge(id, c)
+		if !maps.Equal(before, a.creds.Get(id)) {
+			credsChanged[id] = true
+		}
 	}
 
 	live := make(map[string]bool, len(flows.Nodes))
@@ -488,8 +501,6 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 		warnings = append(warnings, "the deployment log could not be written, so this deploy has no record: "+err.Error())
 	}
 
-	a.stop(ctx)
-
 	// Drop context belonging to nodes and flows that no longer exist, so
 	// redeploying repeatedly does not accumulate state for things that are gone.
 	liveFlows := make(map[string]bool, len(flows.Tabs)+len(flows.Subflows))
@@ -499,19 +510,58 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 	for id := range flows.Subflows {
 		liveFlows[id] = true
 	}
+
+	if rt := a.currentRuntime(); rt != nil && mode != runtime.DeployFull {
+		up, err := rt.Update(ctx, flows, runtime.UpdateOptions{Mode: mode, Credentials: credsChanged})
+		if err != nil {
+			return api.DeployResult{}, err
+		}
+		for _, err := range up.CloseErrors {
+			a.log.Warn("error stopping a node", "error", err)
+		}
+		for _, f := range up.Failures {
+			a.log.Error("node failed to start", "node", f.NodeID, "type", f.Type, "error", f.Err)
+		}
+		a.contexts.Clean(live, liveFlows)
+
+		a.log.Info("deployed", "rev", rev, "deployment", seq, "user", req.User, "type", string(mode),
+			"started", len(up.Started), "restarted", len(up.Restarted),
+			"stopped", len(up.Stopped), "unchanged", up.Unchanged, "failures", len(up.Failures))
+		return api.DeployResult{
+			Rev:        rev,
+			Deployment: seq,
+			Warnings:   append(append(append([]string(nil), flows.Warnings...), a.warnings()...), warnings...),
+			Failures:   up.Failures,
+			Update:     up,
+		}, nil
+	}
+
+	a.stop(ctx)
 	a.contexts.Clean(live, liveFlows)
 
 	// Start against the background context, not the request's: the request is
 	// about to complete and its cancellation must not tear down the flows.
 	failures := a.start(context.Background(), flows)
 
-	a.log.Info("deployed", "rev", rev, "deployment", seq, "user", req.User, "failures", len(failures))
+	a.log.Info("deployed", "rev", rev, "deployment", seq, "user", req.User,
+		"type", string(runtime.DeployFull), "failures", len(failures))
 	return api.DeployResult{
 		Rev:        rev,
 		Deployment: seq,
 		Warnings:   append(append(append([]string(nil), flows.Warnings...), a.warnings()...), warnings...),
 		Failures:   failures,
+		Update:     a.fullUpdate(),
 	}, nil
+}
+
+// fullUpdate describes a full deploy in the same terms as a partial one: every
+// node running now was started from scratch.
+func (a *application) fullUpdate() runtime.UpdateResult {
+	up := runtime.UpdateResult{Mode: runtime.DeployFull}
+	if rt := a.currentRuntime(); rt != nil {
+		up.Restarted = rt.RunningIDs()
+	}
+	return up
 }
 
 // record appends to the deployment log with the flow file and credentials as

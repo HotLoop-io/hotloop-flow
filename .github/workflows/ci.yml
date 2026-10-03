@@ -42,12 +42,24 @@ jobs:
             -o testdata/wasmguest/guest.wasm ./testdata/wasmguest
           test -s testdata/wasmguest/guest.wasm
 
+      - name: Start a real MQTT broker
+        # The MQTT tests talk to a real broker or they skip, and until this step
+        # existed they skipped here every time. The partial deploy test counts
+        # the broker's birth messages to prove a deploy kept the session up,
+        # which a fake broker could only pretend to answer.
+        run: |
+          docker run -d --name mosquitto -p 1883:1883 \
+            eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
+          for i in $(seq 1 30); do nc -z localhost 1883 && exit 0; sleep 1; done
+          docker logs mosquitto; exit 1
+
       - name: Test with race detector
         # The race detector needs cgo. This is the test build only — the shipped
         # binary is built CGO_ENABLED=0 in the Dockerfile so it stays static and
         # runs on distroless.
         env:
           CGO_ENABLED: "1"
+          HOTLOOP_FLOW_TEST_MQTT: localhost:1883
         run: go test -race -count=1 -coverprofile=coverage.out ./...
 
       - name: Coverage summary
@@ -66,6 +78,22 @@ jobs:
           fi
           echo "$OUT" | grep -q "TestWasmMemoryCeilingIsEnforced" || {
             echo "::error::the memory ceiling test did not run"; exit 1; }
+
+      - name: The MQTT tests actually ran
+        # Same reasoning as the sandbox check: a broker that failed to come up
+        # turns every MQTT test into a skip, and a skip reads as a pass.
+        env:
+          HOTLOOP_FLOW_TEST_MQTT: localhost:1883
+        run: |
+          OUT=$(go test ./cmd/hotloop-flow/ ./internal/nodes/ -count=1 -v -run 'MQTT' 2>&1)
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::an MQTT test skipped; the broker is not reachable"
+            exit 1
+          fi
+          for t in TestPartialDeployKeepsTheMQTTSessionUp TestIntegrationMQTTRoundTrip; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
 
   chart:
     name: Chart
