@@ -187,6 +187,10 @@ func (s *Server) handleComms(w http.ResponseWriter, r *http.Request) {
 		// preserves the browser's view of the origin.
 		InsecureSkipVerify: false,
 		CompressionMode:    websocket.CompressionContextTakeover,
+		// The editor offers hotloop-flow and its token as a second protocol.
+		// The server picks hotloop-flow, so the token never comes back in
+		// the response either.
+		Subprotocols: []string{wsProtocol},
 	})
 	if err != nil {
 		s.log.Debug("websocket upgrade failed", "error", err)

@@ -145,10 +145,13 @@ func (s *Server) handleMFAReset(w http.ResponseWriter, r *http.Request) {
 }
 
 // secondFactor checks the code for a user whose password was right. It reports
-// whether sign-in may go ahead, and answers the request itself when it may not.
-func (s *Server) secondFactor(w http.ResponseWriter, r *http.Request, user, code string) bool {
+// whether sign-in may go ahead, and answers the request itself when it may
+// not. failed is true when a code was given and was wrong, which counts
+// against the sign-in limits; a missing code doesn't, because the editor
+// always sends the password first and asks for the code when told to.
+func (s *Server) secondFactor(w http.ResponseWriter, r *http.Request, user, code string) (ok, failed bool) {
 	if s.deps.MFA == nil || !s.deps.MFA.Enabled(user) {
-		return true
+		return true, false
 	}
 	if code == "" {
 		// Not a failure: the editor sends the password first and asks for
@@ -157,13 +160,22 @@ func (s *Server) secondFactor(w http.ResponseWriter, r *http.Request, user, code
 			"error": "enter the six-digit code from your authenticator app",
 			"mfa":   "required",
 		})
-		return false
+		return false, false
 	}
 	if err := s.deps.MFA.Verify(user, code); err != nil {
 		s.log.Warn("failed two-factor code", "username", user, "remote", r.RemoteAddr)
 		s.record(r, audit.MFAFailed, user, map[string]any{"reason": err.Error()})
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": err.Error(), "mfa": "required"})
-		return false
+		return false, true
 	}
-	return true
+	return true, false
+}
+
+// strike counts a failed sign-in against the limits, and says so in the audit
+// trail when it just locked something.
+func (s *Server) strike(r *http.Request, user, addr string) {
+	if s.limiter.fail(user, addr) {
+		s.log.Warn("sign-in locked after repeated failures", "username", user, "remote", r.RemoteAddr)
+		s.record(r, audit.LoginLocked, user, map[string]any{"forSeconds": int(s.limiter.lockFor.Seconds())})
+	}
 }

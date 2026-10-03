@@ -43,6 +43,10 @@ const (
 	// MFAFailed sits under login. so ?event=login. shows every way a sign-in
 	// went wrong in one list.
 	MFAFailed = "login.mfa_failed"
+	// LoginLocked is the moment repeated failures locked an account or an
+	// address out; LoginThrottled is each attempt refused while it was.
+	LoginLocked    = "login.locked"
+	LoginThrottled = "login.throttled"
 )
 
 // Entry is one thing that happened.

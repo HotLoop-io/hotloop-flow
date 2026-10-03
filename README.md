@@ -425,6 +425,33 @@ Enrollments are encrypted with the credential secret, the same way node
 credentials are. Nothing about signing in safely is a paid tier here or ever
 will be.
 
+**Guessing passwords goes nowhere.** Five wrong passwords (or right passwords
+with wrong codes) for one account from one address lock that account out from
+that address for fifteen minutes, and twenty failures from one address across
+any accounts lock the address. The account lock is per address on purpose: lock
+the account everywhere and anybody who can reach the port can lock the real
+operator out from across the plant. Locked attempts get a 429 with
+`Retry-After` before the password is even checked, and the lock and every
+attempt it turns away are in the audit trail. Behind a reverse proxy every
+request has the proxy's address, so the per-address limit then applies to
+everybody together; that's the safe way round to be wrong, and the numbers are
+in `auth.lockout`. There's no setting that turns it off.
+
+**Sessions survive a restart.** They used to live in memory, so every pod
+reschedule and every upgrade signed everybody out, and the person who needed to
+change a flow right then went looking for a password instead. They're in
+`data/sessions.json` now, as SHA-256 hashes only, so the file proves a token
+when one is presented and is useless to whoever copies it. A session remembers
+who, not what they may do: take a permission or a user out of the config and
+the next request knows.
+
+**No token in a URL, ever.** A browser can't put an `Authorization` header on a
+WebSocket handshake, so the editor's event stream used to carry its token in the
+query string, which is exactly where access logs, proxies and browser history
+keep things. It now offers the token as a second WebSocket subprotocol beside
+`hotloop-flow`, a header nothing logs by habit, and the server answers with
+`hotloop-flow`. A token in a query string doesn't count anywhere.
+
 **Everything that matters leaves a trail.** Logins, failed logins (with whether
 the name even exists, which a client never gets told but an operator should),
 logouts, deploys, refused deploys, rollbacks and injects go to
@@ -679,7 +706,12 @@ history:
 
 auth:
   enabled: true             # off refuses to start unless HOTLOOP_FLOW_INSECURE=true
-  sessionTTL: 168h
+  sessionTTL: 168h          # sessions live in data.dir/sessions.json, hashed, and survive restarts
+  lockout:
+    attempts: 5             # failures for one account from one address before it locks there
+    perAddress: 20          # failures from one address, any account, before the address locks
+    window: 15m
+    duration: 15m
   users:
     - username: admin
       passwordHash: "$2a$10$..."   # bcrypt only, never plaintext
@@ -767,7 +799,7 @@ timeouts.
 |---|---|---|
 | `GET /health` | none | Liveness. The kubelet carries no token, and auth on this route would restart-loop the pod forever. |
 | `GET /ready` | none | Readiness, reported separately, so a runtime that failed to start leaves the Service without the kubelet killing the pod. |
-| `POST /auth/token` | none | Log in. |
+| `POST /auth/token` | none | Log in. A 429 with `Retry-After` while locked out. |
 | `POST /auth/revoke` | none | Log out. |
 | `GET /auth/mfa`, `POST /auth/mfa/setup`, `/confirm`, `/disable` | a signed-in user | Your own two-factor sign-in. Setup returns the key, the `otpauth://` link and the QR code. Confirm and disable take `{"code": ...}`. |
 | `POST /auth/mfa/reset` | `auth.admin` | Turns off somebody else's two-factor sign-in: `{"username": ...}`. |
@@ -786,7 +818,7 @@ timeouts.
 | `POST /deployments/{seq}/rollback` | `flows.write` | Deploys that record's flows and credentials again as a new deployment. Takes the rev header and an optional `{"note": ...}`. |
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
-| `GET /comms` | `status.read` | The editor's status and debug websocket. |
+| `GET /comms` | `status.read` | The editor's status and debug websocket. The token rides as the subprotocol `hotloop-flow.bearer.<token>`, offered beside `hotloop-flow`. |
 
 `/metrics` and `/health` being unauthenticated is a decision rather than an
 oversight. A Prometheus scraper carries no bearer token, so requiring one means

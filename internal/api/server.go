@@ -3,9 +3,6 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +11,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/audit"
@@ -54,8 +50,11 @@ type Deps struct {
 	// which only tests that aren't about it should ever want.
 	Audit *audit.Log
 	// MFA holds two-factor enrollments. Nil means no second factor anywhere.
-	MFA    *mfa.Store
-	Logger *slog.Logger
+	MFA *mfa.Store
+	// SessionsPath is where sign-in sessions are kept so they survive a
+	// restart. Empty keeps them in memory.
+	SessionsPath string
+	Logger       *slog.Logger
 
 	// Runtime returns the currently running runtime. It is a function rather
 	// than a value because a deploy replaces the whole runtime, and every
@@ -139,25 +138,29 @@ type DeployResult struct {
 
 // Server is the HTTP surface.
 type Server struct {
-	deps   Deps
-	mux    *http.ServeMux
-	tokens *tokenStore
-	hub    *hub
-	log    *slog.Logger
-	root   string
+	deps    Deps
+	mux     *http.ServeMux
+	tokens  *tokenStore
+	limiter *limiter
+	hub     *hub
+	log     *slog.Logger
+	root    string
 }
 
 // New builds the server and wires its routes.
 func New(deps Deps) *Server {
 	root := strings.TrimSuffix(deps.Config.Server.AdminRoot, "/")
 
+	cfg := deps.Config
+	lo := cfg.Auth.Lockout
 	s := &Server{
-		deps:   deps,
-		mux:    http.NewServeMux(),
-		tokens: newTokenStore(deps.Config.Auth.SessionTTL),
-		hub:    newHub(deps.Logger),
-		log:    deps.Logger,
-		root:   root,
+		deps:    deps,
+		mux:     http.NewServeMux(),
+		tokens:  newTokenStore(cfg.Auth.SessionTTL, deps.SessionsPath, cfg.FindUser, deps.Logger),
+		limiter: newLimiter(lo.Attempts, lo.PerAddress, lo.Window, lo.Duration),
+		hub:     newHub(deps.Logger),
+		log:     deps.Logger,
+		root:    root,
 	}
 	s.routes()
 	return s
@@ -412,8 +415,30 @@ func bearerToken(r *http.Request) string {
 			return strings.TrimSpace(after)
 		}
 	}
-	if r.Header.Get("Upgrade") == "websocket" {
-		return r.URL.Query().Get("access_token")
+	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return websocketToken(r)
+	}
+	return ""
+}
+
+// The editor's websocket can't set an Authorization header, because browsers
+// don't allow it on a WebSocket handshake. It used to put the token in the
+// query string instead, which is exactly where access logs, proxies and
+// browser history keep things. It now offers it as a subprotocol,
+// hotloop-flow.bearer.<token>, beside the real one, hotloop-flow, which is the
+// one the server picks. A header, so nobody logs it by accident.
+const (
+	wsProtocol       = "hotloop-flow"
+	wsBearerProtocol = "hotloop-flow.bearer."
+)
+
+func websocketToken(r *http.Request) string {
+	for _, v := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for _, p := range strings.Split(v, ",") {
+			if tok, ok := strings.CutPrefix(strings.TrimSpace(p), wsBearerProtocol); ok {
+				return tok
+			}
+		}
 	}
 	return ""
 }
@@ -462,6 +487,17 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	addr := addressOf(r.RemoteAddr)
+	if wait, ok := s.limiter.check(req.Username, addr); !ok {
+		// Refused before the password is even looked at, so a locked account
+		// can't be used to test guesses at full speed.
+		s.record(r, audit.LoginThrottled, req.Username, map[string]any{"retryAfterSeconds": int(wait.Seconds()) + 1})
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeError(w, http.StatusTooManyRequests, fmt.Sprintf(
+			"too many failed sign-ins from here; try again in %s", wait.Round(time.Second)))
+		return
+	}
+
 	user, found := s.deps.Config.FindUser(req.Username)
 	// Always run the hash comparison, even for an unknown user, so that response
 	// timing does not reveal which usernames exist.
@@ -472,13 +508,18 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 		// usernames. The audit trail is for the operator, and an unknown
 		// name is worth knowing apart from a wrong password.
 		s.record(r, audit.LoginFailed, req.Username, map[string]any{"knownUser": found})
+		s.strike(r, req.Username, addr)
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
-	if !s.secondFactor(w, r, user.Username, req.Code) {
+	if ok, failed := s.secondFactor(w, r, user.Username, req.Code); !ok {
+		if failed {
+			s.strike(r, user.Username, addr)
+		}
 		return
 	}
+	s.limiter.succeed(user.Username, addr)
 
 	tok, expires := s.tokens.issue(user)
 	s.log.Info("login", "username", user.Username, "remote", r.RemoteAddr)
@@ -1067,77 +1108,4 @@ func readJSON(r *http.Request, maxBytes int64, dst any) error {
 		return fmt.Errorf("parsing request body: %w", err)
 	}
 	return nil
-}
-
-// ---------------------------------------------------------------------------
-// Tokens
-// ---------------------------------------------------------------------------
-
-type tokenStore struct {
-	mu     sync.RWMutex
-	ttl    time.Duration
-	issued map[string]tokenEntry
-}
-
-type tokenEntry struct {
-	user    config.User
-	expires time.Time
-}
-
-func newTokenStore(ttl time.Duration) *tokenStore {
-	if ttl <= 0 {
-		ttl = 7 * 24 * time.Hour
-	}
-	return &tokenStore{ttl: ttl, issued: map[string]tokenEntry{}}
-}
-
-func (t *tokenStore) issue(u config.User) (string, time.Time) {
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		// crypto/rand does not fail on any platform we ship to. If it somehow
-		// did, issuing a predictable token would be far worse than panicking.
-		panic("hotloop-flow: crypto/rand failed while issuing a token: " + err.Error())
-	}
-	tok := hex.EncodeToString(b[:])
-	expires := time.Now().Add(t.ttl)
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.sweepLocked()
-	t.issued[tok] = tokenEntry{user: u, expires: expires}
-	return tok, expires
-}
-
-func (t *tokenStore) lookup(tok string) (config.User, bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-	// Constant-time comparison against each candidate would be ideal, but a map
-	// lookup on a 256-bit random token leaks nothing useful: there is no
-	// prefix to walk when the whole key must match to hash to the right bucket.
-	e, ok := t.issued[tok]
-	if !ok || time.Now().After(e.expires) {
-		return config.User{}, false
-	}
-	return e.user, true
-}
-
-func (t *tokenStore) revoke(tok string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	for k := range t.issued {
-		if subtle.ConstantTimeCompare([]byte(k), []byte(tok)) == 1 {
-			delete(t.issued, k)
-		}
-	}
-}
-
-// sweepLocked drops expired tokens. Called on issue rather than on a timer, so
-// an idle instance holds no goroutine for it.
-func (t *tokenStore) sweepLocked() {
-	now := time.Now()
-	for k, e := range t.issued {
-		if now.After(e.expires) {
-			delete(t.issued, k)
-		}
-	}
 }

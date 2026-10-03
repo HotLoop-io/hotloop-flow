@@ -75,6 +75,9 @@ const topDeploy = (page: Page) => page.locator('.topbar button', { hasText: 'Dep
 test('review shows the change on the canvas and in words, and the note lands in the history', async ({ page, request }) => {
   await deployAs(request, 'admin', lineThree('set'), 'seed');
   await signIn(page);
+  // The event stream authenticates with its token as a subprotocol, never in
+  // the URL. A browser that didn't accept that negotiation would never say live.
+  await expect(page.locator('.conn')).toContainText('live');
 
   await rename(page, 'c1', 'set two');
   await topDeploy(page).click();

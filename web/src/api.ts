@@ -332,9 +332,11 @@ export class Api {
   /**
    * Opens the event stream.
    *
-   * The token goes in the query string because a browser cannot set headers on
-   * a WebSocket handshake. It is bounded by the session and the connection is
-   * same-origin, so it does not leave the origin it was issued for.
+   * A browser can't set an Authorization header on a WebSocket handshake. The
+   * token used to go in the query string, which is exactly where access logs,
+   * proxies and browser history keep things, so it now rides as a second
+   * subprotocol beside hotloop-flow, a header nothing logs by habit. The server
+   * picks hotloop-flow, so the token doesn't come back in the answer either.
    */
   connectEvents(onEvent: (e: RuntimeEvent) => void, onState: (up: boolean) => void): () => void {
     let socket: WebSocket | null = null;
@@ -348,10 +350,10 @@ export class Api {
       // No token means the runtime was started with authentication off (the
       // editor only gets this far without one when /settings answered), and
       // the socket needs none.
-      const query = this.token ? `?access_token=${encodeURIComponent(this.token)}` : '';
-      const url = `${proto}//${location.host}${this.base}/comms${query}`;
+      const protocols = this.token ? ['hotloop-flow', `hotloop-flow.bearer.${this.token}`] : ['hotloop-flow'];
+      const url = `${proto}//${location.host}${this.base}/comms`;
 
-      socket = new WebSocket(url);
+      socket = new WebSocket(url, protocols);
 
       socket.onopen = () => {
         retry = 1000;

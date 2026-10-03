@@ -248,9 +248,12 @@ The image is distroless nonroot with no shell in it, so there's nothing to
 ## Backups
 
 Everything worth keeping is in `/data`: `flows.json`, `credentials.json`,
-`flows.json.bak.1` to `.bak.3`, and the deployment log in `deployments/`, one
-file per deploy. The log's records carry credentials encrypted under the same
-secret. Back up the directory and the credential secret,
+`flows.json.bak.1` to `.bak.3`, the deployment log in `deployments/` (one file
+per deploy), the audit trail in `audit.log`, two-factor enrollments in
+`mfa.json`, and sign-in sessions in `sessions.json`. The log's records and the
+enrollments are encrypted under the same secret as the credentials, and the
+sessions are hashes. `git-mirror/` is only a clone, rebuilt from the repository
+if it's lost. Back up the directory and the credential secret,
 **separately**. The credential file is useless without the secret, which is the
 point, and a backup that holds both in one place is a backup that hands both to
 whoever steals it.

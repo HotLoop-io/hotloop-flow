@@ -252,21 +252,22 @@ func cmdServe(args []string) error {
 	}
 
 	srv := api.New(api.Deps{
-		MFA:         secondFactor,
-		Audit:       trail,
-		Mirror:      mirrorStatus,
-		Metrics:     extraMetrics,
-		Config:      cfg,
-		Registry:    node.Default,
-		Flows:       flowStore,
-		Credentials: creds,
-		History:     deployments,
-		Logger:      log,
-		Runtime:     app.currentRuntime,
-		Deploy:      app.deploy,
-		Rollback:    app.rollback,
-		FlowRoutes:  nodes.Routes,
-		Version:     version,
+		SessionsPath: cfg.SessionsPath(),
+		MFA:          secondFactor,
+		Audit:        trail,
+		Mirror:       mirrorStatus,
+		Metrics:      extraMetrics,
+		Config:       cfg,
+		Registry:     node.Default,
+		Flows:        flowStore,
+		Credentials:  creds,
+		History:      deployments,
+		Logger:       log,
+		Runtime:      app.currentRuntime,
+		Deploy:       app.deploy,
+		Rollback:     app.rollback,
+		FlowRoutes:   nodes.Routes,
+		Version:      version,
 	})
 	app.hub = srv.Hub()
 

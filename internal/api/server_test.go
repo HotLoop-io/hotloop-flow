@@ -307,14 +307,19 @@ func TestDeployIsBoundedByMaxRequestBytes(t *testing.T) {
 	}
 }
 
-// A token in the query string is only for the websocket, which can't set a
-// header. Accepting it anywhere else invites it into every access log.
-func TestQueryTokenOnlyCountsOnAWebsocketUpgrade(t *testing.T) {
+// A token in the query string never counts, on any request. That's where
+// access logs, proxies and browser history keep things. The websocket's
+// token rides as a subprotocol instead (TestWebsocketTokenRidesAsASubprotocol).
+func TestQueryTokenNeverCounts(t *testing.T) {
 	ts := newTestServer(t, map[string][]string{"admin": {"*"}})
 	tok := ts.mustLogin(t, "admin")
 	res, _ := ts.do(t, "GET", "/flows?access_token="+tok, "", nil)
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("query token on a plain request: %d, want 401", res.StatusCode)
+	}
+	res, _ = ts.do(t, "GET", "/comms?access_token="+tok, "", nil, "Upgrade", "websocket", "Connection", "Upgrade")
+	if res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("query token on a websocket upgrade: %d, want 401", res.StatusCode)
 	}
 }
 
