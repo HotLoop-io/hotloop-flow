@@ -326,6 +326,8 @@ type wsClientNode struct {
 	*wsHub
 	url         string
 	subprotocol string
+	// client carries a tls-config's settings into the dial, when there is one.
+	client *http.Client
 }
 
 func registerWebSocketClient() {
@@ -340,14 +342,16 @@ func registerWebSocketClient() {
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Connects out and reconnects on its own when the connection drops, " +
-				"in payload mode or whole-message mode. Per-node TLS configuration is " +
-				"not implemented; the system trust store is used.",
-			UnsupportedProps: []string{"tls"},
+				"in payload mode or whole-message mode. A wss:// URL checks the server " +
+				"against the system roots, or against a tls-config's CA, with its client " +
+				"certificate and server name, as in Node-RED.",
 		},
 		Props: []node.Prop{
 			{Name: "path", Kind: node.PropString, Label: "URL", Required: true,
 				Placeholder: "ws://gateway.local:8080/feed"},
 			{Name: "subprotocol", Kind: node.PropString, Label: "Sub-protocol"},
+			{Name: "tls", Kind: node.PropConfigRef, ConfigType: "tls-config", Label: "TLS",
+				Help: "For a wss:// URL: a private CA, a client certificate, or the check off."},
 			{Name: "wholemsg", Kind: node.PropSelect, Label: "Send and receive", Default: "false",
 				Options: []node.Option{
 					{Value: "false", Label: "The payload only"},
@@ -371,18 +375,31 @@ func newWebSocketClient(def *node.Definition) (node.Node, error) {
 	if !strings.HasPrefix(n.url, "ws://") && !strings.HasPrefix(n.url, "wss://") {
 		return nil, fmt.Errorf("%q must start with ws:// or wss://", n.url)
 	}
+	if id := tlsConfigRef(def.Node); id != "" {
+		cfg, err := lookupTLSConfig(def.Services, id)
+		if err != nil {
+			return nil, err
+		}
+		// Its own transport, HTTP/1.1 only, which is what a websocket
+		// upgrade needs.
+		n.client = &http.Client{Transport: &http.Transport{
+			Proxy:           http.ProxyFromEnvironment,
+			TLSClientConfig: cfg.clientConfig(),
+		}}
+	}
 	return n, nil
 }
 
 func (n *wsClientNode) Receive(context.Context, *engine.Msg, node.Emitter) error { return nil }
 
-func (n *wsClientNode) Start(ctx context.Context, _ node.Emitter) error {
-	go n.dialLoop(ctx)
+func (n *wsClientNode) Start(ctx context.Context, out node.Emitter) error {
+	go n.dialLoop(ctx, out)
 	return nil
 }
 
-func (n *wsClientNode) dialLoop(ctx context.Context) {
-	opts := &websocket.DialOptions{}
+func (n *wsClientNode) dialLoop(ctx context.Context, out node.Emitter) {
+	opts := &websocket.DialOptions{HTTPClient: n.client}
+	var lastErr string
 	if n.subprotocol != "" {
 		opts.Subprotocols = []string{n.subprotocol}
 	}
@@ -394,9 +411,21 @@ func (n *wsClientNode) dialLoop(ctx context.Context) {
 
 		conn, _, err := websocket.Dial(ctx, n.url, opts)
 		if err == nil {
+			lastErr = ""
+			out.Status(node.Status{Fill: "green", Shape: "dot", Text: "connected"})
 			s := newSession(conn)
 			n.add(s)
 			n.readLoop(ctx, s)
+			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "disconnected"})
+		} else if ctx.Err() == nil {
+			// Once per distinct failure. A server that is down for an hour
+			// is one line, and a refused certificate, which never fixes
+			// itself, is not lost among a thousand retries.
+			if msg := err.Error(); msg != lastErr {
+				lastErr = msg
+				out.Log(node.LogWarn, "connecting to %s: %s", n.url, msg)
+			}
+			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "connect failed"})
 		}
 
 		// Redial on a fixed delay rather than backing off. A gateway on a plant

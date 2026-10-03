@@ -65,6 +65,9 @@ type Runtime struct {
 	// built a moment earlier.
 	configsMu sync.RWMutex
 	configs   map[string]node.Node
+	// configStops cancels the context a started configuration node was given.
+	// Guarded by configsMu with configs.
+	configStops map[string]context.CancelFunc
 
 	contexts *store.ScopedContexts
 
@@ -207,11 +210,12 @@ type graph struct {
 // New builds a runtime for a parsed flow set. Nothing starts until Start.
 func New(reg *node.Registry, flows *engine.Flows, opts Options) *Runtime {
 	rt := &Runtime{
-		reg:      reg,
-		opts:     opts.withDefaults(),
-		configs:  map[string]node.Node{},
-		contexts: store.NewScopedContexts(),
-		events:   make(chan Event, 1024),
+		reg:         reg,
+		opts:        opts.withDefaults(),
+		configs:     map[string]node.Node{},
+		configStops: map[string]context.CancelFunc{},
+		contexts:    store.NewScopedContexts(),
+		events:      make(chan Event, 1024),
 	}
 	// Subflows are instantiated here rather than at start, so a caller can read
 	// the warnings before anything runs and so Start has one kind of graph to
@@ -351,9 +355,11 @@ func (g *graph) scopeEnabled(z string) bool {
 
 // startConfigs builds the listed configuration nodes, each after any other
 // listed config it points at, and makes each resolvable as soon as it exists so
-// the next one can find it.
+// the next one can find it. Then it starts the ones that have work of their
+// own; see startConfig.
 func (rt *Runtime) startConfigs(g *graph, ids []string) []StartError {
 	var failures []StartError
+	var built []string
 	for _, id := range configBuildOrder(g, ids) {
 		n := g.flows.Nodes[id]
 		if n.Disabled {
@@ -369,6 +375,12 @@ func (rt *Runtime) startConfigs(g *graph, ids []string) []StartError {
 		rt.configsMu.Lock()
 		rt.configs[id] = inst
 		rt.configsMu.Unlock()
+		built = append(built, id)
+	}
+	for _, id := range built {
+		if f, ok := rt.startConfig(g, id); !ok {
+			failures = append(failures, f)
+		}
 	}
 	return failures
 }
@@ -680,7 +692,12 @@ func (rt *Runtime) retire(ctx context.Context, runners []*runner, configIDs []st
 		rt.configsMu.Lock()
 		inst, ok := rt.configs[id]
 		delete(rt.configs, id)
+		stop := rt.configStops[id]
+		delete(rt.configStops, id)
 		rt.configsMu.Unlock()
+		if stop != nil {
+			stop()
+		}
 		if !ok {
 			continue
 		}
