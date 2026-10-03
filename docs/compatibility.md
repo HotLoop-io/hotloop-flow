@@ -43,13 +43,13 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 ## Summary
 
-51 node types registered.
+52 node types registered.
 
 | Level | Count |
 |---|---|
-| full | 11 |
-| partial | 25 |
-| divergent | 9 |
+| full | 12 |
+| partial | 24 |
+| divergent | 10 |
 | hotloop-flow-only | 6 |
 
 ## Common
@@ -62,8 +62,9 @@ stopped with D1012 instead of stalling the node's whole queue.
 | `debug` | full | — |
 | `inject` | partial | Interval, startup and cron-scheduled injection are supported. The crontab is read the way Node-RED's own scheduler, cronosjs, reads it, in the process's local time, including what it does with the hour that goes missing or repeats when the clocks change. A manual inject from the admin API always sends the configured properties: Node-RED's inject-with-these-values (msg.__user_inject_props__) is not implemented. |
 | `junction` | full | — |
+| `link call` | full | Calls a Link In and sends on whatever a Link Out in return mode sends back, including calls made from inside a call. A static target is chosen by id. In dynamic mode msg.target is an id or a name, looked up on the calling flow first and then across every flow, never inside a subflow instance. A call with no return within the timeout raises an error with the original message; a return that turns up after that still goes out, as it does in Node-RED. |
 | `link in` | full | — |
-| `link out` | partial | Link Out in "send to" mode is supported. "Return to calling Link Call" requires the Link Call node, which is not implemented in this build. |
+| `link out` | divergent | Both modes are supported: send to Link In nodes, and return to the Link Call that sent the message. One deliberate difference: a Link In that is not running, and a return with no Link Call to go back to, raise an error a Catch node can see. Node-RED drops the first quietly and only logs a warning for the second, which makes a deleted or mistyped link very hard to find. |
 | `status` | full | — |
 
 ## Config

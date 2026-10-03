@@ -188,7 +188,7 @@ but plenty of people drop one that doesn't.
 - [x] JSONata, proven against the published examples, since it's the most common
       thing an imported flow trips over
 - [x] Cron-style inject
-- [ ] Link Call and Link Out's return mode
+- [x] Link Call and Link Out's return mode
 - [ ] Join by timeout and reduce, batch by time, split streaming
 - [ ] MQTT v5 and last will
 - [ ] TLS on TCP, cookies and multipart on HTTP
