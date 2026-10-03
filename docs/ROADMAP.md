@@ -47,7 +47,7 @@ time.
 - [ ] Rewrite the top of the README around what Flow does. Importing existing
       flows moves to its own section further down, with the byte-exact round
       trip and `hotloop-flow import` as the evidence
-- [ ] Deployment docs talk about Kubernetes, Podman and Quadlet, not one
+- [x] Deployment docs talk about Kubernetes, Podman and Quadlet, not one
       company's App Store
 - [x] Tests for the packages that have none: `api` (login, permissions, the 409
       on a stale deploy), `config` (every startup refusal the README lists) and
