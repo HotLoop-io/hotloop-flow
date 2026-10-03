@@ -185,7 +185,7 @@ but plenty of people drop one that doesn't.
 - [x] Partial deploy: only changed nodes and their wires restart. Today every
       save drops every MQTT session and every in-flight message, which teaches
       operators not to deploy during a shift
-- [ ] JSONata, proven against the published examples, since it's the most common
+- [x] JSONata, proven against the published examples, since it's the most common
       thing an imported flow trips over
 - [ ] Cron-style inject
 - [ ] Link Call and Link Out's return mode

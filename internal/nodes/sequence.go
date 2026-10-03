@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/jsonata"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 )
 
@@ -492,6 +493,12 @@ type sortNode struct {
 	target   string
 	seq      bool // sort a message sequence rather than an array payload
 
+	// seqKey is the message property a sequence is sorted on, and key the
+	// JSONata expression that replaces it (or the element itself, for an
+	// array) when the flow asks for one.
+	seqKey string
+	key    *jsonata.Expr
+
 	mu    sync.Mutex
 	group map[string][]*engine.Msg
 }
@@ -507,10 +514,10 @@ func registerSort() {
 		PaletteLabel: "sort",
 		LabelProp:    "name",
 		Compatibility: node.Compatibility{
-			Level: node.CompatPartial,
-			Notes: "Sorts array payloads and message sequences by a property. JSONata " +
-				"key expressions are not supported.",
-			UnsupportedProps: []string{"keyType:jsonata"},
+			Level: node.CompatFull,
+			Notes: "Sorts an array property by its elements or by a JSONata key evaluated " +
+				"against each element, and a message sequence by a property or a JSONata " +
+				"key evaluated against each message.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -529,21 +536,33 @@ func registerSort() {
 }
 
 func newSort(def *node.Definition) (node.Node, error) {
-	if def.Node.PropString("keyType", "") == "jsonata" || def.Node.PropString("targetType", "") == "jsonata" {
-		return nil, fmt.Errorf("sort with a JSONata key is not supported in this build")
-	}
-	return &sortNode{
+	n := &sortNode{
 		order:    def.Node.PropString("order", "ascending"),
 		asNumber: def.Node.PropBool("as_num", false),
 		target:   orDefault(def.Node.PropString("target", ""), engine.PropPayload),
 		seq:      def.Node.PropString("targetType", "msg") == "seq",
+		seqKey:   orDefault(def.Node.PropString("seqKey", ""), engine.PropPayload),
 		group:    map[string][]*engine.Msg{},
-	}, nil
+	}
+	// The key is an expression when its type says so: msgKeyType for an
+	// array, seqKeyType for a sequence, same as Node-RED.
+	keyType, keySrc := def.Node.PropString("msgKeyType", ""), def.Node.PropString("msgKey", "")
+	if n.seq {
+		keyType, keySrc = def.Node.PropString("seqKeyType", ""), def.Node.PropString("seqKey", "")
+	}
+	if keyType == node.TypeJSONata {
+		x, err := jsonata.Compile(keySrc, def.Services)
+		if err != nil {
+			return nil, fmt.Errorf("sort key: %w", err)
+		}
+		n.key = x
+	}
+	return n, nil
 }
 
-func (n *sortNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
+func (n *sortNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
 	if n.seq {
-		return n.sortSequence(m, out)
+		return n.sortSequence(ctx, m, out)
 	}
 
 	value, ok, err := m.Get(n.target)
@@ -558,8 +577,22 @@ func (n *sortNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) e
 		return fmt.Errorf("%s is %T, which is not an array", n.target, value)
 	}
 
-	cp := append([]any(nil), arr...)
-	sort.SliceStable(cp, func(i, j int) bool { return n.less(cp[i], cp[j]) })
+	var cp []any
+	if n.key != nil {
+		// Each element is the expression's input, not the message.
+		keys := make([]any, len(arr))
+		for i, e := range arr {
+			k, _, err := n.key.EvalValue(ctx, e, nil)
+			if err != nil {
+				return fmt.Errorf("sort key for element %d: %w", i, err)
+			}
+			keys[i] = k
+		}
+		cp = sortByKeys(arr, keys, n.less)
+	} else {
+		cp = append([]any(nil), arr...)
+		sort.SliceStable(cp, func(i, j int) bool { return n.less(cp[i], cp[j]) })
+	}
 
 	if err := m.Set(n.target, cp); err != nil {
 		return err
@@ -568,7 +601,7 @@ func (n *sortNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) e
 	return nil
 }
 
-func (n *sortNode) sortSequence(m *engine.Msg, out node.Emitter) error {
+func (n *sortNode) sortSequence(ctx context.Context, m *engine.Msg, out node.Emitter) error {
 	parts, ok := readParts(m)
 	if !ok {
 		return fmt.Errorf("sorting a sequence needs msg.parts, which this message does not carry")
@@ -587,11 +620,30 @@ func (n *sortNode) sortSequence(m *engine.Msg, out node.Emitter) error {
 		return nil
 	}
 
-	sort.SliceStable(batch, func(i, j int) bool {
-		a, _, _ := batch[i].Get(engine.PropPayload)
-		b, _, _ := batch[j].Get(engine.PropPayload)
-		return n.less(a, b)
-	})
+	// Every key is worked out before anything moves: an expression that fails
+	// on one message fails the batch, rather than leaving half of it sorted.
+	keys := make([]any, len(batch))
+	for i, bm := range batch {
+		if n.key != nil {
+			k, _, err := n.key.EvalMsg(ctx, bm, nil)
+			if err != nil {
+				return fmt.Errorf("sort key for message %d of the sequence: %w", i, err)
+			}
+			keys[i] = k
+			continue
+		}
+		keys[i], _, _ = bm.Get(n.seqKey)
+	}
+	order := make([]int, len(batch))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool { return n.less(keys[order[i]], keys[order[j]]) })
+	sorted := make([]*engine.Msg, len(batch))
+	for i, idx := range order {
+		sorted[i] = batch[idx]
+	}
+	batch = sorted
 
 	// Renumber so a downstream Join reassembles them in the new order.
 	for i, bm := range batch {
@@ -601,6 +653,20 @@ func (n *sortNode) sortSequence(m *engine.Msg, out node.Emitter) error {
 		out.Send(0, bm)
 	}
 	return nil
+}
+
+// sortByKeys returns items in the order of their keys, stable for equal keys.
+func sortByKeys(items, keys []any, less func(a, b any) bool) []any {
+	order := make([]int, len(items))
+	for i := range order {
+		order[i] = i
+	}
+	sort.SliceStable(order, func(i, j int) bool { return less(keys[order[i]], keys[order[j]]) })
+	out := make([]any, len(items))
+	for i, idx := range order {
+		out[i] = items[idx]
+	}
+	return out
 }
 
 func (n *sortNode) less(a, b any) bool {

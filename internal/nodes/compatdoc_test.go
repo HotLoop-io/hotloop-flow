@@ -76,9 +76,19 @@ func renderCompatibilityDoc() string {
 	b.WriteString("## Not supported at all\n\n")
 	b.WriteString("**Node-RED community nodes.** They are npm packages that need Node.js.\n")
 	b.WriteString("There is no version of this where they work.\n\n")
-	b.WriteString("**JSONata expressions.** Any property typed `jsonata` is refused with an\n")
-	b.WriteString("error rather than ignored. Returning the expression text would make a flow\n")
-	b.WriteString("appear to work while routing on a literal string.\n\n")
+
+	b.WriteString("## JSONata\n\n")
+	b.WriteString("Every property typed `jsonata` is evaluated, by gnata, a pure Go JSONata 2.x,\n")
+	b.WriteString("with Node-RED's own functions bound in: `$flowContext`, `$globalContext`, `$env`,\n")
+	b.WriteString("`$clone`, and the legacy form that names `msg`. Against the published jsonata-js\n")
+	b.WriteString("2.2.2 test suite it passes 1673 of 1686 cases. The 13 it misses are listed in\n")
+	b.WriteString("`internal/jsonata/suite_test.go`, and ten of those still raise an error, just\n")
+	b.WriteString("with a different code or token than jsonata-js gives.\n\n")
+	b.WriteString("Three differences from Node-RED. `$moment` is refused with an error naming\n")
+	b.WriteString("`$fromMillis` and `$toMillis`, because moment.js isn't reimplemented here. A\n")
+	b.WriteString("message object has no key order, so `$keys()` and anything that walks an object\n")
+	b.WriteString("sees its keys sorted. And an evaluation still running after 10 seconds is\n")
+	b.WriteString("stopped with D1012 instead of stalling the node's whole queue.\n\n")
 
 	descs := node.Default.Descriptors()
 

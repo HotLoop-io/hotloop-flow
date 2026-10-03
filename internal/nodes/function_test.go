@@ -228,22 +228,6 @@ func TestChangeRejectsBadRegex(t *testing.T) {
 	}
 }
 
-func TestChangeJSONataIsRefusedNotIgnored(t *testing.T) {
-	// Silently returning the expression text would make the flow appear to work
-	// while setting a property to a literal string.
-	svc := newTestServices()
-	n := build(t, "change", `{"rules":[
-        {"t":"set","p":"payload","pt":"msg","to":"$sum(payload)","tot":"jsonata"}
-    ]}`, svc)
-	_, err := send(t, n, msg(t, `{"payload":[1,2,3]}`))
-	if err == nil {
-		t.Fatal("a JSONata expression was silently accepted")
-	}
-	if !strings.Contains(err.Error(), "JSONata") {
-		t.Errorf("error = %q, want it to name JSONata", err)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // switch
 // ---------------------------------------------------------------------------
@@ -435,13 +419,6 @@ func TestSwitchOnNestedProperty(t *testing.T) {
 	}
 	if e.total() != 1 {
 		t.Error("a rule on a nested property did not match")
-	}
-}
-
-func TestSwitchRejectsJSONataRule(t *testing.T) {
-	err := buildErr(t, "switch", `{"property":"payload","rules":[{"t":"jsonata_exp","v":"$x","vt":"str"}]}`, newTestServices())
-	if err == nil {
-		t.Fatal("a JSONata rule was accepted")
 	}
 }
 
