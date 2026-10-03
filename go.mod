@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20260806115107-493f22071ef6
+	github.com/eclipse/paho.golang v0.23.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/go-git/go-git/v5 v5.19.2
 	github.com/jackc/pgx/v5 v5.10.0
