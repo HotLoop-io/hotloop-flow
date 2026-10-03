@@ -40,12 +40,31 @@ type NodeStat struct {
 // Source supplies the current counters.
 type Source func() []NodeStat
 
+// Family is a metric another part of the process contributes, such as the git
+// mirror's push failures. Collected on every scrape, like the rest.
+type Family struct {
+	Name, Help string
+	// Type is "counter" or "gauge".
+	Type    string
+	Collect func() []Sample
+}
+
+// Sample is one series of a Family.
+type Sample struct {
+	Labels [][2]string
+	Value  float64
+}
+
 // Handler serves the metrics endpoint.
 type Handler struct {
 	source    Source
 	version   string
 	startedAt time.Time
+	families  []Family
 }
+
+// Add registers more metrics. Call it before the handler serves.
+func (h *Handler) Add(f ...Family) { h.families = append(h.families, f...) }
 
 // NewHandler builds the endpoint.
 func NewHandler(version string, source Source) *Handler {
@@ -151,6 +170,19 @@ func (h *Handler) Write(w io.Writer) {
 	writeCounter(&b, "hotloop_flow_gc_cycles_total",
 		"Completed garbage collection cycles.",
 		[]labelled{{value: float64(mem.NumGC)}})
+
+	for _, f := range h.families {
+		samples := f.Collect()
+		series := make([]labelled, 0, len(samples))
+		for _, s := range samples {
+			series = append(series, labelled{labels: s.Labels, value: s.Value})
+		}
+		if f.Type == "counter" {
+			writeCounter(&b, f.Name, f.Help, series)
+		} else {
+			writeGauge(&b, f.Name, f.Help, series)
+		}
+	}
 
 	_, _ = io.WriteString(w, b.String())
 }

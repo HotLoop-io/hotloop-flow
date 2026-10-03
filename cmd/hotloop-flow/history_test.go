@@ -31,6 +31,12 @@ type e2e struct {
 
 func serveApp(t *testing.T, app *application, users map[string][]string) *e2e {
 	t.Helper()
+	return serveAppWith(t, app, users, nil)
+}
+
+// serveAppWith lets a test adjust the dependencies before the server is built.
+func serveAppWith(t *testing.T, app *application, users map[string][]string, adjust func(*api.Deps)) *e2e {
+	t.Helper()
 	hash, err := config.HashPassword(e2ePassword)
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +45,7 @@ func serveApp(t *testing.T, app *application, users map[string][]string) *e2e {
 	for name, perms := range users {
 		app.cfg.Auth.Users = append(app.cfg.Auth.Users, config.User{Username: name, PasswordHash: hash, Permissions: perms})
 	}
-	srv := api.New(api.Deps{
+	deps := api.Deps{
 		Config:      app.cfg,
 		Registry:    node.Default,
 		Flows:       app.flowStore,
@@ -50,7 +56,11 @@ func serveApp(t *testing.T, app *application, users map[string][]string) *e2e {
 		Deploy:      app.deploy,
 		Rollback:    app.rollback,
 		Version:     "test",
-	})
+	}
+	if adjust != nil {
+		adjust(&deps)
+	}
+	srv := api.New(deps)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return &e2e{Server: ts, app: app}

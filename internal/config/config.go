@@ -232,6 +232,28 @@ type History struct {
 	// which is a decision about disk space, not about safety: each record is a
 	// copy of the flow file plus the encrypted credentials.
 	Retain int `yaml:"retain"`
+
+	// Git mirrors every deployment to a repository. Off unless a URL is set.
+	Git GitMirror `yaml:"git"`
+}
+
+// GitMirror pushes each deployment to a git repository as a commit authored by
+// the deployer.
+type GitMirror struct {
+	// URL is the repository, http:// or https://. Empty turns the mirror off.
+	URL string `yaml:"url"`
+	// Branch Flow commits to, and nothing else should. Defaults to main.
+	Branch string `yaml:"branch"`
+	// Path of the flow file in the repository. Defaults to flows.json.
+	Path string `yaml:"path"`
+	// EmailDomain makes each deployer's commit email: dana@<domain>.
+	// Defaults to flow.invalid, which is reserved and can never reach anybody.
+	EmailDomain string `yaml:"emailDomain"`
+	// Username for HTTP basic auth. Not a secret, so the file may carry it.
+	Username string `yaml:"username"`
+	// Password is the access token. Environment only, from a Secret, never
+	// the file: HOTLOOP_FLOW_GIT_PASSWORD.
+	Password string `yaml:"-"`
 }
 
 // Logging controls the runtime log.
@@ -345,6 +367,10 @@ func applyEnv(cfg *Config) {
 			Permissions:  []string{"*"},
 		})
 	}
+
+	envStr("HOTLOOP_FLOW_GIT_URL", &cfg.History.Git.URL)
+	envStr("HOTLOOP_FLOW_GIT_USERNAME", &cfg.History.Git.Username)
+	envStr("HOTLOOP_FLOW_GIT_PASSWORD", &cfg.History.Git.Password)
 
 	// A deploy token for CI, from a Secret, without a config file.
 	if h := os.Getenv("HOTLOOP_FLOW_DEPLOY_TOKEN_HASH"); h != "" {

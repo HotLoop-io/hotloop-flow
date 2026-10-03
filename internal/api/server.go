@@ -71,6 +71,14 @@ type Deps struct {
 
 	// Version identifies this build in /settings and the log.
 	Version string
+
+	// Mirror reports the git mirror's progress for GET /deployments. Nil when
+	// there is no mirror.
+	Mirror func() any
+
+	// Metrics are extra families for /metrics, from the parts of the process
+	// that aren't nodes.
+	Metrics []metrics.Family
 }
 
 // DeployRequest is a deploy and everything the deployment log records about it.
@@ -181,7 +189,7 @@ func (s *Server) routes() {
 		if path == "" {
 			path = "/metrics"
 		}
-		s.mux.Handle("GET "+s.path(path), metrics.NewHandler(s.deps.Version, func() []metrics.NodeStat {
+		mh := metrics.NewHandler(s.deps.Version, func() []metrics.NodeStat {
 			rt := s.deps.Runtime()
 			if rt == nil {
 				return nil
@@ -197,7 +205,9 @@ func (s *Server) routes() {
 				})
 			}
 			return out
-		}))
+		})
+		mh.Add(s.deps.Metrics...)
+		s.mux.Handle("GET "+s.path(path), mh)
 	}
 
 	// Authenticated.
@@ -730,11 +740,15 @@ func (s *Server) handleListDeployments(w http.ResponseWriter, r *http.Request) {
 	if list == nil {
 		list = []history.Record{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	out := map[string]any{
 		"deployments": list,
 		"retain":      s.deps.History.Retain(),
 		"current":     s.deps.Flows.Rev(),
-	})
+	}
+	if s.deps.Mirror != nil {
+		out["mirror"] = s.deps.Mirror()
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleGetDeployment returns one record with its flows, exactly as they were
