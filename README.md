@@ -873,7 +873,7 @@ quietly.
 
 Cron-scheduled Inject nodes were next on that list. They fire now, and on the
 same minute Node-RED's would: the crontab is read by a port of cronosjs 1.7.1,
-the scheduler inside Node-RED's own Inject node, and checked against 18,852
+the scheduler inside Node-RED's own Inject node, and checked against 22,620
 firings cronosjs itself produced across six time zones, either side of real
 clock changes. That matters at 2 AM. A shift start that lands in the hour that
 goes missing in spring runs the moment the clocks jump, and the hour that
