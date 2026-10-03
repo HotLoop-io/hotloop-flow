@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
+	"github.com/HotLoop-io/hotloop-flow/internal/history"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/nodes"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
@@ -341,5 +343,41 @@ func TestPartialDeployThatCannotSaveTouchesNothing(t *testing.T) {
 	}
 	if !hub.next(t, 5*time.Second, fromFirst, fromSecond) {
 		t.Fatal("the running debug node did not answer after a deploy that failed to save")
+	}
+}
+
+// A partial deploy goes in the deployment log exactly like a full one: same
+// record, same who and why, and the flow file as it now stands. Only the
+// runtime underneath behaves differently.
+func TestPartialDeployIsRecordedLikeAnyOther(t *testing.T) {
+	app, _ := newApp(t)
+	ctx := context.Background()
+	if _, err := app.deploy(ctx, api.DeployRequest{Flows: parse(t, debugFlow("first"))}); err != nil {
+		t.Fatal(err)
+	}
+	running := app.currentRuntime()
+
+	res, err := app.deploy(ctx, api.DeployRequest{
+		Flows: parse(t, debugFlow("second")), Mode: runtime.DeployNodes,
+		User: "patrick", Remote: "10.0.0.7:5555", Note: "rename the debug node",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app.currentRuntime() != running {
+		t.Fatal("a partial deploy replaced the runtime")
+	}
+	if res.Deployment == 0 {
+		t.Fatal("the partial deploy got no deployment number")
+	}
+	rec, err := app.history.Get(res.Deployment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.User != "patrick" || rec.Note != "rename the debug node" || rec.Kind != history.KindDeploy {
+		t.Errorf("record = %+v", rec.Meta())
+	}
+	if !strings.Contains(string(rec.Flows), `"second"`) {
+		t.Errorf("the record holds the wrong flow file:\n%s", rec.Flows)
 	}
 }
