@@ -71,6 +71,10 @@ type Runtime struct {
 	// credentials returns a node's decrypted credentials.
 	credentials func(nodeID string) map[string]string
 
+	// secretFiles reads a file named in ew_credentialFiles; see
+	// SetSecretFiles.
+	secretFiles func(path string) ([]byte, error)
+
 	events chan Event
 	// eventsMu guards both the channel and eventsClosed. Both are touched only
 	// under this mutex — the send path and the close path have to agree on one
@@ -478,9 +482,13 @@ func (rt *Runtime) build(g *graph, n *engine.Node) (node.Node, error) {
 	if !ok {
 		return nil, fmt.Errorf("unknown node type %q", n.Type)
 	}
+	files, err := rt.credentialFiles(n)
+	if err != nil {
+		return nil, err
+	}
 	return reg.New(&node.Definition{
 		Node:     n,
-		Services: &services{rt: rt, nodeID: n.ID, z: n.Z},
+		Services: &services{rt: rt, nodeID: n.ID, z: n.Z, fileCreds: files},
 	})
 }
 
@@ -1100,6 +1108,11 @@ type services struct {
 	rt     *Runtime
 	nodeID string
 	z      string
+
+	// fileCreds are the credentials read from ew_credentialFiles when the
+	// node was built. A file wins over the store for the same key: naming a
+	// file is the more deliberate act.
+	fileCreds map[string]string
 }
 
 var _ node.Services = (*services)(nil)
@@ -1116,6 +1129,9 @@ func (s *services) Context(scope node.ContextScope) node.Context {
 }
 
 func (s *services) Credential(key string) (string, bool) {
+	if v, ok := s.fileCreds[key]; ok {
+		return v, true
+	}
 	if s.rt.credentials == nil {
 		return "", false
 	}

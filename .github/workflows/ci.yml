@@ -99,21 +99,24 @@ jobs:
           HOTLOOP_FLOW_TEST_MQTT_PASSWORD: ci-broker-pass
         run: go test -race -count=1 -coverprofile=coverage.out ./...
 
-      - name: The broker test actually ran
-        # A skipped integration test reads as a passing one. This is the test
-        # behind "a rollback brings the broker password back".
+      - name: The broker tests actually ran
+        # A skipped integration test reads as a passing one. These are the tests
+        # behind "a rollback brings the broker password back" and "a broker
+        # password can live in a mounted Secret".
         env:
           HOTLOOP_FLOW_TEST_MQTT_AUTH: 127.0.0.1:1884
           HOTLOOP_FLOW_TEST_MQTT_USER: line3
           HOTLOOP_FLOW_TEST_MQTT_PASSWORD: ci-broker-pass
         run: |
-          OUT=$(go test ./cmd/hotloop-flow/ -count=1 -v -run TestIntegrationRollbackLogsBackInToARealBroker 2>&1)
-          echo "$OUT" | tail -5
+          OUT=$(go test ./cmd/hotloop-flow/ -count=1 -v \
+            -run 'TestIntegrationRollbackLogsBackInToARealBroker|TestIntegrationPasswordFromAMountedSecret' 2>&1)
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
-            echo "::error::the broker rollback test was skipped"; exit 1
+            echo "::error::a broker test was skipped"; exit 1
           fi
-          echo "$OUT" | grep -q -- "--- PASS: TestIntegrationRollbackLogsBackInToARealBroker" || {
-            echo "::error::the broker rollback test did not pass"; exit 1; }
+          for t in TestIntegrationRollbackLogsBackInToARealBroker TestIntegrationPasswordFromAMountedSecret; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
 
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -n 1
@@ -246,6 +249,23 @@ jobs:
             grep -q 'NET_RAW\|NET_ADMIN' caps.yaml && { echo "::error::NET_RAW or NET_ADMIN in the render ($args)"; exit 1; }
             grep -A2 'capabilities:' caps.yaml | grep -q -- '- ALL' || { echo "::error::capabilities no longer drop ALL ($args)"; exit 1; }
           done
+
+      - name: A mounted Secret is read-only, private and in the secret scope
+        # ew_credentialFiles and the tls-config read through the secret scope,
+        # so a mount that is not in it is a password the app cannot read, and
+        # one in files.allowedPaths instead is a password any flow can. Both
+        # mistakes are a line in a template, so the render is checked.
+        run: |
+          helm template t charts/hotloop-flow \
+            --set 'secrets.mounts[0].secretName=plc-broker' \
+            --set 'secrets.mounts[0].mountPath=/etc/hotloop-flow/secrets/plc-broker' > sec.yaml
+          grep -A3 -- '- name: secret-0' sec.yaml | grep -q 'readOnly: true' || { echo "::error::the Secret is not mounted read-only"; exit 1; }
+          grep -A3 -- '- name: secret-0' sec.yaml | grep -q 'secretName: plc-broker' || { echo "::error::the Secret volume is missing"; exit 1; }
+          grep -A4 -- '- name: secret-0' sec.yaml | grep -q 'defaultMode: 0440' || { echo "::error::the Secret files are not group-only"; exit 1; }
+          awk '/^    secrets:/{s=1} s&&/plc-broker/{f=1} /^    logging:/{s=0} END{exit !f}' sec.yaml || { echo "::error::the mount is not in secrets.allowedPaths"; exit 1; }
+          awk '/^    files:/{s=1} s&&/plc-broker/{f=1} /^    secrets:/{s=0} END{exit f}' sec.yaml || { echo "::error::the mount leaked into files.allowedPaths"; exit 1; }
+          N=$(helm template t charts/hotloop-flow | grep -c 'secret-0' || true)
+          [ "$N" = 0 ] || { echo "::error::a default render mounts a Secret"; exit 1; }
 
   static-build:
     name: Static build

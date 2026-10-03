@@ -61,6 +61,21 @@ data:
         []
         {{- end }}
 
+    secrets:
+      allowedPaths:
+        {{- $secretPaths := list }}
+        {{- range .Values.secrets.mounts }}
+        {{- $secretPaths = append $secretPaths .mountPath }}
+        {{- end }}
+        {{- range .Values.secrets.allowedPaths }}
+        {{- $secretPaths = append $secretPaths . }}
+        {{- end }}
+        {{- if $secretPaths }}
+        {{- toYaml $secretPaths | nindent 8 }}
+        {{- else }}
+        []
+        {{- end }}
+
     logging:
       level: {{ .Values.logging.level }}
       format: {{ .Values.logging.format }}

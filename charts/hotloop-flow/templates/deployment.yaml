@@ -158,6 +158,11 @@ spec:
             # /tmp is cheap insurance for a library that does not.
             - name: tmp
               mountPath: /tmp
+            {{- range $i, $m := .Values.secrets.mounts }}
+            - name: secret-{{ $i }}
+              mountPath: {{ required "secrets.mounts[].mountPath is required" $m.mountPath }}
+              readOnly: true
+            {{- end }}
 
       volumes:
         - name: config
@@ -165,6 +170,14 @@ spec:
             name: {{ include "hotloop-flow.configMapName" . }}
         - name: tmp
           emptyDir: {}
+        {{- range $i, $m := .Values.secrets.mounts }}
+        # Group-readable only: fsGroup gives the app the group, and nobody
+        # else on the node gets to read a password off the volume.
+        - name: secret-{{ $i }}
+          secret:
+            secretName: {{ required "secrets.mounts[].secretName is required" $m.secretName }}
+            defaultMode: 0440
+        {{- end }}
         - name: data
         {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:

@@ -398,6 +398,7 @@ func (a *application) start(ctx context.Context, flows *engine.Flows) []runtime.
 	rt.SetCredentials(func(nodeID string) map[string]string {
 		return a.creds.Get(nodeID)
 	})
+	rt.SetSecretFiles(nodes.ReadSecretFile)
 
 	// Pump runtime events into the websocket hub before starting, so nothing
 	// emitted during start-up is lost.

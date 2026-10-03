@@ -163,6 +163,28 @@ exec:
 files:
   allowedPaths: []
 
+# ── Secrets from files ───────────────────────────────────────────────────────
+# Kubernetes Secrets mounted read-only, for a tls-config's certificate, key and
+# CA and for a node's ew_credentialFiles: a broker or database password the
+# flow names by path, so it never sits in the flow file, the deployment log or
+# a git mirror.
+#
+# Every mount path is added to the secret scope automatically. The secret scope
+# is not the file nodes' scope: a File In node still cannot read these, which
+# is the whole point. A flow can use the password; it cannot post it anywhere.
+#
+# A rotated Secret takes effect on the next deploy or restart.
+secrets:
+  mounts: []
+  # e.g.
+  #   - secretName: plc-broker            # key "password"
+  #     mountPath: /etc/hotloop-flow/secrets/plc-broker
+  #   - secretName: line3-tls             # cert-manager's tls.crt, tls.key, ca.crt
+  #     mountPath: /etc/hotloop-flow/tls/line3
+  # Paths already in the container that a secret may be read from, on top of
+  # the mounts above.
+  allowedPaths: []
+
 # ── Persistence ──────────────────────────────────────────────────────────────
 # 2Gi per the edge Longhorn sweep. Flows, credentials and context all live here.
 persistence:
