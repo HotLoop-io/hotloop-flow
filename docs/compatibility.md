@@ -48,8 +48,8 @@ stopped with D1012 instead of stalling the node's whole queue.
 | Level | Count |
 |---|---|
 | full | 12 |
-| partial | 24 |
-| divergent | 10 |
+| partial | 21 |
+| divergent | 13 |
 | hotloop-flow-only | 6 |
 
 ## Common
@@ -129,10 +129,10 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 | Type | Level | Notes |
 |---|---|---|
-| `batch` | partial | Grouping by message count, with overlap, is supported. Time-interval and concatenate-sequences modes are not implemented. Ignored properties: `interval`, `concat`. |
-| `join` | partial | Automatic mode rejoins sequences produced by Split, and manual mode joins by count. Timeout-based and reduce-sequence modes are not implemented. Ignored properties: `timeout`, `reduceRight`, `reduceExp`. |
+| `batch` | divergent | Group by count with overlap and with the end of an incoming sequence honoured, group by time interval with or without empty sequences, and concatenate sequences by topic, with msg.reset, as Node-RED does. Two configurations Node-RED accepts are refused: a count below one, which it quietly reads as one, and an interval of zero, which holds every message forever. |
+| `join` | divergent | Automatic, manual and reduce modes as Node-RED has them: placement by msg.parts.index, the separator Split recorded, nested sequences, arrays, strings, buffers, objects keyed by a message property, merged objects, accumulate, msg.complete, msg.reset, msg.restartTimeout, the timeout, and a reduce expression with $A, $I and $N and an optional fixup. One deliberate difference: an automatic join given a message without msg.parts raises an error rather than logging a warning. |
 | `sort` | full | Sorts an array property by its elements or by a JSONata key evaluated against each element, and a message sequence by a property or a JSONata key evaluated against each message. |
-| `split` | partial | Splits arrays, objects, strings and buffers. Streaming mode, which carries a partial remainder between messages, is not implemented. Ignored properties: `stream`. |
+| `split` | divergent | Splits arrays, objects, strings and buffers, by delimiter, by a byte sequence or by length, including streaming mode, which carries an unfinished piece over to the next message. msg.parts matches Node-RED's, separator and nested sequences included. Three deliberate differences: an object is split in sorted key order, because Go maps have none; a string is split by length in characters rather than UTF-16 code units, so no character is cut in half; and a payload that cannot be split raises an error instead of vanishing. |
 
 ## Storage
 
