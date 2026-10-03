@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowtest"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
+	"github.com/HotLoop-io/hotloop-flow/internal/nodes"
 )
 
 // theOutside is a broker, a database, a web service, a PLC and a UDP listener
@@ -88,8 +91,9 @@ const everythingOutside = `[
   {"id":"pgc","type":"hotloop-flow-postgres","host":"127.0.0.1","port":TCP,"database":"plant","user":"flow","sslmode":"disable"},
   {"id":"ifx","type":"hotloop-flow-influxdb","url":"http://127.0.0.1:TCP","apiVersion":"1","database":"plant"},
   {"id":"wsl","type":"websocket-listener","path":"/ws/line3"},
+  {"id":"wsc","type":"websocket-client","path":"ws://127.0.0.1:TCP/feed"},
 
-  {"id":"go","type":"junction","z":"t1","x":1,"y":1,"wires":[["pub","pub5","pubs","apis","tcrs","api","rec","look","ifo","tco","tcr","udo","ex","fo","fi","scn","ni","wso","hres"]]},
+  {"id":"go","type":"junction","z":"t1","x":1,"y":1,"wires":[["pub","pub5","pubs","apis","tcrs","wsco","api","rec","look","ifo","tco","tcr","udo","ex","fo","fi","scn","ni","wso","hres"]]},
   {"id":"pub","type":"mqtt out","z":"t1","name":"publish","broker":"brk","topic":"line3/alarm","qos":"1","retain":true,"x":2,"y":1,"wires":[]},
   {"id":"pubs","type":"mqtt out","z":"t1","name":"publish tls","broker":"brks","topic":"line3/secure","x":2,"y":17,"wires":[]},
   {"id":"apis","type":"http request","z":"t1","name":"api tls","method":"GET","url":"https://127.0.0.1:TCP/secure","tls":"tlsc","x":2,"y":18,"wires":[[]]},
@@ -127,6 +131,8 @@ const everythingOutside = `[
   {"id":"wat","type":"watch","z":"t1","name":"watch","files":"DIR","x":1,"y":25,"wires":[["wat-out"]]},
   {"id":"wat-out","type":"debug","z":"t1","name":"watch out","x":2,"y":25,"wires":[]},
   {"id":"wsi","type":"websocket in","z":"t1","name":"ws in","server":"wsl","x":1,"y":26,"wires":[[]]},
+  {"id":"wsci","type":"websocket in","z":"t1","name":"ws client in","client":"wsc","x":1,"y":28,"wires":[[]]},
+  {"id":"wsco","type":"websocket out","z":"t1","name":"ws client out","client":"wsc","x":2,"y":28,"wires":[]},
   {"id":"errors","type":"catch","z":"t1","name":"errors","x":1,"y":30,"wires":[[]]}
 ]`
 
@@ -138,6 +144,18 @@ const everythingOutside = `[
 func TestNothingReachesTheOutside(t *testing.T) {
 	o := newOutside(t)
 	flows := o.expand(everythingOutside)
+
+	// The paths the HTTP In and the websocket listener would serve are taken
+	// first, so either one serving under a test can't start, the same trap
+	// the held ports set for TCP In and UDP In.
+	for _, r := range []struct{ method, path string }{{http.MethodPost, "/hook"}, {http.MethodGet, "/ws/line3"}} {
+		unbind, err := nodes.Routes.Register("held-by-the-test", r.method, r.path,
+			http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(unbind)
+	}
 
 	r := one(t, flows, o.expand(`
 tests:
@@ -200,6 +218,8 @@ tests:
       - node: nics out
         msg: {payload: [{name: plant0}]}
       - node: screens
+        sent: {payload: "92.5"}
+      - node: ws client out
         sent: {payload: "92.5"}
       - node: reply
         sent: {statusCode: 201, payload: "92.5"}
@@ -350,7 +370,9 @@ func (dialer) Receive(context.Context, *engine.Msg, node.Emitter) error {
 
 // TestEveryNodeThatReachesOutHasAStandIn is the palette half of the promise: a
 // node added to network, storage or discover, or exec, without a stand-in
-// fails here, long before a test refuses to run it.
+// fails here, long before a test refuses to run it. So does a configuration
+// node that starts on its own, since the runtime started those (#40): one that
+// listens or dials by itself has to stay home under a test as well.
 func TestEveryNodeThatReachesOutHasAStandIn(t *testing.T) {
 	for _, d := range node.Default.Descriptors() {
 		reaches := d.Type == "exec" || d.Category == node.CategoryNetwork ||
@@ -359,7 +381,71 @@ func TestEveryNodeThatReachesOutHasAStandIn(t *testing.T) {
 			t.Errorf("%s reaches outside the process and has no stand-in for a flow test", d.Type)
 		}
 	}
+	for _, typ := range startingConfigNodes(t) {
+		reg, _ := node.Default.Lookup(typ)
+		if !reg.Descriptor.StandIn {
+			t.Errorf("%s is a configuration node that starts on its own and has no stand-in for a flow test", typ)
+		}
+	}
 }
+
+// startingConfigNodes builds every configuration node type in the palette from
+// an empty entry and returns the ones that implement node.Starter. One whose
+// factory refuses an empty entry is built again with the settings its
+// descriptor marks required filled in with something plausible.
+func startingConfigNodes(t *testing.T) []string {
+	t.Helper()
+	var out []string
+	for _, d := range node.Default.Descriptors() {
+		if !d.IsConfig {
+			continue
+		}
+		reg, _ := node.Default.Lookup(d.Type)
+		raw := map[string]any{"id": "c1", "type": d.Type}
+		for _, p := range d.Props {
+			if p.Required {
+				raw[p.Name] = plausible(p.Name)
+			}
+		}
+		inst, err := reg.New(&node.Definition{Node: &engine.Node{ID: "c1", Type: d.Type, IsConfig: true, Raw: raw}, Services: noServices{}})
+		if err != nil {
+			// Refuses without settings a test can't guess, a token or an
+			// org. Those don't start on their own; the check below that the
+			// websocket ones were found keeps this honest.
+			t.Logf("%s doesn't build from a bare entry: %v", d.Type, err)
+			continue
+		}
+		if _, starts := inst.(node.Starter); starts {
+			out = append(out, d.Type)
+		}
+	}
+	if !slices.Contains(out, "websocket-listener") || !slices.Contains(out, "websocket-client") {
+		t.Fatalf("found %v starting on their own; the websocket listener and client both do since #40", out)
+	}
+	return out
+}
+
+func plausible(name string) any {
+	switch name {
+	case "path":
+		return "ws://127.0.0.1:1/x"
+	case "url":
+		return "http://127.0.0.1:1"
+	case "port":
+		return 1.0
+	}
+	return "x"
+}
+
+// noServices is node.Services with nothing behind it, for building a node to
+// look at it.
+type noServices struct{}
+
+func (noServices) Context(node.ContextScope) node.Context { return nil }
+func (noServices) Credential(string) (string, bool)       { return "", false }
+func (noServices) ConfigNode(string) (node.Node, bool)    { return nil, false }
+func (noServices) Env(string) (string, bool)              { return "", false }
+func (noServices) Log(node.LogLevel, string, ...any)      {}
 
 // TestTheREADMEExample runs the stand-in example from the README, word for
 // word, against a flow it describes, so the example can't quietly stop being
