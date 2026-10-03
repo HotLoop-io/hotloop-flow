@@ -371,10 +371,13 @@ func (n *delayNode) pause(d time.Duration, m *engine.Msg, out node.Emitter) erro
 		case <-t.C:
 		case <-n.release:
 		}
+		// Sent before the timer stops counting as pending. The other order
+		// leaves an instant where the message is in neither place, and
+		// anything waiting for the graph to go quiet can look right through it.
+		out.Send(0, m)
 		n.mu.Lock()
 		n.timers--
 		n.mu.Unlock()
-		out.Send(0, m)
 	}()
 	return nil
 }

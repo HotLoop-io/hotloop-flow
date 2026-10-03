@@ -70,6 +70,8 @@ func run() error {
 			return cmdImport(os.Args[2:])
 		case "diff":
 			return cmdDiff(os.Args[2:], os.Stdout)
+		case "test":
+			return cmdTest(os.Args[2:], os.Stdout)
 		case "deploy":
 			return cmdDeploy(os.Args[2:], os.Stdout)
 		case "export":
@@ -82,7 +84,7 @@ func run() error {
 			fmt.Println(version)
 			return nil
 		default:
-			return fmt.Errorf("unknown command %q (try: serve, hash-password, token, import, diff, deploy, export, bench, version)", os.Args[1])
+			return fmt.Errorf("unknown command %q (try: serve, hash-password, token, import, diff, test, deploy, export, bench, version)", os.Args[1])
 		}
 	}
 	return cmdServe(os.Args[1:])

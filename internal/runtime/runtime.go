@@ -85,6 +85,67 @@ type Runtime struct {
 	// observers are optional hooks for metrics. Nil-safe.
 	onExecTime     func(nodeID, typ string, d time.Duration)
 	onQueueLatency func(nodeID, typ string, d time.Duration)
+
+	// observer sees every message a node is handed and every message it sends.
+	// Only a flow test sets one: it is how a test knows what came out of a port
+	// without wiring anything into the flow it is testing.
+	observer Observer
+
+	// outstanding counts messages that have been offered to a node and not yet
+	// finished with: queued in an inbox or inside a handler. A message is
+	// counted before it becomes visible to the node that will take it, and the
+	// handler finishes sending downstream before its own count drops, so the
+	// total cannot touch zero while a message is still moving. Settled reads
+	// it.
+	outstanding atomic.Int64
+}
+
+// Observer watches messages move through a running graph. Both methods are
+// handed a copy, called on the goroutine doing the work, and must not block.
+type Observer interface {
+	// Received is called as a node is about to handle a message.
+	Received(nodeID string, msg *engine.Msg)
+	// Sent is called for every message a node sends, wired or not, with the
+	// output port it left by.
+	Sent(nodeID string, port int, msg *engine.Msg)
+}
+
+// SetObserver installs an observer. Call it before Start.
+func (rt *Runtime) SetObserver(o Observer) { rt.observer = o }
+
+// Settled reports whether no message is queued for, or being handled by, any
+// node. Messages a node is holding on purpose, in a Delay or a Trigger, don't
+// count against it: see Quiet.
+func (rt *Runtime) Settled() bool { return rt.outstanding.Load() == 0 }
+
+// Quiet reports whether the graph has nothing left to do that it knows about:
+// settled, and no node holding messages to send later. A source that fires on
+// its own schedule, like a repeating Inject, can still wake it up.
+func (rt *Runtime) Quiet() bool {
+	if !rt.Settled() {
+		return false
+	}
+	for _, r := range rt.graph().runners {
+		if r.deferred != nil && r.deferred.Pending() > 0 {
+			return false
+		}
+	}
+	return rt.Settled()
+}
+
+// SendFrom sends a message out of a node's output port as though the node had
+// produced it. A flow test uses it to stand in for a source, like an MQTT In
+// whose broker the test never connects to.
+func (rt *Runtime) SendFrom(nodeID string, port int, msg *engine.Msg) error {
+	r, ok := rt.graph().runners[nodeID]
+	if !ok {
+		return fmt.Errorf("node %s is not running", nodeID)
+	}
+	if port < 0 {
+		return fmt.Errorf("port %d does not exist", port)
+	}
+	rt.deliver(r, port, msg)
+	return nil
 }
 
 // handler is a Catch or Status node together with the scope it watches.
@@ -613,9 +674,12 @@ func (rt *Runtime) salvage(old *runner) {
 		select {
 		case d := <-old.inbox:
 			if next, ok := rt.graph().runners[old.id]; ok && next != old && !next.exited.Load() {
+				// enqueue counts it again for the runner it moves to.
 				next.enqueue(rt.ctx, d.msg, nil)
+				rt.outstanding.Add(-1)
 				continue
 			}
+			rt.outstanding.Add(-1)
 			old.stats.Dropped.Add(1)
 			rt.onDropped(old, d.msg, "node-stopped")
 		default:
@@ -642,6 +706,10 @@ func sortedKeys[V any](m map[string]V) []string {
 // bounded by engine.ImmutableBytes, which shares rather than copies the large
 // binary payloads where it would actually hurt.
 func (rt *Runtime) deliver(from *runner, port int, msg *engine.Msg) {
+	if o := rt.observer; o != nil {
+		msg.EnsureID()
+		o.Sent(from.id, port, msg.Clone())
+	}
 	wp := from.wires.Load()
 	if wp == nil || port < 0 || port >= len(*wp) {
 		return
