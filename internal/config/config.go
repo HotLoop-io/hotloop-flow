@@ -9,9 +9,14 @@
 package config
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -93,8 +98,76 @@ type Auth struct {
 
 	Users []User `yaml:"users"`
 
+	// Tokens are API tokens for machines: a CI pipeline deploying flows from
+	// git, a script exporting them. A pipeline that holds an admin password
+	// holds the keys to everything that password opens, and it ends up in a CI
+	// secret store, a log line and three people's shell history. A token is
+	// scoped to what the job needs and can be thrown away on its own.
+	Tokens []Token `yaml:"tokens"`
+
 	// SessionTTL bounds how long an issued token is good for.
 	SessionTTL time.Duration `yaml:"sessionTTL"`
+}
+
+// Token is an API token. Only its hash is configured, like a password, so the
+// file that grants it never holds the token itself.
+type Token struct {
+	// Name is what the deployment log and the audit trail call it, as
+	// "token:<name>".
+	Name string `yaml:"name"`
+	// Hash is "sha256:" and the hex SHA-256 of the token. A token is 32 random
+	// bytes, so a fast hash is the right one here: there is no weak secret for
+	// a slow hash to protect. Generate both with: hotloop-flow token
+	Hash string `yaml:"hash"`
+	// Permissions, as for a user. A deploy token is ["flows.read", "flows.write"].
+	Permissions []string `yaml:"permissions"`
+}
+
+// DeployTokenName is the token HOTLOOP_FLOW_DEPLOY_TOKEN_HASH configures.
+const DeployTokenName = "deploy"
+
+// DeployTokenPermissions are what a deploy token can do: read the flows to
+// diff against, and deploy. Not inject, not settings, not the deployment log's
+// rollback either (that needs flows.write, which it has, and is exactly the
+// thing a pipeline reverting a merge should be able to do).
+var DeployTokenPermissions = []string{"flows.read", "flows.write"}
+
+// TokenPrefix marks a Flow API token, so one pasted into the wrong place is
+// recognisable for what it is.
+const TokenPrefix = "hlf_"
+
+// NewToken makes an API token and the hash to configure for it.
+func NewToken() (token, hash string, err error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", "", fmt.Errorf("generating a token: %w", err)
+	}
+	token = TokenPrefix + hex.EncodeToString(b[:])
+	return token, HashToken(token), nil
+}
+
+// HashToken is the configured form of a token.
+func HashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// FindToken returns the configured token a bearer token belongs to. Every
+// configured hash is compared, in constant time, whether or not an earlier one
+// matched, so the time it takes says nothing about which token came close.
+func (c *Config) FindToken(token string) (Token, bool) {
+	if !strings.HasPrefix(token, TokenPrefix) {
+		return Token{}, false
+	}
+	want := []byte(HashToken(token))
+	var found Token
+	ok := false
+	for _, t := range c.Auth.Tokens {
+		if subtle.ConstantTimeCompare([]byte(t.Hash), want) == 1 {
+			found, ok = t, true
+		}
+	}
+	return found, ok
 }
 
 // User is a local account.
@@ -273,6 +346,13 @@ func applyEnv(cfg *Config) {
 		})
 	}
 
+	// A deploy token for CI, from a Secret, without a config file.
+	if h := os.Getenv("HOTLOOP_FLOW_DEPLOY_TOKEN_HASH"); h != "" {
+		cfg.Auth.Tokens = append(cfg.Auth.Tokens, Token{
+			Name: DeployTokenName, Hash: h, Permissions: append([]string(nil), DeployTokenPermissions...),
+		})
+	}
+
 	if envBool("HOTLOOP_FLOW_INSECURE") {
 		cfg.Auth.Enabled = false
 		cfg.Auth.Insecure = true
@@ -413,6 +493,26 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// API tokens. Hashes only, same reasoning as passwords: the file that
+	// grants a token must never be enough to use it.
+	seen := map[string]bool{}
+	for i, t := range c.Auth.Tokens {
+		if !tokenName.MatchString(t.Name) {
+			return fmt.Errorf("auth.tokens[%d]: name %q must be letters, digits, dots, dashes or underscores", i, t.Name)
+		}
+		if seen[t.Name] {
+			return fmt.Errorf("auth.tokens[%d]: there are two tokens called %q, and the deployment log couldn't tell them apart", i, t.Name)
+		}
+		seen[t.Name] = true
+		if !tokenHash.MatchString(t.Hash) {
+			return fmt.Errorf("auth.tokens[%d] (%s): hash is not a token hash. "+
+				"Generate a token and its hash with: hotloop-flow token", i, t.Name)
+		}
+		if len(t.Permissions) == 0 {
+			return fmt.Errorf("auth.tokens[%d] (%s) has no permissions; a deploy token is [flows.read, flows.write]", i, t.Name)
+		}
+	}
+
 	// Credentials at rest.
 	if c.Data.CredentialSecret == "" && !c.Data.AllowPlaintextCredentials {
 		return &ErrInsecure{Reason: "no credential secret is set, so node credentials " +
@@ -436,6 +536,11 @@ func (c *Config) Validate() error {
 
 	return nil
 }
+
+var (
+	tokenName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+	tokenHash = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+)
 
 // FlowPath is the absolute path to the flow file.
 func (c *Config) FlowPath() string { return filepath.Join(c.Data.Dir, c.Data.FlowFile) }

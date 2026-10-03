@@ -312,6 +312,47 @@ real binary with the editor embedded. Playwright is a dev dependency of
 double-clicking a node to open its dialog had never worked in Chromium, which is
 about as embarrassing as a bug gets in a visual editor. Fixed.
 
+### Flows as code
+
+The repository is where flows get reviewed, so the repository should be able to
+deploy them. Keep the flow file in git, set up the diff driver above so the pull
+request reads like a review, and let the merge deploy it:
+
+```bash
+hotloop-flow export -o flows.json          # the live file, byte for byte, to commit
+hotloop-flow deploy -file flows.json -note "PR #12: line 3 pressure check"
+```
+
+`deploy` prints the diff against what's running, the same text as everywhere
+else, then deploys against the revision that diff was made from. If somebody
+deploys in between, that's a 409 and a red pipeline, not a quiet overwrite.
+`-expect-rev` pins it to the revision a reviewed plan was made against, and
+`-dry-run` prints the diff and deploys nothing. A file with nothing to change
+deploys nothing and adds nothing to the history, so a merge that didn't touch
+the flows doesn't litter the log. A node that fails to start deploys and still
+fails the job, because the rest of the flow is running and somebody needs to
+look. `export -deployment 41` gets any deployment back out of the history.
+
+**A pipeline never holds an admin password.** It gets an API token:
+
+```bash
+hotloop-flow token -name ci
+```
+
+prints a token, once, for the CI secret store, and the hash to give the
+runtime: `HOTLOOP_FLOW_DEPLOY_TOKEN_HASH` for a deploy token, or `auth.tokens`
+in the config file for anything else. The runtime only ever holds the hash, same
+as a password. A deploy token can read the flows and deploy, which includes
+rolling back, and nothing else: no settings, no inject, no editor. Both commands
+read the token from `HOTLOOP_FLOW_TOKEN` (or `-token-file`) and the instance
+from `HOTLOOP_FLOW_URL` (or `-url`), never a token on the command line, where
+it would land in the process list and every CI log that echoes the command. The
+history shows the token as the deployer, `token:ci`, with the note the pipeline
+passed.
+
+Credentials never travel this way. They aren't in the flow file, so a deploy
+from git keeps every broker password exactly where it was.
+
 ---
 
 ## Security posture
@@ -522,6 +563,9 @@ TypeScript and native SVG, 44.7 kB of JS and 19.7 kB of CSS minified.
 | `hotloop-flow hash-password` | bcrypt hash for a password. Takes `-password` or `HOTLOOP_FLOW_PASSWORD`. Refuses anything under 8 characters. |
 | `hotloop-flow import <flows.json>` | Reports what would happen before you deploy it. |
 | `hotloop-flow diff <old> <new>` | Node-by-node diff of two flow files. Also git's diff driver and difftool. |
+| `hotloop-flow deploy -file <flows.json>` | Shows the diff against a running instance, then deploys with a note. For CI. |
+| `hotloop-flow export` | The running flow file, byte for byte, or `-deployment N` from the history. |
+| `hotloop-flow token` | A new API token and the hash to configure for it. |
 | `hotloop-flow bench` | The benchmark harness that produced [the numbers](#the-numbers). |
 | `hotloop-flow version` | The version. |
 
@@ -563,6 +607,10 @@ auth:
     - username: admin
       passwordHash: "$2a$10$..."   # bcrypt only, never plaintext
       permissions: ["*"]
+  tokens:                   # API tokens for machines; the hash only, from: hotloop-flow token
+    - name: ci
+      hash: "sha256:..."
+      permissions: ["flows.read", "flows.write"]
 
 runtime:
   inboxCapacity: 1024
@@ -609,6 +657,7 @@ Secret.
 | `HOTLOOP_FLOW_DATA_DIR`, `HOTLOOP_FLOW_FLOW_FILE` | Where state lives. |
 | `HOTLOOP_FLOW_CREDENTIAL_SECRET` | Credential encryption secret. |
 | `HOTLOOP_FLOW_ADMIN_USER`, `HOTLOOP_FLOW_ADMIN_PASSWORD_HASH` | A single admin account with full permissions, which is what makes a first-run container usable without mounting a file. Both must be set. |
+| `HOTLOOP_FLOW_DEPLOY_TOKEN_HASH` | A deploy token called `deploy`, for CI: `flows.read` and `flows.write`, nothing else. The hash, never the token. |
 | `HOTLOOP_FLOW_INBOX_CAPACITY`, `HOTLOOP_FLOW_OVERFLOW` | Scheduler defaults. |
 | `HOTLOOP_FLOW_LOG_LEVEL`, `HOTLOOP_FLOW_LOG_FORMAT` | Logging. |
 | `HOTLOOP_FLOW_DISCOVERY_ENABLED`, `HOTLOOP_FLOW_DISCOVERY_CIDRS` | Discovery nodes. Comma-separated CIDRs. |
@@ -642,6 +691,7 @@ timeouts.
 | `GET /settings` | `settings.read` | |
 | `GET /nodes` | `nodes.read` | The registry, which is what drives the editor's palette and its dialogs. |
 | `GET /flows` | `flows.read` | |
+| `GET /flows/export` | `flows.read` | The flow file exactly as it sits on disk, for git. |
 | `POST /flows` | `flows.write` | Deploy. Takes an optional note for the deployment log. |
 | `GET /deployments` | `flows.read` | The deployment log, newest first, without the payloads. `?limit=N` bounds it. |
 | `GET /deployments/{seq}` | `flows.read` | One record, with its flows parsed. Never its credentials. |

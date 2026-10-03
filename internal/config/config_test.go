@@ -312,3 +312,61 @@ func TestHashPasswordRefusesShortPasswords(t *testing.T) {
 		t.Fatal("the hash does not check the password it was made from, and only that one")
 	}
 }
+
+// A deploy token for CI comes from one variable holding its hash, and gets
+// exactly the deploy permissions.
+func TestDeployTokenFromTheEnvironment(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	tok, hash, err := NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOTLOOP_FLOW_DEPLOY_TOKEN_HASH", hash)
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := cfg.FindToken(tok)
+	if !ok || got.Name != DeployTokenName {
+		t.Fatalf("FindToken = %+v %v", got, ok)
+	}
+	u := User{Permissions: got.Permissions}
+	if !u.Allows("flows.write") || !u.Allows("flows.read") || u.Allows("inject.write") || u.Allows("settings.read") {
+		t.Fatalf("a deploy token has %v", got.Permissions)
+	}
+	if _, ok := cfg.FindToken(tok + "0"); ok {
+		t.Fatal("a different token matched")
+	}
+	if _, ok := cfg.FindToken(hash); ok {
+		t.Fatal("the hash itself was accepted as the token")
+	}
+}
+
+// The file that grants a token must never be enough to use it, so a token
+// pasted where its hash belongs is refused at startup, like a plaintext
+// password.
+func TestRefusesATokenThatIsNotAHash(t *testing.T) {
+	tok, _, _ := NewToken()
+	for name, body := range map[string]string{
+		"the token itself": "auth:\n  tokens:\n    - name: ci\n      hash: " + tok + "\n      permissions: [flows.write]\n",
+		"no permissions":   "auth:\n  tokens:\n    - name: ci\n      hash: " + HashToken(tok) + "\n",
+		"a bad name":       "auth:\n  tokens:\n    - name: \"ci job\"\n      hash: " + HashToken(tok) + "\n      permissions: [flows.write]\n",
+		"two of the same": "auth:\n  tokens:\n    - name: ci\n      hash: " + HashToken(tok) + "\n      permissions: [flows.write]\n" +
+			"    - name: ci\n      hash: " + HashToken(tok) + "\n      permissions: [flows.write]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			clearEnv(t)
+			withAdmin(t)
+			if _, err := Load(writeConfig(t, body)); err == nil {
+				t.Fatalf("accepted %s", name)
+			}
+		})
+	}
+	clearEnv(t)
+	withAdmin(t)
+	t.Setenv("HOTLOOP_FLOW_DEPLOY_TOKEN_HASH", tok)
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "hotloop-flow token") {
+		t.Fatalf("the token in the hash variable: %v", err)
+	}
+}

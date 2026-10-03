@@ -210,6 +210,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET "+s.path("/deployments/{seq}/flows"), s.auth(PermFlowsRead, s.handleGetDeploymentFlows))
 	s.mux.Handle("GET "+s.path("/deployments/{from}/diff/{to}"), s.auth(PermFlowsRead, s.handleDiffDeployments))
 	s.mux.Handle("POST "+s.path("/flows/diff"), s.auth(PermFlowsRead, s.handleDiffPending))
+	s.mux.Handle("GET "+s.path("/flows/export"), s.auth(PermFlowsRead, s.handleExport))
 	s.mux.Handle("POST "+s.path("/deployments/{seq}/rollback"), s.auth(PermFlowsWrite, s.handleRollback))
 	s.mux.Handle("GET "+s.path("/runtime/stats"), s.auth(PermStatusRead, s.handleStats))
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
@@ -348,6 +349,13 @@ func (s *Server) auth(perm string, h http.HandlerFunc) http.Handler {
 			return
 		}
 		user, ok := s.tokens.lookup(tok)
+		if !ok {
+			// Not a session. Perhaps an API token from the config, which is
+			// how a CI job deploys without anybody's password.
+			if t, found := s.deps.Config.FindToken(tok); found {
+				user, ok = config.User{Username: "token:" + t.Name, Permissions: t.Permissions}, true
+			}
+		}
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "token is invalid or has expired")
 			return
@@ -611,6 +619,21 @@ func deployNote(r *http.Request, body []byte) (string, error) {
 		return "", fmt.Errorf("the deploy note is %d bytes; the limit is %d", len(note), history.MaxNoteLength)
 	}
 	return note, nil
+}
+
+// handleExport returns the live flow file exactly as it sits on disk, which is
+// what belongs in git: export, commit, and a deploy of the same file later is
+// no change at all. GET /flows re-encodes it inside an envelope, which is right
+// for the editor and wrong for a repository.
+func (s *Server) handleExport(w http.ResponseWriter, _ *http.Request) {
+	data := s.deps.Flows.Bytes()
+	if data == nil {
+		data = []byte("[]\n")
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("HotLoop-Flow-Deployment-Rev", s.deps.Flows.Rev())
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 // handleRollback deploys an earlier record again, as a new record. Send the
