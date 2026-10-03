@@ -74,7 +74,7 @@ a line stops, and today the answer is three `.bak` files.
 - [x] Editor: history panel, the diff drawn on the canvas, "review and deploy"
       with a note, a rollback button. A deploy conflict shows what the other
       person changed instead of a yes/no box
-- [ ] Flows as code: `hotloop-flow deploy` and `hotloop-flow export` for CI,
+- [x] Flows as code: `hotloop-flow deploy` and `hotloop-flow export` for CI,
       with a deploy-only token so a pipeline never holds an admin password
 - [ ] Optional git mirror: every deploy pushed as a commit authored by whoever
       deployed it. Pure Go, and the binary size check still passes
