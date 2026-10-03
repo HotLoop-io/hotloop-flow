@@ -38,6 +38,9 @@ auth:
     - username: sam
       passwordHash: "${hash('e2e-sam-password')}"
       permissions: ["*"]
+    - username: kim
+      passwordHash: "${hash('e2e-kim-password')}"
+      permissions: ["*"]
 logging:
   level: warn
 `);

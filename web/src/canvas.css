@@ -429,3 +429,25 @@ textarea.code {
   .workspace { grid-template-columns: 1fr; }
   .palette, .sidebar { display: none; }
 }
+
+/* ── Two-factor ───────────────────────────────────────────────────────────── */
+
+/* The code field on the login screen appears only when the account needs it.
+   The login's own label rule sets display, so hidden has to be said again. */
+.login [hidden] { display: none; }
+
+/* Black on white whatever the theme: a scanner reads contrast, not tokens. */
+.qr { display: block; width: 200px; height: 200px; margin: 12px auto; border-radius: 4px; }
+.mfa-secret {
+  display: block;
+  margin: 6px 0 12px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border-radius: var(--radius-input);
+  font-size: 14px;
+  letter-spacing: 1px;
+  word-break: break-all;
+  user-select: all;
+}
+.mfa-code { width: 100%; font-family: var(--hl-font-mono); font-size: 18px; letter-spacing: 4px; text-align: center; }
+.dialog .dialog-error { margin: 6px 0; }

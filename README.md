@@ -410,6 +410,21 @@ on purpose, because a config file can't do it on its own: the file is where a
 copy-paste lands. Do it and the log warns on every boot and the editor wears a
 **no login** badge, so the next person knows the door is open.
 
+**Two-factor sign-in is free and built in.** Any user turns it on from the
+editor's Two-factor button: scan the QR code (or type the key) into any
+authenticator app, type one code back, and from then on signing in takes the
+password and the six digits. Nothing changes until that first code proves the
+phone has it, so a setup abandoned half way can't lock anybody out. A code works
+once: the step it came from is remembered, so a code read over somebody's
+shoulder is dead the moment they use it, and so is any code older than it.
+Thirty seconds of clock skew either way is allowed. Turning it off takes a code
+too, so a session left open on a shared screen isn't enough to strip it off an
+account. A lost phone is an account with `auth.admin` calling
+`POST /auth/mfa/reset`, which lands in the audit trail with who did it to whom.
+Enrollments are encrypted with the credential secret, the same way node
+credentials are. Nothing about signing in safely is a paid tier here or ever
+will be.
+
 **Everything that matters leaves a trail.** Logins, failed logins (with whether
 the name even exists, which a client never gets told but an operator should),
 logouts, deploys, refused deploys, rollbacks and injects go to
@@ -609,7 +624,7 @@ gets code execution to pivot with.
 
 Then open <http://localhost:1880>. Drop a `flows.json` into the data directory
 and restart, or just build the flow in the editor. The editor is vanilla
-TypeScript and native SVG, 44.7 kB of JS and 19.7 kB of CSS minified.
+TypeScript and native SVG, 48.5 kB of JS and 20.1 kB of CSS minified.
 
 ### The commands
 
@@ -754,6 +769,8 @@ timeouts.
 | `GET /ready` | none | Readiness, reported separately, so a runtime that failed to start leaves the Service without the kubelet killing the pod. |
 | `POST /auth/token` | none | Log in. |
 | `POST /auth/revoke` | none | Log out. |
+| `GET /auth/mfa`, `POST /auth/mfa/setup`, `/confirm`, `/disable` | a signed-in user | Your own two-factor sign-in. Setup returns the key, the `otpauth://` link and the QR code. Confirm and disable take `{"code": ...}`. |
+| `POST /auth/mfa/reset` | `auth.admin` | Turns off somebody else's two-factor sign-in: `{"username": ...}`. |
 | `GET /metrics` | none | Prometheus. Counts and node ids only, never message contents or configuration. |
 | `GET /settings` | `settings.read` | |
 | `GET /nodes` | `nodes.read` | The registry, which is what drives the editor's palette and its dialogs. |
@@ -775,6 +792,9 @@ timeouts.
 oversight. A Prometheus scraper carries no bearer token, so requiring one means
 either handing a credential to your monitoring stack or having no monitoring, and
 I have watched people pick the second one.
+
+A user with two-factor sign-in on sends `"code"` with the username and password
+to `POST /auth/token`. Without it the answer is a 401 with `"mfa": "required"`.
 
 Permissions are `"*"` for everything, an exact string such as `flows.read`, or a
 prefix grant such as `flows.*`. A read-only account for a dashboard that just

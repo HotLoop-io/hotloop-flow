@@ -29,6 +29,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/gitmirror"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
+	"github.com/HotLoop-io/hotloop-flow/internal/mfa"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/nodes" // registers the built-in palette
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
@@ -243,7 +244,15 @@ func cmdServe(args []string) error {
 		},
 	})
 
+	// Two-factor enrollments, encrypted with the credential secret like every
+	// other secret on the volume.
+	secondFactor, err := mfa.Open(filepath.Join(cfg.Data.Dir, "mfa.json"), cfg.Data.CredentialSecret)
+	if err != nil {
+		return err
+	}
+
 	srv := api.New(api.Deps{
+		MFA:         secondFactor,
 		Audit:       trail,
 		Mirror:      mirrorStatus,
 		Metrics:     extraMetrics,

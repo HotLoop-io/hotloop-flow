@@ -37,6 +37,12 @@ const (
 	Rollback       = "rollback"
 	RollbackFailed = "rollback.refused"
 	Inject         = "inject"
+	MFAEnabled     = "mfa.enabled"
+	MFADisabled    = "mfa.disabled"
+	MFAReset       = "mfa.reset"
+	// MFAFailed sits under login. so ?event=login. shows every way a sign-in
+	// went wrong in one list.
+	MFAFailed = "login.mfa_failed"
 )
 
 // Entry is one thing that happened.

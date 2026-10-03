@@ -80,7 +80,7 @@ a line stops, and today the answer is three `.bak` files.
       deployed it. Pure Go, and the binary size check still passes
 - [x] Audit log: logins, failed logins, deploys, rollbacks and injects, each
       with who and from where. The deployment log is its first table
-- [ ] MFA (TOTP), free and on for anyone who wants it. Nothing about signing in
+- [x] MFA (TOTP), free and on for anyone who wants it. Nothing about signing in
       safely gets gated, ever
 - [ ] Login rate limiting and lockout, sessions that survive a restart, and no
       more tokens in query strings where access logs can keep them

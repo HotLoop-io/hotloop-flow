@@ -24,6 +24,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
+	"github.com/HotLoop-io/hotloop-flow/internal/mfa"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
@@ -51,7 +52,9 @@ type Deps struct {
 	History     *history.Log
 	// Audit is the trail of who did what from where. Nil records nothing,
 	// which only tests that aren't about it should ever want.
-	Audit  *audit.Log
+	Audit *audit.Log
+	// MFA holds two-factor enrollments. Nil means no second factor anywhere.
+	MFA    *mfa.Store
 	Logger *slog.Logger
 
 	// Runtime returns the currently running runtime. It is a function rather
@@ -184,6 +187,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET "+s.path("/ready"), s.handleReady)
 	s.mux.HandleFunc("POST "+s.path("/auth/token"), s.handleToken)
 	s.mux.HandleFunc("POST "+s.path("/auth/revoke"), s.handleRevoke)
+	s.mfaRoutes()
 
 	// Metrics, unauthenticated like health. A Prometheus scraper carries no
 	// bearer token, and requiring one would mean either handing a credential to
@@ -380,8 +384,12 @@ func (s *Server) auth(perm string, h http.HandlerFunc) http.Handler {
 			writeError(w, http.StatusForbidden, "token lacks the "+perm+" permission")
 			return
 		}
-		h(w, r.WithContext(context.WithValue(r.Context(), userKey{}, user.Username)))
+		h(w, r.WithContext(withUser(r, user.Username)))
 	})
+}
+
+func withUser(r *http.Request, name string) context.Context {
+	return context.WithValue(r.Context(), userKey{}, name)
 }
 
 // userKey carries the authenticated username on a request's context.
@@ -443,6 +451,8 @@ func (s *Server) handleReady(w http.ResponseWriter, _ *http.Request) {
 type tokenRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	// Code is the one-time code, for a user with two-factor sign-in on.
+	Code string `json:"code"`
 }
 
 func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
@@ -463,6 +473,10 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 		// name is worth knowing apart from a wrong password.
 		s.record(r, audit.LoginFailed, req.Username, map[string]any{"knownUser": found})
 		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+
+	if !s.secondFactor(w, r, user.Username, req.Code) {
 		return
 	}
 

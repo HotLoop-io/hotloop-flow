@@ -137,9 +137,17 @@ export interface DeployResult {
 const TOKEN_KEY = 'hotloop-flow.token';
 
 export class ApiError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly mfaRequired = false) {
     super(message);
   }
+}
+
+/** What the phone needs to set up two-factor sign-in. */
+export interface MFASetup {
+  secret: string;
+  uri: string;
+  /** The QR code, one string per row, '1' for a dark module. */
+  qr: string[];
 }
 
 export class Api {
@@ -173,15 +181,20 @@ export class Api {
     }
   }
 
-  async login(username: string, password: string): Promise<void> {
+  /**
+   * Signs in. A user with two-factor sign-in on gets an ApiError with
+   * mfaRequired set when the code is missing or wrong, and the login screen
+   * asks for it.
+   */
+  async login(username: string, password: string, code = ''): Promise<void> {
     const res = await fetch(`${this.base}/auth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(code ? { username, password, code } : { username, password }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ApiError(res.status, body.error ?? 'login failed');
+      throw new ApiError(res.status, body.error ?? 'login failed', body.mfa === 'required');
     }
     const body = await res.json();
     this.setToken(body.access_token);
@@ -245,6 +258,24 @@ export class Api {
   deploy(flows: unknown[], rev: string, note = ''): Promise<DeployResult> {
     const body = note.trim() ? { flows, note: note.trim() } : flows;
     return this.send<DeployResult>('POST', '/flows', body, { 'HotLoop-Flow-Deployment-Rev': rev });
+  }
+
+  /** Whether the signed-in user has two-factor sign-in on. */
+  mfaStatus(): Promise<{ enabled: boolean }> {
+    return this.get('/auth/mfa');
+  }
+
+  /** Starts setting up two-factor sign-in. Nothing changes at sign-in until it's confirmed. */
+  mfaSetup(): Promise<MFASetup> {
+    return this.send<MFASetup>('POST', '/auth/mfa/setup', {});
+  }
+
+  mfaConfirm(code: string): Promise<{ enabled: boolean }> {
+    return this.send('POST', '/auth/mfa/confirm', { code: code.trim() });
+  }
+
+  mfaDisable(code: string): Promise<{ enabled: boolean }> {
+    return this.send('POST', '/auth/mfa/disable', { code: code.trim() });
   }
 
   /** The deployment log, newest first. */
