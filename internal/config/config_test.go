@@ -370,3 +370,30 @@ func TestRefusesATokenThatIsNotAHash(t *testing.T) {
 		t.Fatalf("the token in the hash variable: %v", err)
 	}
 }
+
+// The secret roots come from the file or the environment, the same way the file
+// nodes' roots do, and stay separate from them.
+func TestSecretAllowedPathsFromFileAndEnv(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("HOTLOOP_FLOW_INSECURE", "true")
+
+	cfg, err := Load(writeConfig(t, "secrets:\n  allowedPaths: [/etc/flow-tls]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Secrets.AllowedPaths; len(got) != 1 || got[0] != "/etc/flow-tls" {
+		t.Errorf("from the file: %v", got)
+	}
+	if len(cfg.Files.AllowedPaths) != 0 {
+		t.Errorf("a secret root leaked into the file nodes' roots: %v", cfg.Files.AllowedPaths)
+	}
+
+	t.Setenv("HOTLOOP_FLOW_SECRET_ALLOWED_PATHS", "/etc/flow-tls, /run/secrets/db")
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Secrets.AllowedPaths; len(got) != 2 || got[1] != "/run/secrets/db" {
+		t.Errorf("from the environment: %v", got)
+	}
+}

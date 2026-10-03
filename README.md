@@ -579,6 +579,14 @@ symlink under the volume that points at `/`, then read straight through it. A
 plain prefix check waves that through without blinking, and now a flow can read
 anything the process can.
 
+**Secrets get their own scope, and it isn't the file nodes'.** A tls-config reads
+its certificate, key and CA through `secrets.allowedPaths`: the data directory
+plus whatever you list. Mount the Secret cert-manager made there and the TLS
+config uses the key while no flow can read it, because anything read through
+that scope ends up in a handshake, never in a message. Put the same key under
+`files.allowedPaths` instead and any flow with a File In node can pick it up and
+mail it to whoever it likes.
+
 **Credentials are AES-256-GCM, keyed with Argon2id.** GCM refuses a tampered file
 outright instead of decrypting it to something an attacker picked, and Argon2id
 makes every guess at a weak secret cost 64 MiB of memory. The flow file is written
@@ -835,6 +843,9 @@ exec:
 files:
   allowedPaths: []          # extra trees on top of data.dir, which is always allowed
 
+secrets:
+  allowedPaths: []          # where a tls-config may read a certificate or key, on top of data.dir
+
 logging:
   level: info               # error | warn | info | debug | trace
   format: text              # text for a terminal, json for a cluster
@@ -874,6 +885,7 @@ Secret.
 | `HOTLOOP_FLOW_DISCOVERY_ENABLED`, `HOTLOOP_FLOW_DISCOVERY_CIDRS` | Discovery nodes. Comma-separated CIDRs. |
 | `HOTLOOP_FLOW_EXEC_ENABLED`, `HOTLOOP_FLOW_EXEC_ALLOWED_COMMANDS` | The exec node. Comma-separated commands. |
 | `HOTLOOP_FLOW_FILE_ALLOWED_PATHS` | Extra file node roots. Comma-separated. |
+| `HOTLOOP_FLOW_SECRET_ALLOWED_PATHS` | Extra roots a secret file may be read from. Comma-separated. |
 | `HOTLOOP_FLOW_INSECURE` | `true` runs with authentication off, and nothing else does. Only `1`, `true`, `yes` and `on` count, so `false` or `0` can't turn it off by accident. For an isolated network you've decided to own. It doesn't waive the credential secret. |
 | `HOTLOOP_FLOW_ALLOW_PLAINTEXT_CREDENTIALS` | Permits unencrypted credentials at rest. |
 

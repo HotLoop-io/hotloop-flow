@@ -24,6 +24,12 @@ import (
 // Scope is the set of directory trees the file nodes may touch.
 type Scope struct {
 	roots []string
+
+	// use and setting name the scope in its refusal, because the same check
+	// guards two different things: the file nodes, and the files a secret may
+	// be read from.
+	use     string
+	setting string
 }
 
 // NewScope builds a scope. dataDir is always included, because refusing a flow
@@ -31,7 +37,25 @@ type Scope struct {
 // operator would widen the scope to everything just to get started — which is
 // worse than having no scope at all, because it would look deliberate.
 func NewScope(dataDir string, extra []string) (*Scope, error) {
-	s := &Scope{}
+	return newScope(dataDir, extra, "the file nodes may use", "files.allowedPaths")
+}
+
+// NewSecretScope builds the scope a node may read a secret from: a TLS
+// certificate and key, or a password kept in a file.
+//
+// It is separate from the file nodes' scope on purpose. A mounted Kubernetes
+// Secret has to be readable by the TLS config, and if that meant adding it to
+// the file nodes' roots, any flow could read the private key into a message and
+// post it anywhere. A secret read through this scope goes into a connection,
+// never into a message. The data directory is included for the same reason the
+// file nodes get it: a flow can already read and write there, so a secret kept
+// there exposes nothing new.
+func NewSecretScope(dataDir string, extra []string) (*Scope, error) {
+	return newScope(dataDir, extra, "secrets may be read from", "secrets.allowedPaths")
+}
+
+func newScope(dataDir string, extra []string, use, setting string) (*Scope, error) {
+	s := &Scope{use: use, setting: setting}
 
 	all := append([]string{dataDir}, extra...)
 	for _, r := range all {
@@ -72,15 +96,23 @@ func (s *Scope) Roots() []string {
 type ErrOutOfScope struct {
 	Path  string
 	Roots []string
+
+	// Use and Setting say which scope refused it. Empty means the file nodes'.
+	Use     string
+	Setting string
 }
 
 func (e *ErrOutOfScope) Error() string {
-	if len(e.Roots) == 0 {
-		return fmt.Sprintf("%s is outside the paths the file nodes may use", e.Path)
+	use, setting := e.Use, e.Setting
+	if use == "" {
+		use, setting = "the file nodes may use", "files.allowedPaths"
 	}
-	return fmt.Sprintf("%s is outside the paths the file nodes may use (%s); "+
-		"add it to files.allowedPaths if a flow is meant to reach it",
-		e.Path, strings.Join(e.Roots, ", "))
+	if len(e.Roots) == 0 {
+		return fmt.Sprintf("%s is outside the paths %s", e.Path, use)
+	}
+	return fmt.Sprintf("%s is outside the paths %s (%s); "+
+		"add it to %s if a flow is meant to reach it",
+		e.Path, use, strings.Join(e.Roots, ", "), setting)
 }
 
 // Check resolves a path and reports whether it is inside the scope, returning
@@ -92,8 +124,11 @@ func (e *ErrOutOfScope) Error() string {
 // the textual path would let that through, because /data/escape/etc/shadow
 // starts with /data.
 func (s *Scope) Check(path string) (string, error) {
-	if s == nil || len(s.roots) == 0 {
+	if s == nil {
 		return "", &ErrOutOfScope{Path: path}
+	}
+	if len(s.roots) == 0 {
+		return "", &ErrOutOfScope{Path: path, Use: s.use, Setting: s.setting}
 	}
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("no filename given")
@@ -119,7 +154,7 @@ func (s *Scope) Check(path string) (string, error) {
 			return abs, nil
 		}
 	}
-	return "", &ErrOutOfScope{Path: abs, Roots: s.roots}
+	return "", &ErrOutOfScope{Path: abs, Roots: s.roots, Use: s.use, Setting: s.setting}
 }
 
 // resolveExisting evaluates symlinks over the longest prefix of the path that

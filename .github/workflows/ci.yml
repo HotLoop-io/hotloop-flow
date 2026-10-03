@@ -148,9 +148,24 @@ jobs:
             TestMQTTWillOnAConnectionThatDies TestMQTTCleanCloseSendsTheCloseMessageAndNoWill \
             TestMQTTv5PropertiesBothWays TestMQTTv5SubscriptionOptions \
             TestMQTTv5SessionExpiryKeepsMessagesAcrossADrop TestMQTTTwoNodesOnOneTopic \
-            TestMQTTv5OverlappingSubscriptionsDeliverOnce TestMQTTv311StillRoundTrips; do
+            TestMQTTv5OverlappingSubscriptionsDeliverOnce TestMQTTv311StillRoundTrips \
+            TestMQTTOverTLSWithATLSConfig; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
+
+      - name: The OpenSSL interop test actually ran
+        # The PKCS#12 bundle and encrypted key that test reads are written by
+        # the openssl on the runner, which is the point: a file from the tool a
+        # site's IT department uses, not from the library that reads it back.
+        # Without openssl it skips, and a skip reads as a pass.
+        run: |
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run TestTLSConfigReadsWhatOpenSSLWrites 2>&1)
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::the OpenSSL interop test skipped"; exit 1
+          fi
+          echo "$OUT" | grep -q -- "--- PASS: TestTLSConfigReadsWhatOpenSSLWrites" || {
+            echo "::error::the OpenSSL interop test did not pass"; exit 1; }
 
       - name: The JSONata suite actually ran
         # A missing suite turns the test into a skip, and a skip reads as a

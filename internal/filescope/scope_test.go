@@ -140,3 +140,64 @@ func mustEval(t *testing.T, p string) string {
 	}
 	return p
 }
+
+// A Kubernetes Secret volume is a tree of symlinks: tls.crt points at
+// ..data/tls.crt, ..data points at a timestamped directory, and the kubelet
+// swaps ..data on an update. All of it stays under the mount, so the resolved
+// path is still inside the root and the read is allowed.
+func TestSecretScopeReadsAMountedKubernetesSecret(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating a symlink on Windows needs privileges the test runner may not have")
+	}
+	mount := t.TempDir()
+	stamp := filepath.Join(mount, "..2026_10_03_12_00_00.000000001")
+	if err := os.Mkdir(stamp, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stamp, "tls.crt"), []byte("cert"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(stamp), filepath.Join(mount, "..data")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..data", "tls.crt"), filepath.Join(mount, "tls.crt")); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := NewSecretScope(t.TempDir(), []string{mount})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Check(filepath.Join(mount, "tls.crt")); err != nil {
+		t.Fatalf("a key in a mounted Secret was refused: %v", err)
+	}
+}
+
+// The secret scope says it is the secret scope, and names the setting that
+// widens it. Telling an operator to add a Secret's mount to files.allowedPaths
+// would hand every file node the private key.
+func TestSecretScopeRefusalNamesItsOwnSetting(t *testing.T) {
+	s, err := NewSecretScope(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Check(filepath.Join(t.TempDir(), "tls.key"))
+	var oos *ErrOutOfScope
+	if !errors.As(err, &oos) {
+		t.Fatalf("got %v, want ErrOutOfScope", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "secrets.allowedPaths") || strings.Contains(msg, "files.allowedPaths") {
+		t.Errorf("refusal points at the wrong setting: %s", msg)
+	}
+	if !strings.Contains(msg, "secrets may be read from") {
+		t.Errorf("refusal does not say which scope refused it: %s", msg)
+	}
+
+	// The file nodes' scope still says what it always said.
+	files, _ := NewScope(t.TempDir(), nil)
+	_, err = files.Check(filepath.Join(t.TempDir(), "x"))
+	if err == nil || !strings.Contains(err.Error(), "files.allowedPaths") {
+		t.Errorf("the file scope's refusal changed: %v", err)
+	}
+}

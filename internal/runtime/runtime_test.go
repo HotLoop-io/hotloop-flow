@@ -1373,6 +1373,69 @@ func TestConfigNodeIsResolvable(t *testing.T) {
 	}
 }
 
+// tagged is a config node that carries a label, so a test can tell which
+// build of it another config resolved.
+type tagged struct {
+	passNode
+	label string
+}
+
+// A config pointing at a config later in the file still finds it, on the first
+// deploy and on a partial deploy that rebuilds both. The case that needs it is
+// an MQTT broker saved before the tls-config it uses: the editor writes them in
+// the order they were created.
+func TestConfigNodesBuildAfterTheConfigsTheyReference(t *testing.T) {
+	tr := newTestRegistry()
+	var resolved atomic.Value
+	if err := tr.Register(node.Descriptor{
+		Type: "outer-config", Category: node.CategoryConfig, Color: "#E31837", Icon: "cog",
+		IsConfig: true, Compatibility: node.Compatibility{Level: node.CompatOnly},
+	}, func(def *node.Definition) (node.Node, error) {
+		ref := def.Node.PropString("inner", "")
+		inner, ok := def.Services.ConfigNode(ref)
+		if !ok {
+			return nil, fmt.Errorf("config %s is not built yet", ref)
+		}
+		resolved.Store(inner.(tagged).label)
+		return passNode{}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.Register(node.Descriptor{
+		Type: "inner-config", Category: node.CategoryConfig, Color: "#E31837", Icon: "cog",
+		IsConfig: true, Compatibility: node.Compatibility{Level: node.CompatOnly},
+	}, func(def *node.Definition) (node.Node, error) {
+		return tagged{label: def.Node.PropString("label", "")}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	doc := func(label string) string {
+		return `[
+        {"id":"t1","type":"tab","label":"T"},
+        {"id":"outer","type":"outer-config","inner":"inner"},
+        {"id":"inner","type":"inner-config","label":"` + label + `"}
+    ]`
+	}
+	rt := New(tr.Registry, mustFlows(t, doc("first")), Options{})
+	drain(rt)
+	if fails := rt.Start(context.Background()); len(fails) > 0 {
+		t.Fatalf("Start failures: %v", fails)
+	}
+	defer rt.Stop(context.Background())
+	if got := resolved.Load(); got != "first" {
+		t.Fatalf("the outer config resolved %v", got)
+	}
+
+	res, err := rt.Update(context.Background(), mustFlows(t, doc("second")), UpdateOptions{Mode: DeployNodes})
+	if err != nil || len(res.Failures) > 0 {
+		t.Fatalf("Update: %v %v", err, res.Failures)
+	}
+	if got := resolved.Load(); got != "second" {
+		t.Fatalf("after the partial deploy the outer config resolved %v, want the rebuilt inner", got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Throughput
 // ---------------------------------------------------------------------------

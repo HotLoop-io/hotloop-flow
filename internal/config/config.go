@@ -34,6 +34,7 @@ type Config struct {
 	Discovery Discovery `yaml:"discovery"`
 	Exec      Exec      `yaml:"exec"`
 	Files     Files     `yaml:"files"`
+	Secrets   Secrets   `yaml:"secrets"`
 	Logging   Logging   `yaml:"logging"`
 	Metrics   Metrics   `yaml:"metrics"`
 	History   History   `yaml:"history"`
@@ -250,6 +251,19 @@ type Files struct {
 	AllowedPaths []string `yaml:"allowedPaths"`
 }
 
+// Secrets bounds where a node may read a secret from a file: a TLS
+// certificate, key or CA, or a password kept in a file.
+//
+// Separate from Files because the two are read for different reasons. A file
+// node puts what it reads into a message, which a flow can send anywhere. A
+// secret goes into a connection and nowhere else. Mount a Kubernetes Secret
+// here and the TLS config can use the key without any flow being able to
+// read it.
+type Secrets struct {
+	// AllowedPaths are extra directory trees on top of the data directory.
+	AllowedPaths []string `yaml:"allowedPaths"`
+}
+
 // History controls the deployment log under data.dir/deployments.
 type History struct {
 	// Retain is how many deployment records are kept. Zero keeps every one,
@@ -429,6 +443,9 @@ func applyEnv(cfg *Config) {
 	}
 	if v := os.Getenv("HOTLOOP_FLOW_FILE_ALLOWED_PATHS"); v != "" {
 		cfg.Files.AllowedPaths = splitList(v)
+	}
+	if v := os.Getenv("HOTLOOP_FLOW_SECRET_ALLOWED_PATHS"); v != "" {
+		cfg.Secrets.AllowedPaths = splitList(v)
 	}
 }
 

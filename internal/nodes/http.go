@@ -3,6 +3,7 @@ package nodes
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -552,6 +553,16 @@ type httpRequestNode struct {
 	authPass string
 	svc      node.Services
 	client   *http.Client
+
+	// transport carries the node's tls-config, when it has one. Its own rather
+	// than the shared default, because a client certificate and a private CA
+	// belong to this node and nobody else.
+	transport *http.Transport
+
+	// insecureOnce builds the transport msg.rejectUnauthorized = false asks
+	// for, the first time a message asks.
+	insecureOnce sync.Once
+	insecure     *http.Transport
 }
 
 func registerHTTPRequest() {
@@ -569,13 +580,15 @@ func registerHTTPRequest() {
 			Notes: "Method, URL, headers, basic authentication, redirects and the three " +
 				"return types, with msg.url, msg.method and msg.headers overriding the " +
 				"node. The response body is size-capped and the call is bounded by a " +
-				"timeout, neither of which Node-RED does. Cookie jars, proxy settings, " +
-				"per-node TLS configuration and connection persistence are not " +
-				"implemented in this build. There is no egress allowlist: this node " +
+				"timeout, neither of which Node-RED does. TLS comes from a tls-config, or " +
+				"without one msg.rejectUnauthorized = false skips the certificate " +
+				"check for that one message, as in Node-RED. Cookie jars, proxy settings " +
+				"and connection persistence are not implemented in this build. There is " +
+				"no egress allowlist: this node " +
 				"can reach anything the pod can, exactly as Node-RED's can, and the " +
 				"place to bound that is a NetworkPolicy rather than an edit dialog " +
 				"nobody outside the cluster can trust.",
-			UnsupportedProps: []string{"proxy", "tls", "persist", "cookies"},
+			UnsupportedProps: []string{"proxy", "persist", "cookies"},
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -608,6 +621,8 @@ func registerHTTPRequest() {
 			{Name: "password", Kind: node.PropCredential, Label: "Password"},
 			{Name: "ew_timeout", Kind: node.PropNumber, Label: "Timeout (seconds)", Default: 30},
 			{Name: "ew_maxBody", Kind: node.PropNumber, Label: "Response limit (bytes)"},
+			{Name: "tls", Kind: node.PropConfigRef, ConfigType: "tls-config", Label: "TLS",
+				Help: "A client certificate, a private CA, or turning the check off."},
 		},
 		Help: "Makes an HTTP request and returns the response. msg.payload becomes " +
 			"the request body for POST and PUT; msg.statusCode, msg.headers and " +
@@ -642,6 +657,15 @@ func newHTTPRequest(def *node.Definition) (node.Node, error) {
 		if pass, ok := def.Services.Credential("password"); ok {
 			n.authPass = pass
 		}
+	}
+
+	if id := tlsConfigRef(def.Node); id != "" {
+		cfg, err := lookupTLSConfig(def.Services, id)
+		if err != nil {
+			return nil, err
+		}
+		n.transport = cloneDefaultTransport()
+		n.transport.TLSClientConfig = cfg.clientConfig()
 	}
 
 	n.client = &http.Client{
@@ -702,8 +726,19 @@ func (n *httpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.E
 		req.SetBasicAuth(n.authUser, n.authPass)
 	}
 
+	client := n.client
+	if n.transport != nil {
+		c := *n.client
+		c.Transport = n.transport
+		client = &c
+	} else if n.skipVerify(m) {
+		c := *n.client
+		c.Transport = n.insecureTransport()
+		client = &c
+	}
+
 	out.Status(node.Status{Fill: "blue", Shape: "dot", Text: "requesting"})
-	resp, err := n.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		out.Status(node.Status{Fill: "red", Shape: "ring", Text: "failed"})
 		return fmt.Errorf("%s %s: %w", method, target, err)
@@ -745,6 +780,59 @@ func (n *httpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.E
 	}
 
 	out.Send(0, m)
+	return nil
+}
+
+// skipVerify reads msg.rejectUnauthorized, which Node-RED honours only when the
+// node has no tls-config: a boolean, or the strings "true" and "false".
+// Anything else is warned about and ignored, as there.
+func (n *httpRequestNode) skipVerify(m *engine.Msg) bool {
+	v, ok := m.Data["rejectUnauthorized"]
+	if !ok {
+		return false
+	}
+	switch t := v.(type) {
+	case bool:
+		return !t
+	case string:
+		switch strings.ToLower(t) {
+		case "true":
+			return false
+		case "false":
+			return true
+		}
+	}
+	if n.svc != nil {
+		n.svc.Log(node.LogWarn, "msg.rejectUnauthorized should be a boolean, or the "+
+			"string true or false; ignoring it and checking the certificate")
+	}
+	return false
+}
+
+func (n *httpRequestNode) insecureTransport() *http.Transport {
+	n.insecureOnce.Do(func() {
+		n.insecure = cloneDefaultTransport()
+		n.insecure.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	})
+	return n.insecure
+}
+
+// cloneDefaultTransport starts from the standard transport, so proxies from the
+// environment, HTTP/2 and the connection limits stay what every other request
+// gets.
+func cloneDefaultTransport() *http.Transport {
+	return http.DefaultTransport.(*http.Transport).Clone()
+}
+
+// Close drops the node's own idle connections. The shared default transport is
+// left alone; it is not this node's.
+func (n *httpRequestNode) Close(context.Context, bool) error {
+	if n.transport != nil {
+		n.transport.CloseIdleConnections()
+	}
+	if n.insecure != nil {
+		n.insecure.CloseIdleConnections()
+	}
 	return nil
 }
 

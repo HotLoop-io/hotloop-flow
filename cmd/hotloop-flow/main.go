@@ -163,6 +163,15 @@ func cmdServe(args []string) error {
 		log.Warn("the file nodes may reach outside the data directory",
 			"allowedPaths", strings.Join(fileScope.Roots(), ","))
 	}
+	secretScope, err := filescope.NewSecretScope(cfg.Data.Dir, cfg.Secrets.AllowedPaths)
+	if err != nil {
+		return fmt.Errorf("secrets: %w", err)
+	}
+	nodes.Secrets = secretScope
+	if len(cfg.Secrets.AllowedPaths) > 0 {
+		log.Info("secrets may be read from files outside the data directory",
+			"allowedPaths", strings.Join(secretScope.Roots(), ","))
+	}
 
 	// The flow route table, with the editor and the admin API reserved so a flow
 	// cannot claim a path that would make them unreachable.
