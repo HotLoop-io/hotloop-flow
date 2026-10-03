@@ -76,7 +76,7 @@ a line stops, and today the answer is three `.bak` files.
       person changed instead of a yes/no box
 - [x] Flows as code: `hotloop-flow deploy` and `hotloop-flow export` for CI,
       with a deploy-only token so a pipeline never holds an admin password
-- [ ] Optional git mirror: every deploy pushed as a commit authored by whoever
+- [x] Optional git mirror: every deploy pushed as a commit authored by whoever
       deployed it. Pure Go, and the binary size check still passes
 - [ ] Audit log: logins, failed logins, deploys, rollbacks and injects, each
       with who and from where. The deployment log is its first table

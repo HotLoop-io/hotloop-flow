@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/api"
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
@@ -23,7 +25,9 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/filescope"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
+	"github.com/HotLoop-io/hotloop-flow/internal/gitmirror"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
+	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/nodes" // registers the built-in palette
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
@@ -205,7 +209,29 @@ func cmdServe(args []string) error {
 		contexts:  store.NewScopedContexts(),
 	}
 
+	// The git mirror, if one is configured. Built before the server so a
+	// mirror that can't work refuses at startup, not at the first deploy.
+	var mirrorStatus func() any
+	var extraMetrics []metrics.Family
+	if g := cfg.History.Git; g.URL != "" {
+		m, err := gitmirror.New(gitmirror.Config{
+			URL: g.URL, Branch: g.Branch, Path: g.Path, EmailDomain: g.EmailDomain,
+			Username: g.Username, Password: g.Password,
+		}, filepath.Join(cfg.Data.Dir, "git-mirror"), deployments, log)
+		if err != nil {
+			return fmt.Errorf("git mirror: %w", err)
+		}
+		app.mirror = m
+		mirrorStatus = func() any { return m.Status() }
+		extraMetrics = append(extraMetrics, m.Families()...)
+		if strings.HasPrefix(g.URL, "http://") && g.Password != "" {
+			log.Warn("the git mirror sends its password over plain http", "url", gitmirror.Redact(g.URL))
+		}
+	}
+
 	srv := api.New(api.Deps{
+		Mirror:      mirrorStatus,
+		Metrics:     extraMetrics,
 		Config:      cfg,
 		Registry:    node.Default,
 		Flows:       flowStore,
@@ -237,6 +263,15 @@ func cmdServe(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	if app.mirror != nil {
+		// A minute between retries is often enough to catch up after a
+		// network blip and rare enough not to hammer a git server that is
+		// down for the evening.
+		go app.mirror.Run(ctx, time.Minute)
+		log.Info("mirroring deployments to git", "url", gitmirror.Redact(cfg.History.Git.URL),
+			"branch", app.mirror.Status().Branch)
+	}
 
 	// Per-node failures are logged inside start and are not fatal: a flow with
 	// one bad node still runs the other nodes, and refusing to boot over a
@@ -288,6 +323,7 @@ type application struct {
 	flowStore *store.FlowStore
 	creds     *store.CredentialStore
 	history   *history.Log
+	mirror    *gitmirror.Mirror
 	registry  *node.Registry
 	contexts  *store.ScopedContexts
 	hub       interface{ Broadcast(runtime.Event) }
@@ -611,6 +647,9 @@ func (a *application) apply(ctx context.Context, flows *engine.Flows, expectedRe
 	if err != nil {
 		a.log.Error("the deployment log could not be written; this deploy has no record", "rev", rev, "error", err)
 		warnings = append(warnings, "the deployment log could not be written, so this deploy has no record: "+err.Error())
+	} else if a.mirror != nil {
+		// Never waits. The mirror catches up on its own goroutine.
+		a.mirror.Notify()
 	}
 
 	// Drop context belonging to nodes and flows that no longer exist, so

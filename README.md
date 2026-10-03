@@ -353,6 +353,48 @@ passed.
 Credentials never travel this way. They aren't in the flow file, so a deploy
 from git keeps every broker password exactly where it was.
 
+### A git mirror, if you want one
+
+The deployment log lives on the box. A repository is where everybody else
+already looks: it has a web view, blame, backups and people who know how to read
+it. Point Flow at one and every deployment becomes a commit of the flow file on
+a branch only Flow writes to, **authored by whoever deployed it**, at the time
+they deployed it, with their note as the message:
+
+```yaml
+history:
+  git:
+    url: https://git.plant.example/line3/flows.git
+    branch: main              # one nobody else pushes to
+    path: flows.json
+    emailDomain: plant.example  # dana deploys, the commit is from dana@plant.example
+```
+
+The password is an access token from the git server, and it goes in
+`HOTLOOP_FLOW_GIT_PASSWORD` from a Secret, never the file (`HOTLOOP_FLOW_GIT_URL`
+and `HOTLOOP_FLOW_GIT_USERNAME` work too). A URL with a password in it is refused
+at startup, so the URL can always be logged. `http://` and `https://` only: the
+image has no git binary for `file://` and no keys for `ssh://`, and a mirror that
+fails on every push is worse than one that refuses to start. Rollbacks and
+startup baselines say what they are in the commit, and every commit carries a
+`Flow-Deployment: N` trailer, which is how a restarted process, or one whose
+clone got wiped, picks up exactly where the repository says it got to, without a
+duplicate.
+
+**It never holds up a deploy.** Pushing happens on its own goroutine. A git
+server that is down, slow or refusing the push costs a deploy nothing: the
+commits wait in a local clone under `data/git-mirror` and go out on the next
+push that works, retried every minute. `GET /deployments` says how far the
+mirror got and the last error, and `hotloop_flow_git_mirror_behind_deployments`
+is the number to alert on. Tested against git's own smart-HTTP server behind
+basic auth: three deploys make three commits by three authors, a push the server
+refuses waits and catches up when it stops refusing, and a deploy with a git
+server that takes ten seconds to say no returns in milliseconds.
+
+It's pure Go (go-git), so the binary stays static. It costs about 3.8 MB of
+binary, which is why it's measured and not assumed, and why the 40 MiB ceiling
+in CI still has room.
+
 ---
 
 ## Security posture
@@ -599,6 +641,11 @@ data:
 
 history:
   retain: 100               # deployment records kept under data.dir/deployments; 0 keeps all
+  git:
+    url: ""                 # empty is off; see "A git mirror"
+    branch: main
+    path: flows.json
+    emailDomain: flow.invalid
 
 auth:
   enabled: true             # off refuses to start unless HOTLOOP_FLOW_INSECURE=true
@@ -658,6 +705,7 @@ Secret.
 | `HOTLOOP_FLOW_CREDENTIAL_SECRET` | Credential encryption secret. |
 | `HOTLOOP_FLOW_ADMIN_USER`, `HOTLOOP_FLOW_ADMIN_PASSWORD_HASH` | A single admin account with full permissions, which is what makes a first-run container usable without mounting a file. Both must be set. |
 | `HOTLOOP_FLOW_DEPLOY_TOKEN_HASH` | A deploy token called `deploy`, for CI: `flows.read` and `flows.write`, nothing else. The hash, never the token. |
+| `HOTLOOP_FLOW_GIT_URL`, `HOTLOOP_FLOW_GIT_USERNAME`, `HOTLOOP_FLOW_GIT_PASSWORD` | The git mirror. The password (an access token) is environment only. |
 | `HOTLOOP_FLOW_INBOX_CAPACITY`, `HOTLOOP_FLOW_OVERFLOW` | Scheduler defaults. |
 | `HOTLOOP_FLOW_LOG_LEVEL`, `HOTLOOP_FLOW_LOG_FORMAT` | Logging. |
 | `HOTLOOP_FLOW_DISCOVERY_ENABLED`, `HOTLOOP_FLOW_DISCOVERY_CIDRS` | Discovery nodes. Comma-separated CIDRs. |
@@ -767,6 +815,9 @@ you should not need a second container to find out that your inbox is full.
 | `hotloop_flow_memory_heap_bytes` | gauge | Heap currently allocated. |
 | `hotloop_flow_memory_sys_bytes` | gauge | Bytes taken from the OS. |
 | `hotloop_flow_gc_cycles_total` | counter | Completed GC cycles. |
+| `hotloop_flow_git_mirror_behind_deployments` | gauge | Deployments the git mirror's remote doesn't have yet. Only with a mirror. |
+| `hotloop_flow_git_mirror_push_failures_total` | counter | Pushes to the mirror that failed and will be retried. |
+| `hotloop_flow_git_mirror_pushes_total` | counter | Pushes to the mirror that succeeded. |
 
 The one to alert on is `hotloop_flow_node_queue_high_water` against
 `hotloop_flow_node_queue_capacity`. High water is the early warning that a flow is
