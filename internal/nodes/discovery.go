@@ -38,7 +38,11 @@ func init() {
 // netinfo
 // ---------------------------------------------------------------------------
 
-type netInfoNode struct{}
+type netInfoNode struct {
+	// standIn answers under a flow test with the interfaces the test scripted,
+	// because the box a test runs on isn't the box the flow will.
+	standIn node.StandIn
+}
 
 func registerNetInfo() {
 	node.MustRegister(node.Descriptor{
@@ -50,6 +54,7 @@ func registerNetInfo() {
 		Outputs:      1,
 		PaletteLabel: "netinfo",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatOnly,
 			Notes: "HotLoop Flow's own node. Reports the interfaces the runtime can see, " +
@@ -61,17 +66,31 @@ func registerNetInfo() {
 		},
 		Help: "Reports the runtime's network interfaces, addresses and MAC addresses. " +
 			"Not gated by the discovery scope: it reads local state and probes nothing.",
-	}, func(*node.Definition) (node.Node, error) { return &netInfoNode{}, nil })
+	}, func(def *node.Definition) (node.Node, error) {
+		return &netInfoNode{standIn: node.StandInOf(def.Services)}, nil
+	})
 }
 
 func (n *netInfoNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
-	ifaces, err := discover.Interfaces()
-	if err != nil {
-		return fmt.Errorf("reading interfaces: %w", err)
-	}
-	list := make([]any, len(ifaces))
-	for i, f := range ifaces {
-		list[i] = f
+	var list []any
+	if n.standIn != nil {
+		reply, err := n.standIn.Call("netinfo", map[string]any{})
+		if err != nil {
+			return fmt.Errorf("reading interfaces: %w", err)
+		}
+		if list, err = replyList(reply, "interfaces"); err != nil {
+			return err
+		}
+		list = append([]any{}, list...)
+	} else {
+		ifaces, err := discover.Interfaces()
+		if err != nil {
+			return fmt.Errorf("reading interfaces: %w", err)
+		}
+		list = make([]any, len(ifaces))
+		for i, f := range ifaces {
+			list[i] = f
+		}
 	}
 	if err := m.Set(engine.PropPayload, list); err != nil {
 		return err
@@ -105,6 +124,7 @@ func registerScan() {
 		Outputs:      1,
 		PaletteLabel: "scan",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatOnly,
 			Notes: "HotLoop Flow's own node. Sweeps a CIDR range for OT devices and " +
@@ -175,7 +195,8 @@ func newScan(def *node.Definition) (node.Node, error) {
 }
 
 func (n *scanNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
-	if !Scope.Enabled() {
+	si := node.StandInOf(n.svc)
+	if !Scope.Enabled() && si == nil {
 		// Explicit rather than an empty result. A scan node that silently
 		// returns nothing looks like a network with nothing on it.
 		return discover.ErrDisabled
@@ -196,6 +217,25 @@ func (n *scanNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 
 	out.Status(node.Status{Fill: "blue", Shape: "dot", Text: "scanning " + prefix.String()})
 
+	if si != nil {
+		// Nothing is probed under a flow test, so the discovery scope has
+		// nothing to fence in. The test says what answered.
+		ports := make([]any, len(n.ports))
+		for i, p := range n.ports {
+			ports[i] = float64(p)
+		}
+		reply, err := si.Call("scan", map[string]any{"range": prefix.String(), "ports": ports})
+		if err != nil {
+			out.Status(node.Status{Fill: "red", Shape: "dot", Text: truncate(err.Error(), 32)})
+			return err
+		}
+		found, err := replyList(reply, "devices")
+		if err != nil {
+			return err
+		}
+		return n.emitFound(found, m, out)
+	}
+
 	devices, err := discover.Sweep(ctx, Scope, prefix, discover.Options{
 		Timeout:      n.timeout,
 		Concurrency:  n.concurrency,
@@ -208,17 +248,22 @@ func (n *scanNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 		return err
 	}
 
+	found := make([]any, len(devices))
+	for i, d := range devices {
+		found[i] = deviceToMap(d)
+	}
+	return n.emitFound(found, m, out)
+}
+
+// emitFound sends what a sweep found, as one message or one per device.
+func (n *scanNode) emitFound(devices []any, m *engine.Msg, out node.Emitter) error {
 	out.Status(node.Status{
 		Fill: "green", Shape: "dot",
 		Text: fmt.Sprintf("%d device(s)", len(devices)),
 	})
 
 	if !n.splitOutput {
-		list := make([]any, len(devices))
-		for i, d := range devices {
-			list[i] = deviceToMap(d)
-		}
-		if err := m.Set(engine.PropPayload, list); err != nil {
+		if err := m.Set(engine.PropPayload, append([]any{}, devices...)); err != nil {
 			return err
 		}
 		m.Data["deviceCount"] = float64(len(devices))
@@ -231,10 +276,14 @@ func (n *scanNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 	seqID := engine.GenerateID()
 	for i, d := range devices {
 		cp := m.Clone()
-		if err := cp.Set(engine.PropPayload, deviceToMap(d)); err != nil {
+		if err := cp.Set(engine.PropPayload, d); err != nil {
 			return err
 		}
-		cp.SetTopic(d.Address)
+		if dm, ok := d.(map[string]any); ok {
+			if addr, ok := dm["address"].(string); ok {
+				cp.SetTopic(addr)
+			}
+		}
 		cp.Data[engine.PropParts] = partsInfo{
 			ID: seqID, Index: i, Count: len(devices), Type: "array",
 		}.toMap()

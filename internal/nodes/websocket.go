@@ -466,6 +466,7 @@ func registerWebSocketIn() {
 		Outputs:      1,
 		PaletteLabel: "websocket in",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatFull,
 			Notes: "Emits a message per frame, carrying msg._session so a WebSocket Out " +
@@ -505,6 +506,11 @@ func (n *wsInNode) Start(_ context.Context, out node.Emitter) error {
 	ep, err := lookupEndpoint(n.svc, n.configID)
 	if err != nil {
 		return err
+	}
+	if node.StandInOf(n.svc) != nil {
+		// A flow test opens no connections. What a client would have sent is
+		// whatever the test injects here.
+		return nil
 	}
 
 	n.unsubscribe = ep.subscribe(func(s *wsSession, data []byte) {
@@ -565,6 +571,7 @@ func registerWebSocketOut() {
 		Align:        "right",
 		PaletteLabel: "websocket out",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatDivergent,
 			Notes: "Replies to the connection named by msg._session, or broadcasts to " +
@@ -611,6 +618,15 @@ func (n *wsOutNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) 
 
 	frame, err := msgToFrame(m, ep.wholeMsg())
 	if err != nil {
+		return err
+	}
+
+	if si := node.StandInOf(n.svc); si != nil {
+		sent := map[string]any{"payload": wireValue(frame)}
+		if sess, ok := m.Data["_session"].(map[string]any); ok {
+			sent["session"] = sess["id"]
+		}
+		_, err := si.Call("websocket", sent)
 		return err
 	}
 

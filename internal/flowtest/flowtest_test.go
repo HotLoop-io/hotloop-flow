@@ -393,25 +393,6 @@ tests:
 	}
 }
 
-// TestNodesThatReachOutAreNotRun: a test that ran an MQTT Out would publish to
-// the real broker. Until those nodes can be stood in for, a test refuses them
-// rather than doing it.
-func TestNodesThatReachOutAreNotRun(t *testing.T) {
-	flows := strings.Replace(line3, `{"id":"errors"`, `{"id":"pub","type":"mqtt out","z":"t1","name":"to the plant","broker":"b1","topic":"line3/alarm","x":1,"y":1,"wires":[]},
-  {"id":"b1","type":"mqtt-broker","broker":"192.0.2.1","port":1883},
-  {"id":"errors"`, 1)
-	r := one(t, flows, `
-tests:
-  - name: x
-    inject: [{node: reading, msg: {payload: 1}}]
-    expect: [{node: fine}]
-`)
-	wantStatus(t, r, flowtest.Error)
-	if !strings.Contains(problems(r), `mqtt out "to the plant" (pub)`) {
-		t.Errorf("the refusal doesn't name the node:\n%s", problems(r))
-	}
-}
-
 // TestEveryTestStartsFromNothing: each test gets its own runtime. A Delay still
 // holding a message from one test can't release it into the next.
 func TestEveryTestStartsFromNothing(t *testing.T) {

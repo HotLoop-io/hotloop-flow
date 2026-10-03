@@ -93,6 +93,10 @@ type Runtime struct {
 	onExecTime     func(nodeID, typ string, d time.Duration)
 	onQueueLatency func(nodeID, typ string, d time.Duration)
 
+	// standIns, when set, hands every node a stand-in for the world outside
+	// the process. Only a flow test sets it.
+	standIns func(nodeID string) node.StandIn
+
 	// observer sees every message a node is handed and every message it sends.
 	// Only a flow test sets one: it is how a test knows what came out of a port
 	// without wiring anything into the flow it is testing.
@@ -119,6 +123,11 @@ type Observer interface {
 
 // SetObserver installs an observer. Call it before Start.
 func (rt *Runtime) SetObserver(o Observer) { rt.observer = o }
+
+// SetStandIns gives every node built from here on a stand-in for the outside
+// world, so that nothing it does reaches a broker, a database, a socket, a file
+// or a command. A flow test calls it before Start.
+func (rt *Runtime) SetStandIns(fn func(nodeID string) node.StandIn) { rt.standIns = fn }
 
 // Settled reports whether no message is queued for, or being handled by, any
 // node. Messages a node is holding on purpose, in a Delay or a Trigger, don't
@@ -1155,6 +1164,15 @@ func (s *services) Credential(key string) (string, bool) {
 	creds := s.rt.credentials(s.nodeID)
 	v, ok := creds[key]
 	return v, ok
+}
+
+// StandIn is what node.StandInOf finds: the node's stand-in for the outside
+// world under a flow test, and nil the rest of the time.
+func (s *services) StandIn() node.StandIn {
+	if s.rt.standIns == nil {
+		return nil
+	}
+	return s.rt.standIns(s.nodeID)
 }
 
 func (s *services) ConfigNode(id string) (node.Node, bool) {

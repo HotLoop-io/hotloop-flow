@@ -370,6 +370,7 @@ func registerMQTTIn() {
 		Outputs:      1,
 		PaletteLabel: "mqtt in",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Topic subscription with QoS and payload decoding, and on MQTT 5 the no " +
@@ -449,6 +450,12 @@ func (n *mqttInNode) Start(ctx context.Context, out node.Emitter) error {
 		return fmt.Errorf("config node %s is not an MQTT broker", n.cfgID)
 	}
 	n.broker = b
+
+	if node.StandInOf(n.svc) != nil {
+		// A flow test subscribes to nothing. What the broker would have
+		// delivered is whatever the test injects here.
+		return nil
+	}
 
 	out.Status(node.Status{Fill: "yellow", Shape: "ring", Text: "connecting"})
 
@@ -641,6 +648,7 @@ func registerMQTTOut() {
 		Align:        "right",
 		PaletteLabel: "mqtt out",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Publishing with topic, QoS and retain from the node or the message, and on " +
@@ -746,6 +754,25 @@ func (n *mqttOutNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitt
 	}
 	pm.Payload = payload
 
+	if si := node.StandInOf(n.svc); si != nil {
+		// Everything up to here is the real node: the topic, QoS and retain
+		// it settled on, the version 5 properties, and the bytes it would
+		// have put on the wire.
+		sent := map[string]any{
+			"topic": pm.Topic, "payload": wireValue(pm.Payload),
+			"qos": float64(pm.QoS), "retain": pm.Retain,
+		}
+		if pm.Props != nil {
+			sent["properties"] = pm.Props.sentValue()
+		}
+		if _, err := si.Call("mqtt", sent); err != nil {
+			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "not connected"})
+			return fmt.Errorf("publishing to %q: %w", pm.Topic, err)
+		}
+		out.Status(node.Status{Fill: "green", Shape: "dot", Text: "published"})
+		return nil
+	}
+
 	if !n.broker.Connected() {
 		out.Status(node.Status{Fill: "red", Shape: "ring", Text: "not connected"})
 		return fmt.Errorf("broker is not connected")
@@ -755,6 +782,35 @@ func (n *mqttOutNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitt
 	}
 	out.Status(node.Status{Fill: "green", Shape: "dot", Text: "published"})
 	return nil
+}
+
+// sentValue is the properties as a flow test reads them, named the way a
+// message carries them.
+func (p *mqttProps) sentValue() map[string]any {
+	out := map[string]any{}
+	if p.ContentType != "" {
+		out["contentType"] = p.ContentType
+	}
+	if p.ResponseTopic != "" {
+		out["responseTopic"] = p.ResponseTopic
+	}
+	if p.CorrelationData != nil {
+		out["correlationData"] = wireValue(p.CorrelationData)
+	}
+	if p.MessageExpiry != nil {
+		out["messageExpiryInterval"] = float64(*p.MessageExpiry)
+	}
+	if p.PayloadFormat != nil {
+		out["payloadFormatIndicator"] = *p.PayloadFormat
+	}
+	if len(p.User) > 0 {
+		user := make(map[string]any, len(p.User))
+		for _, kv := range p.User {
+			user[kv[0]] = kv[1]
+		}
+		out["userProperties"] = user
+	}
+	return out
 }
 
 // publishProps works out the version 5 properties for a publish: the

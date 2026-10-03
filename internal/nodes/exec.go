@@ -50,6 +50,10 @@ type execNode struct {
 	running int
 	wg      sync.WaitGroup
 	ctx     context.Context
+
+	// standIn runs nothing under a flow test: it's told the command and the
+	// arguments, and answers with the output the test scripted.
+	standIn node.StandIn
 }
 
 func registerExec() {
@@ -63,6 +67,7 @@ func registerExec() {
 		OutputLabels: []string{"stdout", "stderr", "return code"},
 		PaletteLabel: "exec",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatDivergent,
 			Notes: "The three outputs, both buffered and streaming modes, the timeout " +
@@ -114,6 +119,7 @@ func newExec(def *node.Definition) (node.Node, error) {
 		oldRC:     def.Node.PropBool("oldrc", false),
 		maxOutput: def.Node.PropInt("ew_maxOutput", defaultExecMaxOutput),
 		sem:       make(chan struct{}, defaultExecConcurrency),
+		standIn:   node.StandInOf(def.Services),
 	}
 	if n.command == "" {
 		return nil, fmt.Errorf("no command configured")
@@ -153,8 +159,14 @@ func newExec(def *node.Definition) (node.Node, error) {
 	// deploy, in front of whoever deployed it, rather than at the first message
 	// in the middle of the night. The check is repeated per message because the
 	// policy can promote a command that appeared after boot.
-	if _, err := Commands.Resolve(n.command); err != nil {
-		return nil, err
+	//
+	// Under a flow test nothing runs, so there's nothing for the allowlist to
+	// allow: the test proves what the flow does with the output, and the
+	// deploy still answers to the policy of the box it lands on.
+	if n.standIn == nil {
+		if _, err := Commands.Resolve(n.command); err != nil {
+			return nil, err
+		}
 	}
 	return n, nil
 }
@@ -169,11 +181,6 @@ func (n *execNode) Start(ctx context.Context, _ node.Emitter) error {
 }
 
 func (n *execNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
-	path, err := Commands.Resolve(n.command)
-	if err != nil {
-		return err
-	}
-
 	args := append([]string(nil), n.extraArgs...)
 	if n.appendProp != "" {
 		v, ok, err := m.Get(n.appendProp)
@@ -186,6 +193,15 @@ func (n *execNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 			// which is argument injection with extra steps.
 			args = append(args, argString(v))
 		}
+	}
+
+	if n.standIn != nil {
+		return n.runStandIn(args, m, out)
+	}
+
+	path, err := Commands.Resolve(n.command)
+	if err != nil {
+		return err
 	}
 
 	// Bounded concurrency. A node whose command takes a minute must not be able
@@ -299,6 +315,61 @@ func (n *execNode) run(base context.Context, path string, args []string, m *engi
 	default:
 		out.Status(node.Status{})
 	}
+}
+
+// runStandIn is run under a flow test: the command and its arguments go to the
+// stand-in, and the stdout, stderr and exit code it scripts come out of the
+// same three ports in the same shapes a real run produces.
+func (n *execNode) runStandIn(args []string, m *engine.Msg, out node.Emitter) error {
+	argList := make([]any, len(args))
+	for i, a := range args {
+		argList[i] = a
+	}
+	reply, err := n.standIn.Call("exec", map[string]any{"command": n.command, "args": argList})
+	if err != nil {
+		return fmt.Errorf("running %s: %w", n.command, err)
+	}
+	stdout, err := replyBytes(reply["stdout"])
+	if err != nil {
+		return err
+	}
+	stderr, err := replyBytes(reply["stderr"])
+	if err != nil {
+		return err
+	}
+	code, err := replyNumber(reply, "code", 0)
+	if err != nil {
+		return err
+	}
+	var rc any = map[string]any{"code": code}
+	if n.oldRC {
+		rc = code
+	}
+
+	if n.spawn {
+		n.streamLines(bytes.NewReader(stdout), 0, m, out)
+		n.streamLines(bytes.NewReader(stderr), 1, m, out)
+	} else {
+		first := m.Clone()
+		first.SetPayload(string(stdout))
+		first.Data["rc"] = rc
+		out.Send(0, first)
+		if len(stderr) > 0 {
+			second := m.Clone()
+			second.SetPayload(string(stderr))
+			second.Data["rc"] = rc
+			out.Send(1, second)
+		}
+	}
+	third := m.Clone()
+	third.SetPayload(rc)
+	out.Send(2, third)
+	if code != 0 {
+		out.Status(node.Status{Fill: "red", Shape: "dot", Text: fmt.Sprintf("exit %d", int(code))})
+	} else {
+		out.Status(node.Status{})
+	}
+	return nil
 }
 
 // streamLines emits one message per line as the command produces it.

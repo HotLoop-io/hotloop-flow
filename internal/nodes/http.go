@@ -129,6 +129,10 @@ type httpInNode struct {
 	unbind   func()
 	bindOnce sync.Once
 
+	// standIn is set under a flow test, where the node serves nothing: what a
+	// client would have sent is whatever the test injects here.
+	standIn bool
+
 	mu      sync.Mutex
 	pending int
 }
@@ -143,6 +147,7 @@ func registerHTTPIn() {
 		Outputs:      1,
 		PaletteLabel: "http in",
 		LabelProp:    "url",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatDivergent,
 			Notes: "Serves a path, with Express-style :params and a trailing *, and " +
@@ -197,6 +202,7 @@ func newHTTPIn(def *node.Definition) (node.Node, error) {
 		rawBody: def.Node.PropBool("ew_rawBody", false),
 		upload:  def.Node.PropBool("upload", false),
 		svc:     def.Services,
+		standIn: node.StandInOf(def.Services) != nil,
 	}
 	if n.method == "ALL" {
 		n.method = flowhttp.MethodAny
@@ -218,6 +224,9 @@ func newHTTPIn(def *node.Definition) (node.Node, error) {
 func (n *httpInNode) Receive(context.Context, *engine.Msg, node.Emitter) error { return nil }
 
 func (n *httpInNode) Start(ctx context.Context, out node.Emitter) error {
+	if n.standIn {
+		return nil
+	}
 	unbind, err := Routes.Register(n.nodeID, n.method, n.url,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			n.serve(ctx, w, r, out)
@@ -464,6 +473,10 @@ type httpResponseNode struct {
 	statusCode int
 	headers    map[string]string
 	now        func() time.Time
+
+	// standIn takes the reply under a flow test. There's no client on the
+	// other end of a test, so it records what would have gone back to one.
+	standIn node.StandIn
 }
 
 func registerHTTPResponse() {
@@ -477,6 +490,7 @@ func registerHTTPResponse() {
 		Align:        "right",
 		PaletteLabel: "http response",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Status code and headers from the node or from msg.statusCode and " +
@@ -505,6 +519,7 @@ func newHTTPResponse(def *node.Definition) (node.Node, error) {
 		statusCode: def.Node.PropInt("statusCode", 0),
 		headers:    map[string]string{},
 		now:        time.Now,
+		standIn:    node.StandInOf(def.Services),
 	}
 
 	// Node-RED stores the header list either as an array of rows or as a plain
@@ -532,7 +547,7 @@ func newHTTPResponse(def *node.Definition) (node.Node, error) {
 
 func (n *httpResponseNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
 	pending, ok := m.Data["res"].(*pendingResponse)
-	if !ok {
+	if !ok && n.standIn == nil {
 		return fmt.Errorf("the message carries no msg.res, so there is no request to reply to; " +
 			"it must come from an http in node on this flow")
 	}
@@ -564,6 +579,26 @@ func (n *httpResponseNode) Receive(_ context.Context, m *engine.Msg, out node.Em
 	cookies, err := responseCookies(m.Data["cookies"], n.now())
 	if err != nil {
 		return fmt.Errorf("msg.cookies: %w", err)
+	}
+
+	if n.standIn != nil {
+		sentHeaders := make(map[string]any, len(headers))
+		for k, v := range headers {
+			sentHeaders[k] = v
+		}
+		sent := map[string]any{
+			"statusCode": float64(status), "headers": sentHeaders, "payload": wireValue(body),
+		}
+		if len(cookies) > 0 {
+			// The Set-Cookie lines exactly as the client would have got them.
+			setCookies := make([]any, len(cookies))
+			for i, c := range cookies {
+				setCookies[i] = c
+			}
+			sent["cookies"] = setCookies
+		}
+		_, err := n.standIn.Call("http response", sent)
+		return err
 	}
 
 	if !pending.reply(status, headers, cookies, body) {
@@ -620,6 +655,10 @@ type httpRequestNode struct {
 	// for, the first time a message asks.
 	insecureOnce sync.Once
 	insecure     *http.Transport
+
+	// standIn is set under a flow test. Every request goes to it, whatever
+	// transport the node would otherwise pick for TLS.
+	standIn bool
 }
 
 func registerHTTPRequest() {
@@ -632,6 +671,7 @@ func registerHTTPRequest() {
 		Outputs:      1,
 		PaletteLabel: "http request",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
 			Notes: "Method, URL, headers, basic authentication, redirects and the three " +
@@ -740,7 +780,69 @@ func newHTTPRequest(def *node.Definition) (node.Node, error) {
 			return nil
 		},
 	}
+	if si := node.StandInOf(def.Services); si != nil {
+		// Swapped in at the transport, so everything above it is the real
+		// node: the URL it renders, the headers and body it builds, the
+		// redirects it follows and how it reads the answer.
+		n.client.Transport = standInTransport{si: si}
+		n.standIn = true
+	}
 	return n, nil
+}
+
+// standInTransport hands every request an HTTP Request node makes to a flow
+// test's stand-in, and turns the reply the test scripted into the response.
+type standInTransport struct{ si node.StandIn }
+
+func (t standInTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	var body []byte
+	if req.Body != nil {
+		b, err := io.ReadAll(req.Body)
+		req.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		body = b
+	}
+	headers := make(map[string]any, len(req.Header))
+	for k, v := range req.Header {
+		headers[strings.ToLower(k)] = strings.Join(v, ", ")
+	}
+	sent := map[string]any{"method": req.Method, "url": req.URL.String(), "headers": headers}
+	if len(body) > 0 {
+		sent["payload"] = wireValue(body)
+	}
+
+	reply, err := t.si.Call("http", sent)
+	if err != nil {
+		return nil, err
+	}
+	status, err := replyNumber(reply, "statusCode", http.StatusOK)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := replyBytes(reply["payload"])
+	if err != nil {
+		return nil, err
+	}
+	h := http.Header{}
+	if hm, ok := reply["headers"].(map[string]any); ok {
+		for k, v := range hm {
+			h.Set(k, mustacheString(v))
+		}
+	}
+	code := int(status)
+	return &http.Response{
+		Status:        fmt.Sprintf("%d %s", code, http.StatusText(code)),
+		StatusCode:    code,
+		Proto:         "HTTP/1.1",
+		ProtoMajor:    1,
+		ProtoMinor:    1,
+		Header:        h,
+		Body:          io.NopCloser(bytes.NewReader(raw)),
+		ContentLength: int64(len(raw)),
+		Request:       req,
+	}, nil
 }
 
 func (n *httpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
@@ -825,9 +927,12 @@ func (n *httpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.E
 	c := *n.client
 	client := &c
 	client.Jar = jar
-	if n.transport != nil {
+	switch {
+	case n.standIn:
+		// The stand-in transport stays, TLS or not: nothing is dialled.
+	case n.transport != nil:
 		client.Transport = n.transport
-	} else if n.skipVerify(m) {
+	case n.skipVerify(m):
 		client.Transport = n.insecureTransport()
 	}
 	redirects := []any{}

@@ -173,14 +173,18 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	}
 	g := newGraphView(flows, opts.Registry)
 
-	injections, watches, problems := g.resolve(c)
+	injections, watches, replies, problems := g.resolve(c)
 	if len(problems) > 0 {
 		res.Problems = problems
 		return res
 	}
 	if out := g.reachingOut(); len(out) > 0 {
-		return problem("this flow has nodes that talk to the world outside the test, and a test "+
-			"doesn't run those until they can be stood in for: %s", strings.Join(out, ", "))
+		// Every node in the palette that reaches outside the process can be
+		// stood in for. A node that can't, from a registry that isn't the
+		// palette or one added without a stand-in, would do it for real, so
+		// the test refuses to run rather than letting it.
+		return problem("this flow has nodes that would talk to the world outside the test, "+
+			"and they have no stand-in to talk to instead: %s", strings.Join(out, ", "))
 	}
 
 	timeout, _ := c.timeout()
@@ -193,6 +197,7 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	rt.SetContexts(store.NewScopedContexts())
 	rec := newRecorder(watches)
 	rt.SetObserver(rec)
+	rt.SetStandIns(newOutside(rec, replies).forNode)
 
 	logs := newLogCollector(rt)
 
@@ -393,6 +398,11 @@ func (g *graphView) hasButton(n *engine.Node) bool {
 	return ok && reg.Descriptor.HasButton
 }
 
+func (g *graphView) standsIn(n *engine.Node) bool {
+	reg, ok := g.reg.Lookup(n.Type)
+	return ok && reg.Descriptor.StandIn
+}
+
 // outputTaps finds where a node's output port can be seen. For an ordinary
 // node that's the port itself. A subflow instance doesn't send anything: once
 // it's running, its outputs are the internal nodes wired to the template's
@@ -423,8 +433,22 @@ func (g *graphView) outputTaps(n *engine.Node, port, depth int) []tap {
 	return taps
 }
 
-func (g *graphView) resolve(c *Case) ([]injection, []watch, []Problem) {
+func (g *graphView) resolve(c *Case) ([]injection, []watch, map[string][]Reply, []Problem) {
 	var problems []Problem
+
+	replies := map[string][]Reply{}
+	for i, r := range c.Replies {
+		n, err := g.find(r.Node)
+		if err == nil && !g.standsIn(n) {
+			err = fmt.Errorf("%s doesn't talk to anything outside the flow, so there's nothing to reply to", g.label(n.ID))
+		}
+		if err != nil {
+			problems = append(problems, Problem{Message: fmt.Sprintf("reply %d: %v", i+1, err)})
+			continue
+		}
+		replies[n.ID] = append(replies[n.ID], r)
+	}
+
 	var injections []injection
 	for i, in := range c.Inject {
 		n, err := g.find(in.Node)
@@ -464,6 +488,13 @@ func (g *graphView) resolve(c *Case) ([]injection, []watch, []Problem) {
 		t := target{id: n.ID, label: g.label(n.ID)}
 		outs := g.outputs(n)
 		switch {
+		case e.Sent != nil && !g.standsIn(n):
+			problems = append(problems, Problem{Expect: i + 1, Node: n.ID, Message: fmt.Sprintf(
+				"%s doesn't send anything outside the flow, so there's nothing to check sent against", t.label)})
+			continue
+		case e.Sent != nil:
+			t.taps = []tap{{node: n.ID, port: callPort}}
+			t.what = "sent outside the flow"
 		case e.Port > 0 && e.Port > outs:
 			problems = append(problems, Problem{Expect: i + 1, Node: n.ID, Message: fmt.Sprintf(
 				"%s has %d output(s), so there's no port %d", t.label, outs, e.Port)})
@@ -495,13 +526,14 @@ func (g *graphView) resolve(c *Case) ([]injection, []watch, []Problem) {
 		}
 		watches = append(watches, w)
 	}
-	return injections, watches, problems
+	return injections, watches, replies, problems
 }
 
-// reachingOut lists the nodes that would run in a test and talk to something
-// outside the process: a broker, a database, a socket, the filesystem, a shell.
-// Running those from a test would publish, write and connect for real, which
-// makes the test a deploy.
+// reachingOut lists the nodes that would run in a test, talk to something
+// outside the process (a broker, a database, a socket, the filesystem, a
+// shell) and have no stand-in to talk to instead. Running one of those from a
+// test would publish, write or connect for real, which makes the test a
+// deploy.
 func (g *graphView) reachingOut() []string {
 	var out []string
 	for _, id := range g.expanded.Order {
@@ -516,7 +548,7 @@ func (g *graphView) reachingOut() []string {
 			continue
 		}
 		reg, ok := g.reg.Lookup(n.Type)
-		if !ok {
+		if !ok || reg.Descriptor.StandIn {
 			continue
 		}
 		switch {
@@ -680,6 +712,11 @@ func accepts(ctx context.Context, w watch, a arrival) (bool, string) {
 	if e.Msg != nil {
 		if ok, why := contains(map[string]any(e.Msg), a.data, ""); !ok {
 			return false, why
+		}
+	}
+	if e.Sent != nil {
+		if ok, why := contains(map[string]any(e.Sent), a.data, ""); !ok {
+			return false, strings.Replace(why, "msg.", "sent ", 1)
 		}
 	}
 	if e.Error != "" {

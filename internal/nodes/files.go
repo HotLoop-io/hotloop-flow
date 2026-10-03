@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
@@ -76,6 +77,13 @@ func (t fileTarget) resolve(m *engine.Msg) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("the filename is empty")
 	}
+	if node.StandInOf(t.svc) != nil {
+		// Under a flow test nothing is opened, so the fence around the data
+		// directory has nothing to keep in. The name is reported exactly as
+		// the flow built it, which is what a test wants to check, and the
+		// deploy still answers to the scope of the box it lands on.
+		return name, nil
+	}
 	return Files.Check(name)
 }
 
@@ -141,6 +149,10 @@ type fileOutNode struct {
 	// flow uses to log to the PVC, and a log that loses its last hour to a power
 	// cut is not a log.
 	syncWrites bool
+
+	// standIn takes the write under a flow test, so a test never touches the
+	// disk the flow logs to.
+	standIn node.StandIn
 }
 
 func registerFileOut() {
@@ -153,6 +165,7 @@ func registerFileOut() {
 		Outputs:      1,
 		PaletteLabel: "file",
 		LabelProp:    "filename",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatDivergent,
 			Notes: "Append, overwrite and delete, with the filename from a literal, a " +
@@ -209,6 +222,7 @@ func newFileOut(def *node.Definition) (node.Node, error) {
 		createDir:  def.Node.PropBool("createDir", false),
 		encoding:   orDefault(def.Node.PropString("encoding", ""), "utf8"),
 		syncWrites: def.Node.PropBool("ew_sync", true),
+		standIn:    node.StandInOf(def.Services),
 	}
 	switch n.action {
 	case "false", "true", "delete":
@@ -231,6 +245,13 @@ func (n *fileOutNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter
 	}
 
 	if n.action == "delete" {
+		if n.standIn != nil {
+			if _, err := n.standIn.Call("file", map[string]any{"filename": path, "action": "delete"}); err != nil {
+				return fmt.Errorf("deleting %s: %w", path, err)
+			}
+			out.Send(0, m)
+			return nil
+		}
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("deleting %s: %w", path, err)
 		}
@@ -244,6 +265,20 @@ func (n *fileOutNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter
 	}
 	if n.newline && (len(data) == 0 || data[len(data)-1] != '\n') {
 		data = append(data, '\n')
+	}
+
+	if n.standIn != nil {
+		action := "append"
+		if n.action == "true" {
+			action = "overwrite"
+		}
+		if _, err := n.standIn.Call("file", map[string]any{
+			"filename": path, "action": action, "payload": wireValue(data),
+		}); err != nil {
+			return fmt.Errorf("writing %s: %w", path, err)
+		}
+		out.Send(0, m)
+		return nil
 	}
 
 	if n.createDir {
@@ -296,6 +331,10 @@ type fileInNode struct {
 	maxBytes  int64
 	chunkSize int
 	outProp   string
+
+	// standIn answers the read under a flow test with the contents the test
+	// scripted, so a test doesn't depend on what's on the disk it runs on.
+	standIn node.StandIn
 }
 
 func registerFileIn() {
@@ -308,6 +347,7 @@ func registerFileIn() {
 		Outputs:      1,
 		PaletteLabel: "file in",
 		LabelProp:    "filename",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatDivergent,
 			Notes: "Whole-file, per-line and chunked reads, with utf8, base64, hex or " +
@@ -354,6 +394,7 @@ func newFileIn(def *node.Definition) (node.Node, error) {
 		maxBytes:  int64(def.Node.PropInt("ew_maxBytes", defaultMaxReadBytes)),
 		chunkSize: def.Node.PropInt("ew_chunkSize", defaultChunkSize),
 		outProp:   engine.PropPayload,
+		standIn:   node.StandInOf(def.Services),
 	}
 	switch n.format {
 	case "", "utf8", "lines", "stream":
@@ -388,6 +429,10 @@ func (n *fileInNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter)
 		base = engine.NewMsg()
 	}
 	base.Data["filename"] = path
+
+	if n.standIn != nil {
+		return n.readStandIn(path, base, out)
+	}
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -440,7 +485,49 @@ func (n *fileInNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter)
 	}
 }
 
-func (n *fileInNode) readLines(f *os.File, base *engine.Msg, out node.Emitter) error {
+// readStandIn reads the contents a flow test scripted instead of the file. A
+// scripted error is the file not opening, so a node set to send an error
+// message for a missing file does exactly that.
+func (n *fileInNode) readStandIn(path string, base *engine.Msg, out node.Emitter) error {
+	reply, err := n.standIn.Call("file in", map[string]any{"filename": path})
+	if err != nil {
+		if n.sendError {
+			miss := base.Clone()
+			miss.SetPayload(nil)
+			miss.Data["error"] = map[string]any{"message": err.Error(), "source": path}
+			out.Send(0, miss)
+			return nil
+		}
+		return fmt.Errorf("opening %s: %w", path, err)
+	}
+	raw, err := replyBytes(reply["payload"])
+	if err != nil {
+		return err
+	}
+	switch n.format {
+	case "lines":
+		return n.readLines(bytes.NewReader(raw), base, out)
+	case "stream":
+		return n.readChunks(bytes.NewReader(raw), base, out)
+	}
+	if int64(len(raw)) > n.maxBytes {
+		return fmt.Errorf("%s is %d bytes, past the %d byte read limit; "+
+			"read it a line or a chunk at a time, or raise ew_maxBytes",
+			path, len(raw), n.maxBytes)
+	}
+	payload, err := encodeContents(raw, n.encoding)
+	if err != nil {
+		return err
+	}
+	cp := base.Clone()
+	if err := cp.Set(n.outProp, payload); err != nil {
+		return err
+	}
+	out.Send(0, cp)
+	return nil
+}
+
+func (n *fileInNode) readLines(f io.Reader, base *engine.Msg, out node.Emitter) error {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64<<10), int(n.maxBytes))
 
@@ -473,7 +560,7 @@ func (n *fileInNode) readLines(f *os.File, base *engine.Msg, out node.Emitter) e
 	return nil
 }
 
-func (n *fileInNode) readChunks(f *os.File, base *engine.Msg, out node.Emitter) error {
+func (n *fileInNode) readChunks(f io.Reader, base *engine.Msg, out node.Emitter) error {
 	seqID := engine.GenerateID()
 	buf := make([]byte, n.chunkSize)
 	var (
@@ -535,6 +622,10 @@ type watchNode struct {
 	mu    sync.Mutex
 	seen  map[string]watchEntry
 	first bool
+
+	// standIn is set under a flow test, where nothing on the disk is looked
+	// at: a change the watcher would have seen is whatever the test injects.
+	standIn bool
 }
 
 type watchEntry struct {
@@ -553,6 +644,7 @@ func registerWatch() {
 		Outputs:      1,
 		PaletteLabel: "watch",
 		LabelProp:    "files",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatDivergent,
 			Notes: "Reports files and directories appearing, changing and being removed, " +
@@ -586,6 +678,7 @@ func newWatch(def *node.Definition) (node.Node, error) {
 		maxFiles:  def.Node.PropInt("ew_maxFiles", 10000),
 		seen:      map[string]watchEntry{},
 		first:     true,
+		standIn:   node.StandInOf(def.Services) != nil,
 	}
 	if secs := def.Node.PropFloat("ew_interval", 0); secs > 0 {
 		n.interval = time.Duration(secs * float64(time.Second))
@@ -597,6 +690,12 @@ func newWatch(def *node.Definition) (node.Node, error) {
 	for _, p := range strings.Split(def.Node.PropString("files", ""), ",") {
 		p = strings.TrimSpace(p)
 		if p == "" {
+			continue
+		}
+		if n.standIn {
+			// Nothing is watched under a flow test, so there's nothing for
+			// the path scope to fence in. The deploy still answers to it.
+			n.paths = append(n.paths, p)
 			continue
 		}
 		checked, err := Files.Check(p)
@@ -614,11 +713,17 @@ func newWatch(def *node.Definition) (node.Node, error) {
 // Receive lets a watch node be polled on demand, which is how a flow forces a
 // check without waiting for the interval.
 func (n *watchNode) Receive(_ context.Context, _ *engine.Msg, out node.Emitter) error {
+	if n.standIn {
+		return nil
+	}
 	n.poll(out)
 	return nil
 }
 
 func (n *watchNode) Start(ctx context.Context, out node.Emitter) error {
+	if n.standIn {
+		return nil
+	}
 	go func() {
 		// The first pass records what is already there without emitting, so
 		// starting a flow does not announce every existing file as new.

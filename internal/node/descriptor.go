@@ -193,6 +193,13 @@ type Descriptor struct {
 	// HasButton gives the node a clickable button on the canvas, as Inject has.
 	HasButton bool `json:"hasButton,omitempty"`
 
+	// StandIn says the node reaches outside the process and, under a flow
+	// test, talks to the test's stand-in instead (see StandIn). A flow test
+	// refuses to run a node in the network, storage or discover category, or
+	// an exec node, that doesn't say so, rather than let it touch the real
+	// thing.
+	StandIn bool `json:"standIn,omitempty"`
+
 	Props []Prop `json:"props,omitempty"`
 
 	// Help is Markdown shown in the editor's info sidebar.

@@ -484,12 +484,79 @@ read, because a typo that was quietly skipped would leave a test with nothing to
 check, and a test with nothing to check passes. Exit status 1 for anything
 short of all passing, and `-junit` writes the report every CI system reads.
 
-**What it won't run yet:** a node that talks to the outside world. An MQTT Out,
-a database write, an HTTP request, a socket, a file or `exec` in the flow and the
-test refuses to start, naming the node, because a test that ran them would
-publish to the real broker and write to the real database, and at that point
-it isn't a test, it's a deploy. Standing in for them is next on the
-[roadmap](docs/ROADMAP.md).
+### Nothing leaves the test
+
+A test that ran your MQTT Out for real would publish to the plant's broker, and
+at that point it isn't a test, it's a deploy. So under a test, every node that
+talks to the world outside the process gets a stand-in instead: MQTT in and out,
+HTTP in, response and request, PostgreSQL, InfluxDB, TCP and UDP in, out and
+request, WebSocket in and out, the file nodes, `exec`, `scan` and `netinfo`.
+
+The node still does its whole job right up to the wire. The MQTT Out still works
+out the topic, the QoS and the bytes; the HTTP Request still renders the URL,
+builds the body and follows redirects; the PostgreSQL node still builds the SQL
+and its parameters. Then it hands that to the stand-in, which records it, and
+answers with whatever the test scripted. Unscripted, the answer is nothing and
+success: no rows, an empty 200, a command that exited 0. The sources (MQTT In,
+HTTP In, TCP and UDP In, WebSocket In, Watch) don't subscribe, listen or poll,
+so what arrives is what the test injects.
+
+```yaml
+  - name: the limit comes from the database and the alarm goes to the broker
+    inject:
+      - node: reading
+        msg: {topic: "3", payload: 92.5}
+    replies:
+      - node: lookup limit                   # a PostgreSQL query
+        reply: {rows: [{limit_c: 90}]}
+      - node: maintenance api                # an HTTP Request
+        reply: {statusCode: 503, payload: {error: down for maintenance}}
+      - node: historian                      # InfluxDB, and it's down
+        error: connection refused
+    expect:
+      - node: lookup limit
+        sent: {query: "select limit_c from limits where line = $1", params: ["3"]}
+      - node: to the plant                   # an MQTT Out
+        sent: {topic: line3/alarm, payload: HIGH, qos: 1, retain: true}
+      - node: errors
+        error: connection refused
+```
+
+**`sent`** is what the node would have sent, matched like `msg`. **`replies`**
+script what comes back: the first reply listed for a node answers its first
+call, the next its second, and the last keeps answering, so "it answered, then
+it stopped" is two lines. **`error`** makes the call fail the way the real
+thing does, so the path your flow takes when the historian is down gets tested
+before the historian is.
+
+| Node | `sent` | `reply` |
+|---|---|---|
+| MQTT Out | `topic`, `payload`, `qos`, `retain` | |
+| HTTP Request | `method`, `url`, `headers`, `payload` | `statusCode` (200), `headers`, `payload` |
+| HTTP Response | `statusCode`, `headers`, `payload` | |
+| PostgreSQL | `query`, `params` | `rows` for a query, `rowCount` for an insert |
+| InfluxDB | `line`, the line protocol | |
+| TCP Out, UDP Out | `host`, `port`, `payload` (`session` when replying) | |
+| TCP Request | `host`, `port`, `payload` | `payload`, read the way the node reads a real reply |
+| WebSocket Out | `payload` (`session` when replying) | |
+| File | `filename`, `action`, `payload` | |
+| File In | `filename` | `payload`, the contents |
+| exec | `command`, `args` | `stdout`, `stderr`, `code` (0) |
+| scan | `range`, `ports` | `devices` |
+| netinfo | | `interfaces` |
+
+A few things a test doesn't check, on purpose, because they belong to the box
+and not the flow: the `exec` allowlist, the path and discovery scopes, and the
+certificates in a `tls-config`. Nothing runs, opens, probes or dials under a
+test, so there's nothing for them to fence in or encrypt, and the deploy still
+answers to all of them on the box it lands on.
+
+The proof is a test that points every one of those nodes at a TCP port, a UDP
+port and a directory the test holds, runs a reading through all of them, checks
+what each would have sent byte for byte, and then counts: zero connections, zero
+datagrams, no files written, nothing executed. A node that reaches outside and
+has no stand-in is refused by name before anything runs, and the palette test
+fails if anybody adds one.
 
 ---
 

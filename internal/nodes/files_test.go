@@ -417,6 +417,42 @@ func TestWatchReportsChanges(t *testing.T) {
 	}
 }
 
+// TestWatchUnderAStandInLooksAtNothing: in a flow test a watcher reads nothing
+// on the disk, even a path outside the scope, and a file appearing where it
+// would have looked is not news.
+func TestWatchUnderAStandInLooksAtNothing(t *testing.T) {
+	dir := t.TempDir()
+	cfg, err := jsonConfig(map[string]any{"files": dir, "ew_interval": 0.02})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestServices()
+	svc.standIn = &recordingStandIn{}
+	n := build(t, "watch", cfg, svc)
+	e := newTestEmitter()
+	_, cancel := startNode(t, n, e)
+	defer cancel()
+
+	// Pressed once, and long enough for a watcher that did look to have
+	// taken its first look either way, so the new file would be news to it.
+	first, err := send(t, n, msg(t, `{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if err := os.WriteFile(filepath.Join(dir, "new.csv"), []byte("a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second, err := send(t, n, msg(t, `{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if e.total()+first.total()+second.total() != 0 {
+		t.Fatalf("the watcher looked at the disk under a stand-in and reported %d change(s)", e.total())
+	}
+}
+
 func TestWatchRefusesAnEmptyList(t *testing.T) {
 	withFileScope(t)
 	if err := buildErr(t, "watch", `{"files":"  "}`, newTestServices()); err == nil {

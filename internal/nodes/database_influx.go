@@ -193,6 +193,7 @@ func registerInfluxOut() {
 		Outputs:      1,
 		PaletteLabel: "influxdb",
 		LabelProp:    "name",
+		StandIn:      true,
 		Compatibility: node.Compatibility{
 			Level: node.CompatOnly,
 			Notes: "HotLoop Flow's own node. The type name matches the community " +
@@ -284,7 +285,19 @@ func (n *influxOutNode) Receive(ctx context.Context, m *engine.Msg, out node.Emi
 		return err
 	}
 
-	if err := n.target.Write(ctx, []byte(line)); err != nil {
+	write := n.target.Write
+	if si := node.StandInOf(n.svc); si != nil {
+		// The line protocol is the node's whole job, so that's what a test
+		// gets: exactly the line InfluxDB would have been sent.
+		write = func(_ context.Context, body []byte) error {
+			_, err := si.Call("influxdb", map[string]any{"line": string(body)})
+			if err != nil {
+				return fmt.Errorf("writing to InfluxDB: %w", err)
+			}
+			return nil
+		}
+	}
+	if err := write(ctx, []byte(line)); err != nil {
 		out.Status(node.Status{Fill: "red", Shape: "dot", Text: truncate(err.Error(), 32)})
 		return err
 	}
