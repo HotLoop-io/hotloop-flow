@@ -208,6 +208,7 @@ func cmdServe(args []string) error {
 		Logger:      log,
 		Runtime:     app.currentRuntime,
 		Deploy:      app.deploy,
+		Rollback:    app.rollback,
 		FlowRoutes:  nodes.Routes,
 		Version:     version,
 	})
@@ -441,12 +442,9 @@ func (a *application) recordBaseline(rev string) {
 	a.log.Info("recorded the startup flow file in the deployment log", "deployment", rec.Seq, "rev", rev)
 }
 
-// deploy replaces the running flows.
-//
-// The order matters and is not the obvious one. Credentials are split out and
-// the flow file is written *before* the old runtime is stopped, so that a
-// failure to persist leaves the previous flows running rather than taking the
-// line down for a bad save.
+// deploy replaces the running flows with the ones in a request. Credentials
+// posted inline are split out of the flow document before anything is
+// written, so a broker password never reaches the flow file.
 //
 // A full deploy stops everything and starts a fresh runtime. Anything else is a
 // partial deploy: the running runtime restarts only the nodes that changed, and
@@ -455,33 +453,143 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 	a.deployMu.Lock()
 	defer a.deployMu.Unlock()
 
-	flows, expectedRev, mode := req.Flows, req.ExpectedRev, req.Mode
+	flows := req.Flows
+	incoming := flows.StripCredentials()
+	live := liveNodes(flows)
+	mergeCredentials := func() map[string]bool {
+		changed := map[string]bool{}
+		for id, c := range incoming {
+			before := a.creds.Get(id)
+			a.creds.Merge(id, c)
+			if !maps.Equal(before, a.creds.Get(id)) {
+				changed[id] = true
+			}
+		}
+		if removed := a.creds.Prune(live); removed > 0 {
+			a.log.Info("pruned credentials for deleted nodes", "count", removed)
+		}
+		return changed
+	}
+	return a.apply(ctx, flows, req.ExpectedRev, req.Mode, mergeCredentials, history.Record{
+		Kind: history.KindDeploy, User: req.User, Remote: req.Remote, Note: req.Note,
+	})
+}
+
+// rollback deploys an earlier record's flows and credentials as a new
+// deployment. History stays append-only: the record rolled back to is not
+// touched, and the rollback is a record of its own that says where it came
+// from. The credentials come back too, so a node deleted since then returns
+// with its broker password instead of returning and failing to log in.
+func (a *application) rollback(ctx context.Context, req api.RollbackRequest) (api.DeployResult, error) {
+	a.deployMu.Lock()
+	defer a.deployMu.Unlock()
+
+	if a.history == nil {
+		return api.DeployResult{}, fmt.Errorf("the deployment log is not available")
+	}
+	target, err := a.history.Get(req.Deployment)
+	if err != nil {
+		return api.DeployResult{}, err
+	}
+	doc := target.Flows
+	if len(doc) == 0 {
+		doc = []byte("[]")
+	}
+	flows, err := engine.ParseFlows(doc)
+	if err != nil {
+		return api.DeployResult{}, fmt.Errorf("deployment %d no longer parses: %w", target.Seq, err)
+	}
+	// Checked before anything is written: credentials this process can't
+	// decrypt would put back flows whose every login then fails, which looks
+	// like a successful rollback right up until it doesn't.
+	if err := a.creds.Check(target.Credentials); err != nil {
+		return api.DeployResult{}, fmt.Errorf("%w: deployment %d's credentials can't be read with the current credential secret: %v",
+			api.ErrRollbackCredentials, target.Seq, err)
+	}
+
+	note := fmt.Sprintf("rollback to deployment %d", target.Seq)
+	if req.Note != "" {
+		note += ": " + req.Note
+	}
+	restore := func() map[string]bool {
+		before := a.credentialSnapshot()
+		if err := a.creds.Restore(target.Credentials); err != nil {
+			// Check passed on the same bytes a moment ago, under the deploy
+			// lock, so this can't happen short of memory corruption. Said
+			// out loud anyway rather than swallowed.
+			a.log.Error("restoring credentials for a rollback", "deployment", target.Seq, "error", err)
+		}
+		return changedCredentials(before, a.credentialSnapshot())
+	}
+	// A rollback is a full deploy unless asked otherwise. Whoever reaches for
+	// one is getting out of a bad state, and the way out of a bad state is a
+	// known one, not a patch on top of whatever is running.
+	mode := req.Mode
 	if mode == "" {
 		mode = runtime.DeployFull
 	}
-	parentRev := a.flowStore.Rev()
-	incoming := flows.StripCredentials()
-	credsChanged := map[string]bool{}
-	for id, c := range incoming {
-		before := a.creds.Get(id)
-		a.creds.Merge(id, c)
-		if !maps.Equal(before, a.creds.Get(id)) {
-			credsChanged[id] = true
-		}
-	}
+	return a.apply(ctx, flows, req.ExpectedRev, mode, restore, history.Record{
+		Kind: history.KindRollback, RollbackOf: target.Seq,
+		User: req.User, Remote: req.Remote, Note: note,
+	})
+}
 
+func liveNodes(flows *engine.Flows) map[string]bool {
 	live := make(map[string]bool, len(flows.Nodes))
 	for id := range flows.Nodes {
 		live[id] = true
 	}
-	if removed := a.creds.Prune(live); removed > 0 {
-		a.log.Info("pruned credentials for deleted nodes", "count", removed)
+	return live
+}
+
+// credentialSnapshot copies every node's credentials, for working out which
+// nodes a rollback changed.
+func (a *application) credentialSnapshot() map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for _, id := range a.creds.NodeIDs() {
+		out[id] = a.creds.Get(id)
 	}
+	return out
+}
+
+func changedCredentials(before, after map[string]map[string]string) map[string]bool {
+	changed := map[string]bool{}
+	for id, b := range before {
+		if !maps.Equal(b, after[id]) {
+			changed[id] = true
+		}
+	}
+	for id, c := range after {
+		if !maps.Equal(c, before[id]) {
+			changed[id] = true
+		}
+	}
+	return changed
+}
+
+// apply is the deploy cycle every way in shares: save the flows, settle the
+// credentials, record it, then bring the runtime in line.
+//
+// The order matters and is not the obvious one. The flow file is written
+// *before* anything running is touched, so that a failure to persist leaves the
+// previous flows running rather than taking the line down for a bad save. And
+// the credentials change only once the flow file is saved, so a save that fails
+// leaves those alone too. That second half is a fix: a deploy refused for a
+// stale revision used to merge and prune credentials in memory on its way to
+// being refused, so a stale editor that had deleted a node took that node's
+// password away from the flows still running it.
+func (a *application) apply(ctx context.Context, flows *engine.Flows, expectedRev string, mode runtime.DeployMode,
+	settleCredentials func() map[string]bool, rec history.Record) (api.DeployResult, error) {
+	if mode == "" {
+		mode = runtime.DeployFull
+	}
+	parentRev := a.flowStore.Rev()
 
 	rev, err := a.flowStore.Save(flows, expectedRev)
 	if err != nil {
 		return api.DeployResult{}, err
 	}
+	credsChanged := settleCredentials()
 	if err := a.creds.Save(); err != nil {
 		return api.DeployResult{}, fmt.Errorf("saving credentials: %w", err)
 	}
@@ -492,10 +600,8 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 	// restart, which is worse than a missing record. It fails loudly instead,
 	// in the log and in the deploy response.
 	var warnings []string
-	seq, err := a.record(history.Record{
-		Kind: history.KindDeploy, Rev: rev, ParentRev: parentRev,
-		User: req.User, Remote: req.Remote, Note: req.Note,
-	})
+	rec.Rev, rec.ParentRev = rev, parentRev
+	seq, err := a.record(rec)
 	if err != nil {
 		a.log.Error("the deployment log could not be written; this deploy has no record", "rev", rev, "error", err)
 		warnings = append(warnings, "the deployment log could not be written, so this deploy has no record: "+err.Error())
@@ -503,6 +609,7 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 
 	// Drop context belonging to nodes and flows that no longer exist, so
 	// redeploying repeatedly does not accumulate state for things that are gone.
+	live := liveNodes(flows)
 	liveFlows := make(map[string]bool, len(flows.Tabs)+len(flows.Subflows))
 	for id := range flows.Tabs {
 		liveFlows[id] = true
@@ -524,7 +631,7 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 		}
 		a.contexts.Clean(live, liveFlows)
 
-		a.log.Info("deployed", "rev", rev, "deployment", seq, "user", req.User, "type", string(mode),
+		a.log.Info("deployed", "kind", rec.Kind, "rev", rev, "deployment", seq, "user", rec.User, "type", string(mode),
 			"started", len(up.Started), "restarted", len(up.Restarted),
 			"stopped", len(up.Stopped), "unchanged", up.Unchanged, "failures", len(up.Failures))
 		return api.DeployResult{
@@ -543,7 +650,7 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 	// about to complete and its cancellation must not tear down the flows.
 	failures := a.start(context.Background(), flows)
 
-	a.log.Info("deployed", "rev", rev, "deployment", seq, "user", req.User,
+	a.log.Info("deployed", "kind", rec.Kind, "rev", rev, "deployment", seq, "user", rec.User,
 		"type", string(runtime.DeployFull), "failures", len(failures))
 	return api.DeployResult{
 		Rev:        rev,

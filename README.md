@@ -25,8 +25,8 @@ What that means on a bad night:
   three backups behind it. Every deploy is [a record](#every-deploy-is-a-record):
   who, when, why and the exact bytes, and any two of them
   [diff node by node](#the-diff-reads-like-a-review), in the API, on the
-  command line and inside `git diff`. One-click rollback is being built on top
-  of that right now, first on the [roadmap](docs/ROADMAP.md).
+  command line and inside `git diff`. Any of them [rolls back](#put-it-back),
+  credentials included.
 - **It won't start unlocked.** No authentication is a startup error, not a
   default. The `exec` node ships switched off, the file nodes are fenced into the
   data directory, and credentials are AES-256-GCM under an Argon2id key.
@@ -257,6 +257,33 @@ Same answer everywhere, from one engine package:
 A flow diffed against itself is no change at all, for any document the parser
 accepts. CI fuzzes that on every pull request, because a diff that invents a
 change is worse than no diff.
+
+### Put it back
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "HotLoop-Flow-Deployment-Rev: $CURRENT_REV" \
+  -d '{"note":"42 broke the label printer"}' \
+  http://localhost:1880/deployments/41/rollback
+```
+
+A rollback deploys an old record again **as a new record**. History stays
+append-only: deployment 41 isn't touched, and the rollback is its own entry that
+says "rollback to deployment 41", who did it, and why. The flow file comes back
+byte for byte, so it's the same revision it was then.
+
+**The credentials come back too.** Every record carries them as they stood, so a
+node you deleted returns with its broker password instead of returning and
+failing to log in. That's tested against a real Mosquitto that refuses anonymous
+clients: delete the subscriber, deploy, roll back, and it logs in again and
+messages flow. CI runs that broker on every pull request.
+
+It refuses three ways, before anything is written. A stale
+`HotLoop-Flow-Deployment-Rev` gets the same 409 a deploy would, because a
+rollback racing somebody's deploy is still a race. A deployment that retention
+already removed is a 404. And a record whose credentials can't be decrypted with
+the current credential secret is a 422, because flows that can't log in to
+anything are a rollback that only looks like it worked.
 
 ---
 
@@ -594,6 +621,7 @@ timeouts.
 | `GET /deployments/{seq}/flows` | `flows.read` | That deployment's flow file, byte for byte. |
 | `GET /deployments/{from}/diff/{to}` | `flows.read` | Node-by-node diff between two deployments, structured and as text. |
 | `POST /flows/diff` | `flows.read` | The diff from what's live to the document in the body. Deploys nothing. |
+| `POST /deployments/{seq}/rollback` | `flows.write` | Deploys that record's flows and credentials again as a new deployment. Takes the rev header and an optional `{"note": ...}`. |
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
 | `GET /comms` | `status.read` | The editor's status and debug websocket. |

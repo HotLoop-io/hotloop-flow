@@ -55,6 +55,20 @@ func (r *recorder) debugFrom(t *testing.T, nodeID string) string {
 	return ""
 }
 
+// lastDebug returns the most recent debug message from a node, without
+// waiting.
+func (r *recorder) lastDebug(nodeID string) (string, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := len(r.events) - 1; i >= 0; i-- {
+		if e := r.events[i]; e.Topic == runtime.TopicDebug && e.Data["id"] == nodeID {
+			s, _ := e.Data["msg"].(string)
+			return s, true
+		}
+	}
+	return "", false
+}
+
 func (r *recorder) reset() {
 	r.mu.Lock()
 	r.events = nil

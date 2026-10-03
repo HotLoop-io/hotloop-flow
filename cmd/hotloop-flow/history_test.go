@@ -48,6 +48,7 @@ func serveApp(t *testing.T, app *application, users map[string][]string) *e2e {
 		Logger:      app.log,
 		Runtime:     app.currentRuntime,
 		Deploy:      app.deploy,
+		Rollback:    app.rollback,
 		Version:     "test",
 	})
 	ts := httptest.NewServer(srv.Handler())

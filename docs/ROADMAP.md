@@ -68,7 +68,7 @@ a line stops, and today the answer is three `.bak` files.
       logic change. Over the API and as `hotloop-flow diff a.json b.json`
 - [x] The diff works as a git difftool, so a pull request on a flow reads
       "rule 2 threshold 7.5 to 8.0" instead of a JSON hunk
-- [ ] Rollback: redeploys an old record as a new one, credentials included, so a
+- [x] Rollback: redeploys an old record as a new one, credentials included, so a
       node you deleted comes back with its broker password. History stays
       append-only
 - [ ] Editor: history panel, the diff drawn on the canvas, "review and deploy"

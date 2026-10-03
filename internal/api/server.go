@@ -59,6 +59,10 @@ type Deps struct {
 	// restarted for a full deploy, only what changed for a partial one.
 	Deploy func(ctx context.Context, req DeployRequest) (DeployResult, error)
 
+	// Rollback redeploys an earlier record's flows and credentials as a new
+	// deployment.
+	Rollback func(ctx context.Context, req RollbackRequest) (DeployResult, error)
+
 	// FlowRoutes holds the paths the flow's HTTP In nodes have claimed. It is
 	// consulted for anything the fixed routes below did not match, because a
 	// flow's routes change on every deploy and http.ServeMux cannot unregister
@@ -84,6 +88,24 @@ type DeployRequest struct {
 	// the API always says, and defaults an editor's deploy to DeployNodes.
 	Mode runtime.DeployMode
 }
+
+// RollbackRequest asks for an earlier deployment to be deployed again.
+type RollbackRequest struct {
+	Deployment  int64
+	ExpectedRev string
+	User        string
+	Remote      string
+	Note        string
+	// Mode is how much of the running graph to restart. Empty means a full
+	// deploy: a rollback is how somebody gets out of a bad state, and the way
+	// out is a known state, not a patch on whatever is running.
+	Mode runtime.DeployMode
+}
+
+// ErrRollbackCredentials means a record's credentials can't be decrypted with
+// the secret this process holds, so rolling back to it would bring back flows
+// that can't log in to anything.
+var ErrRollbackCredentials = errors.New("the deployment's credentials can't be restored")
 
 // DeployResult reports what a deploy did.
 type DeployResult struct {
@@ -188,6 +210,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET "+s.path("/deployments/{seq}/flows"), s.auth(PermFlowsRead, s.handleGetDeploymentFlows))
 	s.mux.Handle("GET "+s.path("/deployments/{from}/diff/{to}"), s.auth(PermFlowsRead, s.handleDiffDeployments))
 	s.mux.Handle("POST "+s.path("/flows/diff"), s.auth(PermFlowsRead, s.handleDiffPending))
+	s.mux.Handle("POST "+s.path("/deployments/{seq}/rollback"), s.auth(PermFlowsWrite, s.handleRollback))
 	s.mux.Handle("GET "+s.path("/runtime/stats"), s.auth(PermStatusRead, s.handleStats))
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))
@@ -540,6 +563,11 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.writeDeployResult(w, res)
+}
+
+// writeDeployResult answers a deploy or a rollback the same way.
+func (s *Server) writeDeployResult(w http.ResponseWriter, res DeployResult) {
 	// Per-node start failures are reported, not fatal. One unknown node type
 	// must not take a whole deploy down.
 	failures := make([]map[string]string, 0, len(res.Failures))
@@ -583,6 +611,80 @@ func deployNote(r *http.Request, body []byte) (string, error) {
 		return "", fmt.Errorf("the deploy note is %d bytes; the limit is %d", len(note), history.MaxNoteLength)
 	}
 	return note, nil
+}
+
+// handleRollback deploys an earlier record again, as a new record. Send the
+// revision you last read in HotLoop-Flow-Deployment-Rev and a rollback racing
+// somebody's deploy gets the same 409 a deploy would. An optional JSON body
+// carries a note: {"note": "..."}.
+func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Rollback == nil {
+		writeError(w, http.StatusServiceUnavailable, "rollback is not available")
+		return
+	}
+	seq, err := strconv.ParseInt(r.PathValue("seq"), 10, 64)
+	if err != nil || seq < 1 {
+		writeError(w, http.StatusBadRequest, "a deployment is a positive sequence number")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64<<10))
+	if err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "a rollback request is a note, not a document")
+		return
+	}
+	var opts struct {
+		Note string `json:"note"`
+	}
+	if len(strings.TrimSpace(string(body))) > 0 {
+		if err := json.Unmarshal(body, &opts); err != nil {
+			writeError(w, http.StatusBadRequest, "parsing the rollback request: "+err.Error())
+			return
+		}
+	}
+	note := strings.TrimSpace(opts.Note)
+	if h := r.Header.Get("HotLoop-Flow-Deployment-Note"); note == "" && h != "" {
+		note = strings.TrimSpace(h)
+	}
+	// Room is left for the "rollback to deployment N: " prefix.
+	if len(note) > history.MaxNoteLength-64 {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("the rollback note is %d bytes; the limit is %d", len(note), history.MaxNoteLength-64))
+		return
+	}
+
+	// A rollback restarts everything unless the caller asks for less.
+	var mode runtime.DeployMode
+	if h := r.Header.Get("HotLoop-Flow-Deployment-Type"); h != "" {
+		m, err := runtime.ParseDeployMode(h)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		mode = m
+	}
+
+	res, err := s.deps.Rollback(r.Context(), RollbackRequest{
+		Deployment:  seq,
+		ExpectedRev: r.Header.Get("HotLoop-Flow-Deployment-Rev"),
+		User:        requestUser(r),
+		Remote:      r.RemoteAddr,
+		Note:        note,
+		Mode:        mode,
+	})
+	switch {
+	case errors.Is(err, history.ErrNotFound):
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	case errors.Is(err, store.ErrRevisionConflict):
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	case errors.Is(err, ErrRollbackCredentials):
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	case err != nil:
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.writeDeployResult(w, res)
 }
 
 // handleListDeployments is the deployment log, newest first, without the flow
