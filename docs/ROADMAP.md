@@ -208,27 +208,37 @@ but plenty of people drop one that doesn't.
       persistent context, because a split brain writing to equipment is worse
       than a restart
 
-## Open decisions
+## Decided
 
-Asked when this work starts, not before. Each has the answer I'd pick today.
+Every question this list used to carry is answered. They stay here with the
+answers, because the reasons are what stops somebody reopening them.
 
-- **Industrial nodes: build them in Flow on the same open source libraries the
-  HotLoop drivers use, or move HotLoop's drivers into a shared Apache module?**
-  Build them in Flow. Flow stays Apache and HotLoop's drivers stay HotLoop's.
-- **Flow inside HotLoop IoT, Edge and Gateway, or next to it?** Next to it first,
-  talking to HotLoop's API. Embedding is legally fine later (Apache code can go
-  into HotLoop with its NOTICE), but it's a bigger call.
-- **Is Flow's engine the shared engine for the workflow automation product?**
-  Yes in principle. History, tests and tracing get built as engine packages, not
-  editor features, so the other product gets them for free.
-- **MFA and the audit log in Phase 1, ahead of the fun stuff?** Yes.
-- **Byte-exact round trip of existing flow files stays a hard rule even with
-  types and tests in the file?** Yes.
-- **A browser test harness for the editor, as a CI-only dev dependency?** Yes.
-  The editor has no tests, and Phases 1 and 2 put real UI in it.
-- **Persistent context on a Pi: a file store or SQLite?** File store first,
-  SQLite when durable wires need a real queue, and then both share it.
-- **Benchmarks: absolute numbers, or side by side with another engine?**
-  Absolute numbers only, each with the command that made it. A side-by-side
-  table moves every time the box changes, and it ends up describing the other
-  engine more than this one.
+Decided 2026-10-03:
+
+- **Industrial nodes get built in Flow,** on the same open source libraries the
+  HotLoop drivers use. HotLoop's drivers stay HotLoop's, and Flow stays Apache.
+- **Flow stays its own product and is never embedded in HotLoop.** It runs next
+  to HotLoop and talks to HotLoop's API from the outside, which is what the
+  Phase 5 HotLoop nodes do, and that's the whole relationship.
+- **The README leads with what Flow does.** "Wire the plant. Review it like
+  code." Importing existing flows lives further down in "Bring your flows", and
+  nothing at the top compares Flow to anything else. Flow stands on its own.
+- **Persistent context is SQLite from the start,** pure Go with no cgo. One
+  store for context now and durable queues later, not a file store first and a
+  second store after it.
+- **The workflow automation product is its own thing** and doesn't share Flow's
+  engine. History, diff and the rest are still engine packages here, because the
+  API, the CLI, the editor and git all have to get the same answer.
+
+Decided before Phase 1 started:
+
+- **MFA and the audit log ship in Phase 1,** ahead of the fun stuff. Both did.
+- **The byte-exact round trip of existing flow files stays a hard rule,** even
+  with types and tests in the file. New data goes in keys other tools ignore,
+  and the round-trip test covers files that carry it.
+- **A browser test harness for the editor is fine as a CI-only dev
+  dependency.** It's Playwright in `web/e2e`, and it found a bug on its first
+  run.
+- **Benchmarks are absolute numbers only,** each with the command that made it.
+  A side-by-side table moves every time the box changes, and it ends up
+  describing the other engine more than this one.
