@@ -366,11 +366,6 @@ func FromValue(v any) any {
 		return float64(t)
 	case int64:
 		return float64(t)
-	case json.Number:
-		if f, err := t.Float64(); err == nil {
-			return f
-		}
-		return t.String()
 	case float64:
 		if math.IsInf(t, 0) || math.IsNaN(t) {
 			// JSON has no such numbers, and neither does a message that has
