@@ -22,6 +22,7 @@ import (
 
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/flowtest"
 )
 
 // client talks to a running instance's admin API.
@@ -87,13 +88,14 @@ func (c *client) do(method, path string, body []byte, hdr map[string]string) ([]
 	}
 	if res.StatusCode >= 300 {
 		var e struct {
-			Error string `json:"error"`
+			Error string           `json:"error"`
+			Tests *flowtest.Report `json:"tests"`
 		}
 		msg := strings.TrimSpace(string(out))
 		if json.Unmarshal(out, &e) == nil && e.Error != "" {
 			msg = e.Error
 		}
-		return nil, res.Header, &apiError{status: res.StatusCode, msg: msg}
+		return nil, res.Header, &apiError{status: res.StatusCode, msg: msg, tests: e.Tests}
 	}
 	return out, res.Header, nil
 }
@@ -101,9 +103,19 @@ func (c *client) do(method, path string, body []byte, hdr map[string]string) ([]
 type apiError struct {
 	status int
 	msg    string
+	// tests is the flow test report the deploy gate refused a deploy with.
+	tests *flowtest.Report
 }
 
 func (e *apiError) Error() string {
+	if e.tests != nil {
+		// The whole report, the way hotloop-flow test prints it, because
+		// the pipeline log is where somebody reads why their merge didn't
+		// deploy.
+		var b strings.Builder
+		_ = flowtest.WriteText(&b, e.tests, false)
+		return e.msg + "\n\n" + strings.TrimRight(b.String(), "\n")
+	}
 	switch e.status {
 	case http.StatusUnauthorized:
 		return "the instance didn't accept the token: " + e.msg

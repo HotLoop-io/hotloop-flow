@@ -39,6 +39,21 @@ type Config struct {
 	Metrics   Metrics   `yaml:"metrics"`
 	History   History   `yaml:"history"`
 	Audit     Audit     `yaml:"audit"`
+	Tests     Tests     `yaml:"tests"`
+}
+
+// Tests is the flow test suite this instance keeps beside its flow file, and
+// whether a deploy has to pass it.
+type Tests struct {
+	// Gate refuses a deploy whose flows fail the suite, with the failing
+	// assertions, before anything is written or stopped. Off by default: a
+	// gate an operator didn't ask for is a deploy that fails at 3 AM for a
+	// reason nobody on shift has heard of.
+	Gate bool `yaml:"gate"`
+
+	// Timeout bounds one run of the suite on the wall clock. The tests keep
+	// their own clock, so this only bites a flow that's genuinely stuck.
+	Timeout time.Duration `yaml:"timeout"`
 }
 
 // Audit bounds the audit trail at data.dir/audit.log.
@@ -346,6 +361,7 @@ func Default() Config {
 		Metrics: Metrics{Enabled: true, Path: "/metrics"},
 		History: History{Retain: 100},
 		Audit:   Audit{MaxBytes: 16 << 20, Keep: 4},
+		Tests:   Tests{Timeout: 2 * time.Minute},
 	}
 }
 
@@ -422,6 +438,9 @@ func applyEnv(cfg *Config) {
 		})
 	}
 
+	if envBool("HOTLOOP_FLOW_TESTS_GATE") {
+		cfg.Tests.Gate = true
+	}
 	if envBool("HOTLOOP_FLOW_INSECURE") {
 		cfg.Auth.Enabled = false
 		cfg.Auth.Insecure = true
@@ -522,6 +541,9 @@ func (c *Config) Validate() error {
 	}
 	if c.History.Retain < 0 {
 		return fmt.Errorf("history.retain must not be negative; 0 keeps every deployment")
+	}
+	if c.Tests.Timeout <= 0 {
+		return fmt.Errorf("tests.timeout must be above zero; it's how long a run of the flow tests may take")
 	}
 
 	switch c.Runtime.Overflow {
@@ -640,6 +662,12 @@ func (c *Config) SessionsPath() string { return filepath.Join(c.Data.Dir, "sessi
 
 // HistoryDir is where the deployment log lives.
 func (c *Config) HistoryDir() string { return filepath.Join(c.Data.Dir, "deployments") }
+
+// TestsPath is the flow test suite, next to the flow file it tests and named
+// after it: flows.json's is flows.test.yaml.
+func (c *Config) TestsPath() string {
+	return strings.TrimSuffix(c.FlowPath(), filepath.Ext(c.FlowPath())) + ".test.yaml"
+}
 
 // Addr is the listen address.
 func (c *Config) Addr() string { return fmt.Sprintf("%s:%d", c.Server.Host, c.Server.Port) }
