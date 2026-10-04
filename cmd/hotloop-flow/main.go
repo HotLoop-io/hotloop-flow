@@ -180,7 +180,7 @@ func cmdServe(args []string) error {
 		adminRoot + "/health", adminRoot + "/ready", adminRoot + "/auth",
 		adminRoot + "/settings", adminRoot + "/nodes", adminRoot + "/flows",
 		adminRoot + "/runtime", adminRoot + "/inject", adminRoot + "/comms",
-		adminRoot + "/deployments", adminRoot + "/audit",
+		adminRoot + "/deployments", adminRoot + "/audit", adminRoot + "/tests",
 	}
 	if cfg.Metrics.Enabled {
 		reserved = append(reserved, adminRoot+cfg.Metrics.Path)
@@ -220,6 +220,7 @@ func cmdServe(args []string) error {
 		history:   deployments,
 		registry:  node.Default,
 		contexts:  store.NewScopedContexts(),
+		tests:     newTestSuite(cfg),
 	}
 
 	// The git mirror, if one is configured. Built before the server so a
@@ -277,6 +278,7 @@ func cmdServe(args []string) error {
 		Runtime:      app.currentRuntime,
 		Deploy:       app.deploy,
 		Rollback:     app.rollback,
+		Tests:        app.tests,
 		FlowRoutes:   nodes.Routes,
 		Version:      version,
 	})
@@ -363,6 +365,9 @@ type application struct {
 	registry  *node.Registry
 	contexts  *store.ScopedContexts
 	hub       interface{ Broadcast(runtime.Event) }
+	// tests is the flow test suite kept beside the flow file, and the deploy
+	// gate's way of running it.
+	tests *testSuite
 
 	mu      sync.Mutex
 	rt      *runtime.Runtime
@@ -534,6 +539,13 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 
 	flows := req.Flows
 	incoming := flows.StripCredentials()
+	// The gate goes first, before a byte is written: a refused deploy must
+	// leave everything exactly as it was, and the flows that are running
+	// must never notice it was tried. Credentials are already out of the
+	// document, so the tests never see them; they run with their own.
+	if err := a.gate(ctx, flows); err != nil {
+		return api.DeployResult{}, err
+	}
 	live := liveNodes(flows)
 	mergeCredentials := func() map[string]bool {
 		changed := map[string]bool{}
