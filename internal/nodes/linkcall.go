@@ -48,6 +48,7 @@ type linkCallNode struct {
 	target  string // the static target's id
 	dynamic bool   // aim at msg.target instead
 	timeout time.Duration
+	clock   node.Clock
 
 	mu      sync.Mutex
 	out     node.Emitter
@@ -58,7 +59,7 @@ type linkCallNode struct {
 type linkCallWait struct {
 	original *engine.Msg
 	out      node.Emitter
-	timer    *time.Timer
+	timer    node.Timer
 }
 
 func registerLinkCall() {
@@ -100,6 +101,7 @@ func newLinkCall(def *node.Definition) (node.Node, error) {
 		flow:    def.Node.Z,
 		dynamic: def.Node.PropString("linkType", "static") == "dynamic",
 		timeout: defaultLinkCallTimeout,
+		clock:   node.ClockOf(def.Services),
 		waiting: map[string]*linkCallWait{},
 	}
 	switch links := def.Node.Raw["links"].(type) {
@@ -165,7 +167,7 @@ func (n *linkCallNode) Receive(_ context.Context, m *engine.Msg, out node.Emitte
 
 	n.mu.Lock()
 	n.waiting[callID] = wait
-	wait.timer = time.AfterFunc(n.timeout, func() { n.timedOut(callID) })
+	wait.timer = n.clock.AfterFunc(n.timeout, func() { n.timedOut(callID) })
 	n.mu.Unlock()
 
 	if !in.deliver(m) {

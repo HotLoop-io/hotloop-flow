@@ -156,6 +156,7 @@ type Sandbox struct {
 func (p *Program) Run(ctx context.Context, sb Sandbox) (*Result, error) {
 	vm := p.acquire()
 	defer p.release(vm)
+	setClock(vm, sb)
 
 	res := &Result{ByPort: make([][]*engine.Msg, sb.Outputs)}
 
@@ -219,6 +220,7 @@ func (p *Program) RunLifecycle(ctx context.Context, sb Sandbox, which string) (*
 
 	vm := p.acquire()
 	defer p.release(vm)
+	setClock(vm, sb)
 
 	res := &Result{ByPort: make([][]*engine.Msg, sb.Outputs)}
 
@@ -255,6 +257,14 @@ func (p *Program) callable(vm *goja.Runtime, prog *goja.Program) (goja.Callable,
 		return nil, fmt.Errorf("internal: compiled body is not callable")
 	}
 	return fn, nil
+}
+
+// setClock points Date and Date.now() at the node's clock: the wall clock in a
+// flow, the test's under a flow test, where a function that stamps or compares
+// times has to agree with a Delay that just waited five minutes in a
+// millisecond. Set on every run, because runtimes are pooled and shared.
+func setClock(vm *goja.Runtime, sb Sandbox) {
+	vm.SetTimeSource(node.ClockOf(sb.Services).Now)
 }
 
 // acquire returns a runtime from the pool, or a fresh one.

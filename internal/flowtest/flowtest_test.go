@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -183,8 +182,8 @@ tests:
       - {node: out, nothing: true}
 `)
 	wantStatus(t, r, flowtest.Fail)
-	if r.Seconds < 0.1 {
-		t.Errorf("the test ended after %.3fs, before the delay could let go", r.Seconds)
+	if !strings.Contains(problems(r), "at 100ms: {\"payload\":1}") {
+		t.Errorf("the failure should show the message the delay let go at 100ms:\n%s", problems(r))
 	}
 }
 
@@ -245,7 +244,7 @@ tests:
         within: 100ms
 `)
 	wantStatus(t, r, flowtest.Fail)
-	if !regexp.MustCompile(`it matched, but 3\d\d(\.\d+)?ms in, and within is 100ms`).MatchString(problems(r)) {
+	if !strings.Contains(problems(r), "it matched, but 300ms in, and within is 100ms") {
 		t.Errorf("unhelpful failure:\n%s", problems(r))
 	}
 

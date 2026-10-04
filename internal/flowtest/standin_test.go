@@ -465,16 +465,23 @@ func TestTheREADMEExample(t *testing.T) {
   {"id":"api","type":"http request","z":"t1","name":"maintenance api","url":"http://maintenance.plant.example/line/{{topic}}","ret":"obj","x":2,"y":3,"wires":[[]]},
   {"id":"errors","type":"catch","z":"t1","name":"errors","x":1,"y":5,"wires":[[]]}
 ]`
+	r := one(t, flows, "tests:\n"+readmeBlock(t, "  - name: the limit comes from the database and the alarm goes to the broker"))
+	wantStatus(t, r, flowtest.Pass)
+}
+
+// readmeBlock returns the YAML in the README from the line that starts with
+// first to the end of its code block.
+func readmeBlock(t *testing.T, first string) string {
+	t.Helper()
 	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := strings.ReplaceAll(string(readme), "\r\n", "\n")
-	start := strings.Index(text, "  - name: the limit comes from the database and the alarm goes to the broker")
+	start := strings.Index(text, first)
 	if start < 0 {
-		t.Fatal("the example is gone from the README")
+		t.Fatalf("the example starting %q is gone from the README", first)
 	}
 	end := strings.Index(text[start:], "```")
-	r := one(t, flows, "tests:\n"+text[start:start+end])
-	wantStatus(t, r, flowtest.Pass)
+	return text[start : start+end]
 }

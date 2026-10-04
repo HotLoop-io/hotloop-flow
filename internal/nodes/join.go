@@ -56,6 +56,7 @@ type joinNode struct {
 	reduceInit  TypedValue
 	reduceRight bool
 	svc         node.Services
+	clock       node.Clock
 
 	mu       sync.Mutex
 	inflight map[string]*joinGroup
@@ -74,7 +75,7 @@ type joinGroup struct {
 	arrayLen     int
 	msg          *engine.Msg
 	out          node.Emitter
-	timer        *time.Timer
+	timer        node.Timer
 	prop         string
 }
 
@@ -146,6 +147,7 @@ func newJoin(def *node.Definition) (node.Node, error) {
 		key:      orDefault(def.Node.PropString("key", ""), engine.PropTopic),
 		build:    orDefault(def.Node.PropString("build", ""), "array"),
 		svc:      def.Services,
+		clock:    node.ClockOf(def.Services),
 		inflight: map[string]*joinGroup{},
 		reducing: map[string]*reduceGroup{},
 	}
@@ -451,7 +453,7 @@ func (n *joinNode) armTimer(partID string, g *joinGroup) {
 	if n.timeout <= 0 {
 		return
 	}
-	g.timer = time.AfterFunc(n.timeout, func() {
+	g.timer = n.clock.AfterFunc(n.timeout, func() {
 		n.mu.Lock()
 		defer n.mu.Unlock()
 		// The group may have completed, or been replaced, since the timer

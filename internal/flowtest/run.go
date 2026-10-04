@@ -149,6 +149,7 @@ type watch struct {
 type injection struct {
 	id    string
 	label string
+	at    time.Duration
 	// press sends the message into the node's input, or presses an Inject
 	// node's button; otherwise it leaves the node's first output.
 	press bool
@@ -192,10 +193,17 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	for _, w := range watches {
 		deadline = max(deadline, w.within)
 	}
+	for _, in := range injections {
+		deadline = max(deadline, in.at)
+	}
+
+	start, _ := c.start()
+	clock := newVirtualClock(start)
 
 	rt := runtime.New(opts.Registry, flows, opts.Runtime)
 	rt.SetContexts(store.NewScopedContexts())
-	rec := newRecorder(watches)
+	rt.SetClock(clock)
+	rec := newRecorder(watches, clock.Now)
 	rt.SetObserver(rec)
 	rt.SetStandIns(newOutside(rec, replies).forNode)
 
@@ -224,9 +232,15 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	}
 
 	rec.begin()
-	end := time.Now().Add(deadline)
+	end := start.Add(deadline)
+	run := &stepper{ctx: ctx, rt: rt, clock: clock, realEnd: time.Now().Add(RealTimeLimit)}
 
 	for _, in := range injections {
+		// The clock runs to the moment the test says the message arrives,
+		// and everything due on the way happens first.
+		if err := run.advance(start.Add(in.at)); err != nil {
+			return problem("%v", err)
+		}
 		m := engine.WrapMsg(cloneData(in.msg))
 		var err error
 		if in.press {
@@ -242,19 +256,32 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 		// rather than whichever goroutine wins. Messages a Delay is holding
 		// stay held: settled means nothing is moving, not that nothing is
 		// waiting.
-		if !waitFor(ctx, end, rt.Settled) {
-			break
+		if err := run.settle(); err != nil {
+			return problem("%v", err)
 		}
 	}
 
-	// The test is over when every expectation that waits for a message has
-	// one, or can't have one any more because its within has passed, and the
-	// flow has nothing left to do. Or when time runs out. Waiting for quiet as
-	// well is what makes "nothing came out of port 2" mean something: it's
-	// checked once everything that was going to happen has.
-	waitFor(ctx, end, func() bool {
-		return rec.decided(ctx) && rt.Quiet()
-	})
+	// Then the clock runs on, one timer at a time, until every expectation
+	// that waits for a message has one (or can't any more, because its
+	// within has gone by) and nothing is left to happen, or until the
+	// timeout. Running on until nothing is left is what makes "nothing came
+	// out of port 2" mean something: it's checked once everything that was
+	// going to happen has.
+	for {
+		if err := run.settle(); err != nil {
+			return problem("%v", err)
+		}
+		if rec.decided(ctx) && rt.Quiet() && clock.pending() == 0 {
+			break
+		}
+		if !clock.fireNext(end) {
+			clock.moveTo(end)
+			if err := run.settle(); err != nil {
+				return problem("%v", err)
+			}
+			break
+		}
+	}
 	rec.close()
 
 	if ctx.Err() != nil {
@@ -270,18 +297,56 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	return res
 }
 
-// waitFor polls cond until it's true, the deadline passes or ctx ends. It
-// reports whether cond came true.
-func waitFor(ctx context.Context, end time.Time, cond func() bool) bool {
-	for {
-		if cond() {
-			return true
+// RealTimeLimit bounds how long one test may take on the wall clock. The
+// test's own clock decides when a test ends; this is only for a flow that never
+// lets it, one that's still handling messages a minute in, or one whose
+// timers keep firing at the same instant forever.
+const RealTimeLimit = time.Minute
+
+// stepper moves a test along: it waits for the flow to settle, on the wall
+// clock, and moves the test's clock forward between.
+type stepper struct {
+	ctx     context.Context
+	rt      *runtime.Runtime
+	clock   *virtualClock
+	realEnd time.Time
+}
+
+// settle waits until no message is moving.
+func (s *stepper) settle() error {
+	for !s.rt.Settled() {
+		if err := s.overdue(); err != nil {
+			return err
 		}
-		if ctx.Err() != nil || !time.Now().Before(end) {
-			return false
-		}
-		time.Sleep(100 * time.Microsecond)
+		time.Sleep(50 * time.Microsecond)
 	}
+	return s.overdue()
+}
+
+func (s *stepper) overdue() error {
+	if err := s.ctx.Err(); err != nil {
+		return fmt.Errorf("the run was cancelled: %w", err)
+	}
+	if time.Now().After(s.realEnd) {
+		return fmt.Errorf("the test was still running after %s of real time, "+
+			"with the flow busy or its timers firing without the clock moving", RealTimeLimit)
+	}
+	return nil
+}
+
+// advance runs the clock to t, firing every timer due on the way in order and
+// letting the flow settle after each, the way the real minutes would have.
+func (s *stepper) advance(t time.Time) error {
+	for {
+		if err := s.settle(); err != nil {
+			return err
+		}
+		if !s.clock.fireNext(t) {
+			break
+		}
+	}
+	s.clock.moveTo(t)
+	return s.settle()
 }
 
 func cloneData(m map[string]any) map[string]any {
@@ -460,6 +525,9 @@ func (g *graphView) resolve(c *Case) ([]injection, []watch, map[string][]Reply, 
 			continue
 		}
 		inj := injection{id: n.ID, label: g.label(n.ID), msg: in.Msg}
+		if in.At != "" {
+			inj.at, _ = time.ParseDuration(in.At)
+		}
 		switch {
 		case g.inputs(n) > 0:
 			inj.press = true
@@ -580,6 +648,10 @@ type recorder struct {
 	watches []watch
 	wanted  map[tap]bool
 
+	// now is the test's clock, so a message's arrival time is the time the
+	// flow saw, not how long the test took to get there.
+	now func() time.Time
+
 	mu    sync.Mutex
 	open  bool
 	start time.Time
@@ -587,8 +659,8 @@ type recorder struct {
 	seen  map[tap][]arrival
 }
 
-func newRecorder(watches []watch) *recorder {
-	r := &recorder{watches: watches, wanted: map[tap]bool{}, seen: map[tap][]arrival{}}
+func newRecorder(watches []watch, now func() time.Time) *recorder {
+	r := &recorder{watches: watches, now: now, wanted: map[tap]bool{}, seen: map[tap][]arrival{}}
 	for _, w := range watches {
 		for _, t := range w.target.taps {
 			r.wanted[t] = true
@@ -600,7 +672,7 @@ func newRecorder(watches []watch) *recorder {
 func (r *recorder) begin() {
 	r.mu.Lock()
 	r.open = true
-	r.start = time.Now()
+	r.start = r.now()
 	r.mu.Unlock()
 }
 
@@ -626,7 +698,7 @@ func (r *recorder) add(t tap, m *engine.Msg) {
 		return
 	}
 	r.seq++
-	r.seen[t] = append(r.seen[t], arrival{seq: r.seq, at: time.Since(r.start), data: m.Data})
+	r.seen[t] = append(r.seen[t], arrival{seq: r.seq, at: r.now().Sub(r.start), data: m.Data})
 }
 
 // arrivals returns what a target saw, in the order it happened.
@@ -647,7 +719,7 @@ func (r *recorder) arrivals(t target) []arrival {
 // waited for. They're checked when the test ends.
 func (r *recorder) decided(ctx context.Context) bool {
 	r.mu.Lock()
-	elapsed := time.Since(r.start)
+	elapsed := r.now().Sub(r.start)
 	r.mu.Unlock()
 	for _, group := range r.groups() {
 		k, ok := r.matchInOrder(ctx, group)

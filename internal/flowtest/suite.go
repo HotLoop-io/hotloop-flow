@@ -41,7 +41,15 @@ type Case struct {
 	Name string `yaml:"name" json:"name"`
 
 	// Timeout bounds the whole test, as a Go duration: "500ms", "2s", "5m".
+	// It's time on the test's clock, which only moves as fast as the flow
+	// can keep up: a five-minute timeout costs what the flow does in those
+	// five minutes, not five minutes.
 	Timeout string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+
+	// Clock is when the test starts, as an RFC 3339 time, for a flow that
+	// cares what time it is: a crontab, a timestamp, a shift change. Empty
+	// starts it at the real time the test runs.
+	Clock string `yaml:"clock,omitempty" json:"clock,omitempty"`
 
 	// Inject is what goes into the flow, in order. Each one is handled before
 	// the next goes in, so a test reads in the order things happen.
@@ -87,6 +95,11 @@ type Injection struct {
 
 	// Msg is the message. Omitted, it's an empty one.
 	Msg map[string]any `yaml:"msg,omitempty" json:"msg,omitempty"`
+
+	// At is when it arrives, counted from the start of the test on the
+	// test's clock. Everything due before then happens first. Empty is as
+	// soon as the injection before it has been handled.
+	At string `yaml:"at,omitempty" json:"at,omitempty"`
 }
 
 // Expectation is one thing the test checks.
@@ -202,12 +215,20 @@ func (s *Suite) Check() error {
 		if _, err := c.timeout(); err != nil {
 			return err
 		}
+		if _, err := c.start(); err != nil {
+			return err
+		}
 		if len(c.Expect) == 0 {
 			return fmt.Errorf("test %q expects nothing, so it can't fail", c.Name)
 		}
 		for j, in := range c.Inject {
 			if in.Node == "" {
 				return fmt.Errorf("test %q, inject %d: no node", c.Name, j+1)
+			}
+			if in.At != "" {
+				if d, err := time.ParseDuration(in.At); err != nil || d < 0 {
+					return fmt.Errorf("test %q, inject %d: at %q is not a time from the start of the test, like 0s, 90s or 5m", c.Name, j+1, in.At)
+				}
 			}
 		}
 		for j, e := range c.Expect {
@@ -277,6 +298,18 @@ func (c *Case) timeout() (time.Duration, error) {
 		return 0, fmt.Errorf("test %q, timeout: %w", c.Name, err)
 	}
 	return d, nil
+}
+
+// start is when the test's clock starts.
+func (c *Case) start() (time.Time, error) {
+	if c.Clock == "" {
+		return time.Now(), nil
+	}
+	t, err := time.Parse(time.RFC3339, c.Clock)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("test %q, clock: %q is not an RFC 3339 time, like 2026-10-05T06:29:00Z", c.Name, c.Clock)
+	}
+	return t, nil
 }
 
 func parseDuration(s string) (time.Duration, error) {
