@@ -1,0 +1,3 @@
+# bd-lite local state (per machine, not source of truth)
+.cache/
+.cursor-*

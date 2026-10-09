@@ -1,0 +1,40 @@
+# bd-lite — embedded default configuration
+# Consuming repos override fields by writing .beads/config.toml.
+# Only override what you need; missing fields fall back to these defaults.
+
+[tool]
+default_format = "json"    # "json" for agents, "pretty" for humans
+id_prefix      = ""        # default: bare hash IDs ("a3f2dd"). Override per-rig if you want labels.
+
+[states]
+values  = ["open", "in_progress", "blocked", "deferred", "review", "closed"]
+default = "open"
+
+[states.transitions]
+open        = ["in_progress", "deferred", "closed"]
+in_progress = ["review", "blocked", "deferred", "closed"]
+blocked     = ["in_progress", "deferred", "closed"]
+deferred    = ["open"]
+review      = ["in_progress", "closed"]
+closed      = ["open"]
+
+[types]
+values  = ["task", "bug", "epic", "question", "chore", "discovery"]
+default = "task"
+
+[priority]
+values  = [1, 2, 3, 4, 5]   # 1 = highest
+default = 3
+
+[rigs.main]
+path      = "main"
+id_prefix = ""             # opt-in label; empty -> bare hash IDs.
+
+[hooks]
+context_max_lines  = 10
+briefing_max_lines = 20
+
+# Example agent mapping — uncomment and edit per consuming repo.
+# [agents.editor-agent]
+# rig     = "editor"
+# display = "Editor Agent"
