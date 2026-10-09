@@ -1,4 +1,4 @@
-# bd-lite — embedded default configuration
+# bd-lite: embedded default configuration
 # Consuming repos override fields by writing .beads/config.toml.
 # Only override what you need; missing fields fall back to these defaults.
 
@@ -34,7 +34,7 @@ id_prefix = ""             # opt-in label; empty -> bare hash IDs.
 context_max_lines  = 10
 briefing_max_lines = 20
 
-# Example agent mapping — uncomment and edit per consuming repo.
+# Example agent mapping. Uncomment and edit per consuming repo.
 # [agents.editor-agent]
 # rig     = "editor"
 # display = "Editor Agent"
