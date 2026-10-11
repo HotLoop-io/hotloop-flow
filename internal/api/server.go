@@ -76,6 +76,10 @@ type Deps struct {
 	// a pattern.
 	FlowRoutes *flowhttp.Router
 
+	// Tests keeps the flow test suite and runs it. Nil means this instance
+	// keeps none.
+	Tests TestSuite
+
 	// Version identifies this build in /settings and the log.
 	Version string
 
@@ -235,6 +239,9 @@ func (s *Server) routes() {
 	s.mux.Handle("POST "+s.path("/flows/diff"), s.auth(PermFlowsRead, s.handleDiffPending))
 	s.mux.Handle("GET "+s.path("/flows/export"), s.auth(PermFlowsRead, s.handleExport))
 	s.mux.Handle("POST "+s.path("/deployments/{seq}/rollback"), s.auth(PermFlowsWrite, s.handleRollback))
+	s.mux.Handle("GET "+s.path("/tests"), s.auth(PermFlowsRead, s.handleGetTests))
+	s.mux.Handle("PUT "+s.path("/tests"), s.auth(PermFlowsWrite, s.handlePutTests))
+	s.mux.Handle("POST "+s.path("/tests/run"), s.auth(PermFlowsRead, s.handleRunTests))
 	s.mux.Handle("GET "+s.path("/runtime/stats"), s.auth(PermStatusRead, s.handleStats))
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))
@@ -631,6 +638,7 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var failed *TestsFailedError
 	res, err := s.deps.Deploy(r.Context(), DeployRequest{
 		Flows:       flows,
 		ExpectedRev: expectedRev,
@@ -645,6 +653,14 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 		// the editor shows a merge prompt.
 		s.record(r, audit.DeployRefused, requestUser(r), map[string]any{"reason": "stale revision", "rev": expectedRev})
 		writeError(w, http.StatusConflict, err.Error())
+		return
+	case errors.As(err, &failed):
+		// 422: the flow document is fine and the server is fine; the flows
+		// do something their tests say they mustn't. The report goes back
+		// whole, so the editor can put each failure on its node.
+		s.record(r, audit.DeployRefused, requestUser(r), map[string]any{
+			"reason": "flow tests failed", "failed": failed.Report.Failed, "errored": failed.Report.Errored})
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error(), "tests": failed.Report})
 		return
 	case err != nil:
 		s.record(r, audit.DeployRefused, requestUser(r), map[string]any{"reason": err.Error()})

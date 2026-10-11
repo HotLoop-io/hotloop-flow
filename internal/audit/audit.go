@@ -37,6 +37,7 @@ const (
 	Rollback       = "rollback"
 	RollbackFailed = "rollback.refused"
 	Inject         = "inject"
+	TestsSaved     = "tests.saved"
 	MFAEnabled     = "mfa.enabled"
 	MFADisabled    = "mfa.disabled"
 	MFAReset       = "mfa.reset"
