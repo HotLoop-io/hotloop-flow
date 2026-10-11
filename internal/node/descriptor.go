@@ -544,7 +544,10 @@ type Starter interface {
 // the scheduler starts waiting, so a flush there is observed and the shutdown
 // does not stall until the close timeout.
 type Deferrer interface {
-	// Pending reports how many messages are held for later delivery.
+	// Pending reports how many messages are held for later delivery. A message
+	// stops counting only once it has been handed to Send: a node that reports
+	// zero while it is still emitting tells the scheduler the graph is quiet
+	// when it is not.
 	Pending() int
 }
 

@@ -991,11 +991,18 @@ func (d *deferNode) Start(ctx context.Context, out node.Emitter) error {
 		<-ctx.Done()
 		d.mu.Lock()
 		held := d.held
-		d.held = nil
 		d.mu.Unlock()
+		// Send first and let go of the count after. A node whose Pending reads
+		// zero while its messages are still on their way out tells Stop the
+		// graph is quiet when it is not, which is the race this test caught in
+		// CI as "sink received 16 of 20". The runtime reads Pending as "I still
+		// owe the graph messages", so it has to stay true until they are sent.
 		for _, m := range held {
 			out.Send(0, m)
 		}
+		d.mu.Lock()
+		d.held = nil
+		d.mu.Unlock()
 	}()
 	return nil
 }
