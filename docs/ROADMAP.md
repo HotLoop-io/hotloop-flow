@@ -99,7 +99,7 @@ Tests are YAML next to the flows, so they diff and review the same way.
       node is proven against it
 - [x] Context and credential fixtures, and assertions on context afterwards.
       One test can't lean on what another left behind
-- [ ] Deploy gate: with it on, a deploy that fails its tests is refused with the
+- [x] Deploy gate: with it on, a deploy that fails its tests is refused with the
       failing assertions, and the flows already running don't notice
 - [ ] Editor: turn a captured debug message into a test in two clicks, run the
       suite from the editor, pass and fail on the nodes

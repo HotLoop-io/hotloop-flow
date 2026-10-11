@@ -531,6 +531,59 @@ in well under a second. What a test can't move is the CPU: a flow still busy
 after a minute of real time fails the test rather than hanging the suite. JSONata
 `$now()` and `$millis()` still read the wall clock.
 
+### The deploy gate
+
+Tests on somebody's laptop prove the flow they had on their laptop. The gate
+proves the one being deployed. Keep the suite on the instance, next to the flow
+file it tests (`data/flows.test.yaml` beside `data/flows.json`, through
+`PUT /tests` or the editor), turn on `tests.gate`, and every deploy runs it
+against the flows it's about to put in place. One that doesn't pass is refused,
+a 422 with the whole report:
+
+```
+$ hotloop-flow deploy -file flows.json -note "raise the alarm at 95"
+1 changed
+
+Tab "Line 3" (t1)
+  ~ switch "over limit?" (chk)
+      rules[0].v: "80" -> "95"
+hotloop-flow: the deploy was refused: 1 of 2 flow tests didn't pass, and the flows already running are untouched; "a high reading raises the alarm and nothing else": expect 1: switch "over limit?" (chk): nothing sent from port 1
+
+--- FAIL: a high reading raises the alarm and nothing else (0.00s)
+    expect 1: switch "over limit?" (chk): nothing sent from port 1
+    expect 2: switch "over limit?" (chk): expected nothing, and 1 message(s) sent from port 2
+      at 0s: {"payload":92.5,"topic":"line3/temp"}
+    expect 3: debug "alarm out" (alarm-out): nothing received
+--- PASS: a negative reading is caught, not alarmed on (0.00s)
+FAIL	flows.test.yaml	1 passed, 1 failed, 0 errors (0.00s)
+```
+
+That's a real run: the binary with the gate on, the suite from the top of this
+section kept beside its flow file, and a deploy token.
+
+**The flows already running don't notice.** The gate runs before a byte is
+written: no flow file, no credentials, no deployment record, no restart. The
+refusal goes in the audit trail as a `deploy.refused` that says the tests failed.
+And the tests don't run in the server process at all. They run in a child, this
+same binary as `hotloop-flow test -stdin`, handed the candidate flows and the
+suite on stdin, because a test starts every node in the flow and some of them
+register where the whole process shares them: a Link In by its id, an HTTP route
+by its path. Run in here, the candidate's Link In would answer for the running
+one's the moment it started. In a child it can't touch anything the line uses, a
+node that panics on a goroutine of its own takes down the test and not the
+plant, and the memory goes back when it exits. The test proves it the hard way:
+the refused candidate has the same Link In, and after the refusal a message
+through the running flow's link still arrives.
+
+Three decisions worth knowing. **It's off by default**, because a gate an
+operator didn't ask for is a deploy that fails at 3 AM for a reason nobody on
+shift has heard of. **Tests that can't run don't pass**: a child that won't
+start or a run longer than `tests.timeout` refuses the deploy and says which.
+And **rollbacks aren't gated.** A rollback is how somebody gets out of a bad
+state, to one that already ran, and holding it up on today's tests is how an
+outage gets longer. With the gate on and no suite there's nothing to fail, so
+the deploy goes and the log says why it wasn't checked.
+
 ### Context and credentials
 
 Every test starts with empty context, whatever the test before it left behind. A
@@ -707,7 +760,8 @@ keep things. It now offers the token as a second WebSocket subprotocol beside
 
 **Everything that matters leaves a trail.** Logins, failed logins (with whether
 the name even exists, which a client never gets told but an operator should),
-logouts, deploys, refused deploys, rollbacks and injects go to
+logouts, deploys, refused deploys, rollbacks, injects and saves of the flow
+tests go to
 `data/audit.log`, one JSON line each, synced to disk before the request is
 answered. Each says who, from which address, and what: a deploy points at its
 deployment record, an inject names the node. `X-Forwarded-For` is kept beside
@@ -1032,6 +1086,10 @@ metrics:
 audit:
   maxBytes: 16777216        # data.dir/audit.log rotates at 16 MiB
   keep: 4                   # rotated files kept beside it
+
+tests:
+  gate: false               # refuse a deploy that fails data.dir/flows.test.yaml
+  timeout: 2m               # wall clock for one run of the flow tests
 ```
 
 A typo in that file is a startup failure rather than a setting that silently does
@@ -1056,6 +1114,7 @@ Secret.
 | `HOTLOOP_FLOW_DEPLOY_TOKEN_HASH` | A deploy token called `deploy`, for CI: `flows.read` and `flows.write`, nothing else. The hash, never the token. |
 | `HOTLOOP_FLOW_GIT_URL`, `HOTLOOP_FLOW_GIT_USERNAME`, `HOTLOOP_FLOW_GIT_PASSWORD` | The git mirror. The password (an access token) is environment only. |
 | `HOTLOOP_FLOW_INBOX_CAPACITY`, `HOTLOOP_FLOW_OVERFLOW` | Scheduler defaults. |
+| `HOTLOOP_FLOW_TESTS_GATE` | `true` turns on the [deploy gate](#the-deploy-gate). |
 | `HOTLOOP_FLOW_LOG_LEVEL`, `HOTLOOP_FLOW_LOG_FORMAT` | Logging. |
 | `HOTLOOP_FLOW_DISCOVERY_ENABLED`, `HOTLOOP_FLOW_DISCOVERY_CIDRS` | Discovery nodes. Comma-separated CIDRs. |
 | `HOTLOOP_FLOW_EXEC_ENABLED`, `HOTLOOP_FLOW_EXEC_ALLOWED_COMMANDS` | The exec node. Comma-separated commands. |
@@ -1100,6 +1159,9 @@ timeouts.
 | `GET /deployments/{from}/diff/{to}` | `flows.read` | Node-by-node diff between two deployments, structured and as text. |
 | `POST /flows/diff` | `flows.read` | The diff from what's live to the document in the body. Deploys nothing. |
 | `POST /deployments/{seq}/rollback` | `flows.write` | Deploys that record's flows and credentials again as a new deployment. Takes the rev header and an optional `{"note": ...}`. |
+| `GET /tests` | `flows.read` | The flow test suite kept beside the flow file, its file name, and whether deploys are gated on it. |
+| `PUT /tests` | `flows.write` | Replaces the suite. The body is the YAML; one that doesn't parse is a 400 with the reason. |
+| `POST /tests/run` | `flows.read` | Runs the suite, or `"tests"` from the body, against `"flows"` from the body or what's running. Returns the report. Deploys nothing. |
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
 | `GET /comms` | `status.read` | The editor's status and debug websocket. The token rides as the subprotocol `hotloop-flow.bearer.<token>`, offered beside `hotloop-flow`. |

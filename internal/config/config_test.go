@@ -397,3 +397,35 @@ func TestSecretAllowedPathsFromFileAndEnv(t *testing.T) {
 		t.Errorf("from the environment: %v", got)
 	}
 }
+
+// The deploy gate is off unless somebody turns it on, from the file or the
+// environment, and its suite sits beside the flow file under the flow file's
+// name.
+func TestTheTestsGate(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Tests.Gate || cfg.Tests.Timeout <= 0 {
+		t.Fatalf("defaults: %+v, want the gate off and a timeout", cfg.Tests)
+	}
+	if got := filepath.Base(cfg.TestsPath()); got != "flows.test.yaml" {
+		t.Errorf("TestsPath = %s, want flows.test.yaml beside flows.json", got)
+	}
+
+	t.Setenv("HOTLOOP_FLOW_TESTS_GATE", "true")
+	if cfg, err = Load(""); err != nil || !cfg.Tests.Gate {
+		t.Fatalf("HOTLOOP_FLOW_TESTS_GATE=true: %v %+v", err, cfg.Tests)
+	}
+
+	t.Setenv("HOTLOOP_FLOW_TESTS_GATE", "")
+	cfg, err = Load(writeConfig(t, "data:\n  flowFile: line3.json\ntests:\n  gate: true\n"))
+	if err != nil || !cfg.Tests.Gate || filepath.Base(cfg.TestsPath()) != "line3.test.yaml" {
+		t.Fatalf("from the file: %v %+v %s", err, cfg.Tests, cfg.TestsPath())
+	}
+	if _, err := Load(writeConfig(t, "tests:\n  timeout: -1s\n")); err == nil || !strings.Contains(err.Error(), "tests.timeout") {
+		t.Fatalf("a negative timeout: %v", err)
+	}
+}
