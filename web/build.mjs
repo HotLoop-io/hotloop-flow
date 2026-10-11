@@ -7,7 +7,7 @@
 // hosts, and an edge box has no internet anyway.
 
 import * as esbuild from 'esbuild';
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 
 const watch = process.argv.includes('--watch');
 
@@ -35,5 +35,9 @@ if (watch) {
   await ctx.watch();
   console.log('watching');
 } else {
-  await esbuild.build(options);
+  // The metafile is esbuild's record of every file it put in dist, and it's
+  // what third-party-licenses.mjs reads to credit the npm packages in the
+  // bundle. Written beside dist, not in it: dist is embedded and served.
+  const result = await esbuild.build({ ...options, metafile: true });
+  writeFileSync('meta.json', JSON.stringify(result.metafile));
 }
