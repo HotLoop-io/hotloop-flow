@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,8 +76,13 @@ func (s *Server) handleGetTests(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	count := 0
+	if suite, err := flowtest.Parse(data); err == nil {
+		count = len(suite.Tests)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tests": string(data),
+		"count": count,
 		"file":  s.deps.Tests.Name(),
 		"gate":  s.deps.Tests.Gate(),
 	})
@@ -182,4 +188,91 @@ func (s *Server) handleRunTests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rep)
+}
+
+// fromDebugRequest is POST /tests/from-debug: the Debug node and the message
+// id the debug sidebar showed.
+type fromDebugRequest struct {
+	Node  string `json:"node"`
+	MsgID string `json:"msgId"`
+}
+
+// handleTestFromDebug drafts a test from a message the debug sidebar showed:
+// what came in at the source, and what the Debug node showed. It saves
+// nothing; the editor shows the draft and the person decides.
+func (s *Server) handleTestFromDebug(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Tests == nil || s.deps.Capture == nil {
+		writeError(w, http.StatusNotFound, "this instance keeps no flow tests")
+		return
+	}
+	var req fromDebugRequest
+	if err := readJSON(r, 4096, &req); err != nil || req.Node == "" || req.MsgID == "" {
+		writeError(w, http.StatusBadRequest, "give the Debug node's id as node and the message's id as msgId")
+		return
+	}
+	live, err := s.deps.Flows.Load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	doc, err := live.MarshalJSON()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	c, err := flowtest.FromDebug(doc, req.Node, s.deps.Capture.Find(req.MsgID))
+	switch {
+	case errors.Is(err, flowtest.ErrNotCaptured):
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	case err != nil:
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	text, err := flowtest.CaseYAML(c)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"name": c.Name, "yaml": text})
+}
+
+// handleAddTests adds the tests in the body, a test file of their own, to the
+// suite. A name the suite already has gets a number on the end rather than
+// replacing the test somebody wrote.
+func (s *Server) handleAddTests(w http.ResponseWriter, r *http.Request) {
+	if s.deps.Tests == nil {
+		writeError(w, http.StatusNotFound, "this instance keeps no flow tests")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.deps.Config.Server.MaxRequestBytes))
+	if err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "the tests are too large")
+		return
+	}
+	add, err := flowtest.Parse(body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	suite, err := s.deps.Tests.Load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	var names []string
+	for _, c := range add.Tests {
+		var name string
+		if suite, name, err = flowtest.AppendCase(suite, c); err != nil {
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		names = append(names, name)
+	}
+	if err := s.deps.Tests.Save(suite); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.record(r, audit.TestsSaved, requestUser(r), map[string]any{"added": names})
+	writeJSON(w, http.StatusOK, map[string]any{"added": names})
 }

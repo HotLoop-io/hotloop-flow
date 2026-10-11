@@ -10,6 +10,7 @@ import {
   NODE_HEIGHT, NODE_WIDTH, PORT_RADIUS, inputPort, outputPort, snap, wirePath,
 } from './graph';
 import { type DiffOverlay, wireKey } from './diff';
+import type { TestMark } from './tests';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -51,6 +52,7 @@ export class Canvas {
   private mode: Mode = { kind: 'idle' };
   private statuses = new Map<string, { fill: string; shape: string; text: string }>();
   private diff: DiffOverlay | null = null;
+  private testMarks = new Map<string, TestMark>();
   private readonly readOnly: boolean;
   private lastPress = { id: '', at: 0 };
 
@@ -369,6 +371,17 @@ export class Canvas {
     this.render();
   }
 
+  /**
+   * Marks the nodes a run of the flow tests was about: a tick where a test
+   * passed through, a cross where one failed, with the reason on hover. Null
+   * clears them, which an edit does, since a mark on a node that has changed
+   * since is a claim about a flow that no longer exists.
+   */
+  setTestMarks(marks: Map<string, TestMark> | null): void {
+    this.testMarks = marks ?? new Map();
+    this.renderNodes();
+  }
+
   render(): void {
     this.renderGrid();
     this.renderWires();
@@ -538,6 +551,27 @@ export class Canvas {
       c.setAttribute('data-port', String(i));
       c.setAttribute('data-node', n.id);
       g.append(c);
+    }
+
+    // How the last run of the flow tests went for this node.
+    const test = this.testMarks.get(n.id);
+    if (test) {
+      const badge = document.createElementNS(SVG_NS, 'g');
+      badge.setAttribute('class', `test-badge ${test.state}`);
+      badge.setAttribute('data-test-mark', test.state);
+      const ring = document.createElementNS(SVG_NS, 'circle');
+      ring.setAttribute('cx', String(x + NODE_WIDTH / 2 - 2));
+      ring.setAttribute('cy', String(y - NODE_HEIGHT / 2 + 2));
+      ring.setAttribute('r', '8');
+      const glyph = document.createElementNS(SVG_NS, 'text');
+      glyph.setAttribute('x', String(x + NODE_WIDTH / 2 - 2));
+      glyph.setAttribute('y', String(y - NODE_HEIGHT / 2 + 6));
+      glyph.setAttribute('text-anchor', 'middle');
+      glyph.textContent = test.state === 'pass' ? '✓' : '✕';
+      const tip = document.createElementNS(SVG_NS, 'title');
+      tip.textContent = test.title;
+      badge.append(ring, glyph, tip);
+      g.append(badge);
     }
 
     // Status badge from the runtime.

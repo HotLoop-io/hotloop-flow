@@ -80,6 +80,10 @@ type Deps struct {
 	// keeps none.
 	Tests TestSuite
 
+	// Capture is the last messages into the flow and out at its Debug
+	// nodes, which is what a test drafted from the debug sidebar is made of.
+	Capture *runtime.Capture
+
 	// Version identifies this build in /settings and the log.
 	Version string
 
@@ -242,6 +246,8 @@ func (s *Server) routes() {
 	s.mux.Handle("GET "+s.path("/tests"), s.auth(PermFlowsRead, s.handleGetTests))
 	s.mux.Handle("PUT "+s.path("/tests"), s.auth(PermFlowsWrite, s.handlePutTests))
 	s.mux.Handle("POST "+s.path("/tests/run"), s.auth(PermFlowsRead, s.handleRunTests))
+	s.mux.Handle("POST "+s.path("/tests/from-debug"), s.auth(PermFlowsRead, s.handleTestFromDebug))
+	s.mux.Handle("POST "+s.path("/tests/cases"), s.auth(PermFlowsWrite, s.handleAddTests))
 	s.mux.Handle("GET "+s.path("/runtime/stats"), s.auth(PermStatusRead, s.handleStats))
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))

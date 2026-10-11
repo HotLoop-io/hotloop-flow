@@ -451,3 +451,35 @@ textarea.code {
 }
 .mfa-code { width: 100%; font-family: var(--hl-font-mono); font-size: 18px; letter-spacing: 4px; text-align: center; }
 .dialog .dialog-error { margin: 6px 0; }
+
+/* ── Flow tests ───────────────────────────────────────────────────────────── */
+
+.test-badge circle { stroke: var(--card-bg); stroke-width: 2; }
+.test-badge.pass circle { fill: var(--success); }
+.test-badge.fail circle { fill: var(--danger); }
+.test-badge text { fill: #fff; font-size: 11px; font-weight: 800; pointer-events: none; }
+
+.tests { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; }
+.test-summary { font-size: 12px; font-weight: 700; }
+.test-summary.pass { color: var(--success-text); }
+.test-summary.fail { color: var(--danger-text); }
+.test-result {
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--success);
+  border-radius: var(--radius-input);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+.test-result.fail { border-left-color: var(--danger); }
+.test-result.error { border-left-color: var(--warning); }
+.test-result .meta { display: flex; gap: 8px; align-items: baseline; }
+.test-result .name { word-break: break-word; }
+.kind.test-pass { color: var(--success-text); }
+.kind.test-fail { color: var(--danger-text); }
+.kind.test-error { color: var(--warning-text); }
+.test-problem { margin-top: 6px; white-space: pre-wrap; max-height: 160px; }
+.test-problem.pickable { cursor: pointer; }
+.test-problem.pickable:hover { outline: 1px solid var(--border-strong); }
+.log-make-test { flex-shrink: 0; font-size: 10px; padding: 2px 8px; }
+textarea.test-yaml { width: 100%; min-width: min(560px, 80vw); }

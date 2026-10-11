@@ -154,6 +154,10 @@ type runner struct {
 	typ  string
 	name string
 
+	// source is set on a node that brings messages into the flow, when the
+	// runtime keeps a capture: what it sends is kept.
+	source bool
+
 	// z is the containing tab or subflow id, used for context scoping and for
 	// resolving which Catch nodes are eligible.
 	z string
@@ -352,6 +356,9 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 	defer r.rt.outstanding.Add(-1)
 	if o := r.rt.observer; o != nil {
 		o.Received(r.id, d.msg.Clone())
+	}
+	if r.rt.capture != nil && r.typ == "debug" {
+		r.rt.capture.add(r.id, -1, d.msg, r.rt.opts.Now())
 	}
 	r.stats.Received.Add(1)
 	r.inFlight.Add(1)
