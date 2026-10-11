@@ -21,6 +21,12 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY web/ ./
 RUN npm run build
 
+# The npm packages esbuild actually put in dist (today, the two self-hosted
+# fonts), with their license texts, from the build's own metafile. Fails the
+# build on a license we don't ship. The Go stage appends it to
+# THIRD_PARTY_LICENSES.
+RUN node third-party-licenses.mjs meta.json /build/THIRD_PARTY_LICENSES.editor
+
 # ── Go build ─────────────────────────────────────────────────────────────────
 FROM golang:1.26.4 AS builder
 
@@ -32,8 +38,14 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 
+# Reads the binary's import graph to write THIRD_PARTY_LICENSES below. The
+# binary lands in /go/bin, outside the cache mount, so it stays in the layer.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go install github.com/google/go-licenses/v2@v2.0.1
+
 COPY . .
 COPY --from=editor /build/dist ./web/dist
+COPY --from=editor /build/THIRD_PARTY_LICENSES.editor /out/THIRD_PARTY_LICENSES.editor
 
 ARG VERSION=dev
 ARG TARGETOS=linux
@@ -53,6 +65,20 @@ RUN --mount=type=cache,target=/go/pkg/mod \
       -buildvcs=false \
       -ldflags="-s -w -X main.version=${VERSION}" \
       -o /out/hotloop-flow \
+      ./cmd/hotloop-flow
+
+# Every Go module compiled into that binary, with its full license text, from
+# the same package, platform and cgo setting as the build above, then the
+# editor bundle's section. MIT, BSD and Apache all say the notice ships with
+# the binary, so it does. GPL, AGPL, LGPL or a license nobody can identify
+# fails the build; see build/third-party-licenses.sh.
+RUN --mount=type=cache,target=/go/pkg/mod \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    bash build/third-party-licenses.sh \
+      -n "HotLoop Flow" \
+      -b /out/hotloop-flow \
+      -o /out/THIRD_PARTY_LICENSES \
+      -a /out/THIRD_PARTY_LICENSES.editor \
       ./cmd/hotloop-flow
 
 # Fail the build rather than ship something that will not start on distroless.
@@ -77,7 +103,7 @@ COPY --from=builder /out/hotloop-flow /usr/local/bin/hotloop-flow
 # The binary carries code ported from Node-RED, cronosjs and a handful of MIT
 # libraries. Apache 2.0 wants the NOTICE to go wherever the work goes, and the
 # ISC and MIT licenses want their notices in every copy. The image is a copy.
-COPY --from=builder /src/LICENSE /src/NOTICE /usr/share/doc/hotloop-flow/
+COPY --from=builder /src/LICENSE /src/NOTICE /out/THIRD_PARTY_LICENSES /usr/share/doc/hotloop-flow/
 
 # 65532 is distroless's nonroot user, and it matches the chart's securityContext.
 # The chart's fsGroup makes the PVC writable by it.

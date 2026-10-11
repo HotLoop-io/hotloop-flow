@@ -343,6 +343,31 @@ jobs:
             exit 1
           fi
 
+  image:
+    name: Image and its licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build the image
+        # The license gate lives in the Dockerfile, so the only way to know a
+        # PR didn't pull in a GPL module or an unlicensed npm package is to
+        # build the image. Before this job the first build was the release.
+        run: docker build -t hotloop-flow:ci .
+
+      - name: THIRD_PARTY_LICENSES is in the image and covers both halves
+        run: |
+          id=$(docker create hotloop-flow:ci)
+          docker cp "$id:/usr/share/doc/hotloop-flow" doc
+          docker rm "$id" >/dev/null
+          ls -l doc
+          for f in LICENSE NOTICE THIRD_PARTY_LICENSES; do
+            test -s "doc/$f" || { echo "::error::$f is missing from the image"; exit 1; }
+          done
+          grep -q '^github.com/dop251/goja ' doc/THIRD_PARTY_LICENSES || { echo "::error::the Go modules are not listed"; exit 1; }
+          grep -q '^Editor bundle (npm)' doc/THIRD_PARTY_LICENSES || { echo "::error::the editor bundle section is missing"; exit 1; }
+          grep -q 'SIL OPEN FONT LICENSE' doc/THIRD_PARTY_LICENSES || { echo "::error::the font licenses are missing"; exit 1; }
+
   fuzz:
     name: Fuzz smoke
     runs-on: ubuntu-latest

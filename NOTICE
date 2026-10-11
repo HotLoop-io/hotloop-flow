@@ -9,6 +9,12 @@ under. Every ported file opens with a comment saying the same thing, and every
 one of them was modified: translated to Go, and changed wherever the file says
 so.
 
+The Go modules and npm packages compiled into the binary unmodified are not
+listed here. The image carries THIRD_PARTY_LICENSES next to this file in
+/usr/share/doc/hotloop-flow/: every one of them, with its version and the full
+text of its license, generated at build time from the binary's own dependency
+graph and the editor bundle's esbuild metafile.
+
 --------------------------------------------------------------------------------
 Node-RED
 --------------------------------------------------------------------------------
@@ -62,6 +68,10 @@ modified. Versions are the ones each port was checked against.
         @node-red/util 5.0.7, lib/util.js: prepareJSONataExpression
     internal/engine/property.go, ParsePath only
         @node-red/util 5.0.7, lib/util.js: normalisePropertyExpression
+    internal/store/credentials.go, decryptLegacy only
+        @node-red/runtime 5.0.7, lib/nodes/credentials.js: decryptCredentials
+        and the SHA-256 key it takes. The format leaves no other way to read
+        an existing flows_cred.json; nothing is written back in it.
     internal/nodes/testdata/http-golden/golden.mjs, the blocks marked verbatim
         @node-red/nodes 4.1.15 and 5.0.7 (identical in both),
         core/network/21-httpin.js and core/network/21-httprequest.js
