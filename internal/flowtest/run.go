@@ -67,6 +67,10 @@ type Result struct {
 	// Problems says why a test didn't pass, one entry per unmet expectation.
 	Problems []Problem `json:"problems,omitempty"`
 
+	// Nodes are the ids of the nodes the test put messages into and watched,
+	// which is where the editor shows that it passed.
+	Nodes []string `json:"nodes,omitempty"`
+
 	// Log is every error the flow raised and every warning it logged while the
 	// test ran, caught or not. Not a verdict: a test can expect an error and
 	// pass. It's what you read when a test fails and the reason isn't obvious.
@@ -175,6 +179,7 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	g := newGraphView(flows, opts.Registry)
 
 	injections, watches, replies, problems := g.resolve(c)
+	res.Nodes = touched(injections, watches)
 	fx, more := g.resolveFixtures(c)
 	problems = append(problems, more...)
 	if len(problems) > 0 {
@@ -307,6 +312,26 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 		res.Status = Fail
 	}
 	return res
+}
+
+// touched lists the nodes a test is about, once each, in the order the test
+// names them.
+func touched(injections []injection, watches []watch) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(id string) {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, in := range injections {
+		add(in.id)
+	}
+	for _, w := range watches {
+		add(w.target.id)
+	}
+	return out
 }
 
 // RealTimeLimit bounds how long one test may take on the wall clock. The

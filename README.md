@@ -531,6 +531,39 @@ in well under a second. What a test can't move is the CPU: a flow still busy
 after a minute of real time fails the test rather than hanging the suite. JSONata
 `$now()` and `$millis()` still read the wall clock.
 
+### Tests from the editor
+
+Nobody writes a test for a flow that works. They write one the day it stops
+working, which is a day late. So the editor makes one out of what the flow just
+did, in two clicks.
+
+Every message in the debug sidebar has a **Test** button. Click it and the
+editor drafts a test from that very message: what came in at the source it
+entered by, put in there again, and what this Debug node showed, expected
+here. Change anything you like, because a reading that carries a timestamp is
+better checked with an `assert` than pinned to the millisecond. Click **Add to
+tests** and it's in the suite beside the flow file, at the end, with whatever
+was already written there left exactly as it was, comments included. A name the
+suite already has gets a number on the end rather than replacing anything.
+
+How the editor knows what came in: the runtime keeps the last 64 messages that
+entered the flow at a source and the last 64 that reached a Debug node, under
+the id a message carries from one node to the next. That's a ring with a size
+cap, and a message over 64 KB isn't kept at all, so it can never be the thing
+that grows a pod. A message that's been pushed out, or that a node replaced
+with a new one on the way, can't be drafted, and the editor says so instead of
+guessing what went in.
+
+The **Tests** panel runs the suite against the working copy, deployed or not,
+which is the point: you find out before the deploy. Every node a passing test
+went through gets a tick, every node a failure is about gets a cross with the
+reason on hover, and clicking a failure takes you to its node. Edit anything and
+the marks go, because they describe a flow that no longer exists. **Edit** opens
+the whole suite as YAML. A deploy the [gate](#the-deploy-gate) refuses lands in
+the same panel, failures on the nodes.
+
+All of it runs in a real browser against the real binary on every pull request.
+
 ### The deploy gate
 
 Tests on somebody's laptop prove the flow they had on their laptop. The gate
@@ -1162,6 +1195,8 @@ timeouts.
 | `GET /tests` | `flows.read` | The flow test suite kept beside the flow file, its file name, and whether deploys are gated on it. |
 | `PUT /tests` | `flows.write` | Replaces the suite. The body is the YAML; one that doesn't parse is a 400 with the reason. |
 | `POST /tests/run` | `flows.read` | Runs the suite, or `"tests"` from the body, against `"flows"` from the body or what's running. Returns the report. Deploys nothing. |
+| `POST /tests/from-debug` | `flows.read` | Drafts a test from `{"node", "msgId"}`, a message a Debug node showed. Saves nothing. |
+| `POST /tests/cases` | `flows.write` | Adds the tests in the body, a test file of their own, to the end of the suite. |
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
 | `GET /comms` | `status.read` | The editor's status and debug websocket. The token rides as the subprotocol `hotloop-flow.bearer.<token>`, offered beside `hotloop-flow`. |

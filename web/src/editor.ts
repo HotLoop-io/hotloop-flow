@@ -10,6 +10,8 @@ import { Graph, type FlowEntry } from './graph';
 import { confirmRollback, describe, resolveConflict } from './history';
 import { setDarkMode } from './theme';
 import { twoFactorDialog } from './account';
+import { draftTestDialog, editSuiteDialog, marksFrom, renderReport } from './tests';
+import type { TestReport } from './api';
 
 export interface EditorHandles {
   destroy(): void;
@@ -196,17 +198,28 @@ export function mountEditor(
   const reviewSlot = el('div', { class: 'review-slot' });
   const historyBody = el('div', { class: 'history', 'data-test': 'history' },
     el('div', { class: 'empty' }, 'Loading…'));
+  const testsBody = el('div', { class: 'tests', 'data-test': 'tests' },
+    el('div', { class: 'empty' }, 'Loading…'));
 
   function renderSidebar(): void {
     const clear = el('button', { class: 'ghost' }, 'Clear');
     clear.onclick = () => logBody.replaceChildren(el('div', { class: 'empty' }, 'Cleared.'));
     const refreshHistoryBtn = el('button', { class: 'ghost', title: 'Reload the deployment log' }, 'Refresh');
     refreshHistoryBtn.onclick = () => void refreshHistory();
+    const runTestsBtn = el('button', {
+      class: 'ghost', 'data-test': 'tests-run',
+      title: 'Run the flow tests against what is on the canvas, deployed or not',
+    }, 'Run');
+    runTestsBtn.onclick = () => void runTests();
+    const editTestsBtn = el('button', { class: 'ghost', 'data-test': 'tests-edit', title: 'Edit the flow tests' }, 'Edit');
+    editTestsBtn.onclick = () => void editTests();
 
     sidebar.replaceChildren(
       reviewSlot,
       el('div', { class: 'side-head' }, el('h3', {}, 'History'), el('div', { class: 'spacer' }), refreshHistoryBtn),
       historyBody,
+      el('div', { class: 'side-head' }, el('h3', {}, 'Tests'), el('div', { class: 'spacer' }), runTestsBtn, editTestsBtn),
+      testsBody,
       el('div', { class: 'side-head' }, el('h3', {}, 'Debug'), el('div', { class: 'spacer' }), clear),
       logBody,
       el('div', { class: 'side-head' }, el('h3', {}, 'Runtime')),
@@ -284,10 +297,22 @@ export function mountEditor(
       default: text = JSON.stringify(e.data);
     }
 
-    logBody.append(el('div', { class: 'log-line' },
+    const line = el('div', { class: 'log-line' },
       el('span', { class: 'log-time' }, new Date(e.at).toLocaleTimeString()),
       el('span', { class: `log-topic ${e.topic}` }, e.topic),
-      el('span', { class: 'log-body' }, text)));
+      el('span', { class: 'log-body' }, text));
+    // What a Debug node showed can become a test: what came in at the
+    // source, and what came out here. One click opens the draft, a second
+    // adds it to the suite.
+    if (e.topic === 'debug' && e.data.id && e.data.msgId) {
+      const make = el('button', {
+        class: 'ghost log-make-test', 'data-test': 'debug-make-test',
+        title: 'Make a flow test from this message',
+      }, 'Test');
+      make.onclick = () => void makeTest(String(e.data.id), String(e.data.msgId));
+      line.append(make);
+    }
+    logBody.append(line);
 
     while (logBody.children.length > MAX_LOG) logBody.firstChild?.remove();
     logBody.scrollTop = logBody.scrollHeight;
@@ -380,6 +405,12 @@ export function mountEditor(
       if (ex instanceof ApiError && ex.status === 409) {
         return conflict(() => deploy(note, ''));
       }
+      if (ex instanceof ApiError && ex.status === 422 && ex.body.tests) {
+        // The deploy gate said no. The report goes where a run from here
+        // would, failures marked on the nodes, so the fix starts at the
+        // node rather than in a wall of text.
+        showReport(ex.body.tests as TestReport);
+      }
       failed(ex, 'Deploy failed');
       return false;
     }
@@ -426,6 +457,69 @@ export function mountEditor(
   }
 
   deployBtn.onclick = () => void startReview();
+
+  // ── Tests ──────────────────────────────────────────────────────────────────
+
+  async function refreshTests(note = ''): Promise<void> {
+    try {
+      const t = await api.tests();
+      const what = t.count === 0
+        ? 'No tests yet. Make one from a message in the debug sidebar, or write them with Edit.'
+        : `${t.count} test${t.count === 1 ? '' : 's'} in ${t.file}${t.gate ? '. Deploys have to pass them.' : '.'}`;
+      testsBody.replaceChildren(...(note ? [el('div', { class: 'test-summary pass', 'data-test': 'tests-note' }, note)] : []),
+        el('div', { class: 'empty', 'data-test': 'tests-info' }, what));
+    } catch (ex) {
+      if (ex instanceof ApiError && ex.status === 401) {
+        failed(ex, 'Tests');
+        return;
+      }
+      testsBody.replaceChildren(el('div', { class: 'empty' },
+        ex instanceof ApiError && ex.status === 403
+          ? 'This account cannot read the flow tests.'
+          : 'Could not load the flow tests.'));
+    }
+  }
+
+  function showReport(report: TestReport): void {
+    renderReport(testsBody, report, (id) => {
+      const entry = graph.byId(id);
+      if (!entry) return;
+      if (entry.z) graph.activeTab = entry.z;
+      graph.selection = new Set([id]);
+      renderTabs();
+      canvas.render();
+    });
+    canvas.setTestMarks(marksFrom(report));
+  }
+
+  async function runTests(): Promise<void> {
+    testsBody.replaceChildren(el('div', { class: 'empty' }, 'Running…'));
+    try {
+      // The working copy, not what's deployed: the point is to find out
+      // before the deploy.
+      showReport(await api.runTests(graph.all()));
+    } catch (ex) {
+      failed(ex, 'Could not run the flow tests');
+      void refreshTests();
+    }
+  }
+
+  async function makeTest(node: string, msgId: string): Promise<void> {
+    try {
+      const added = await draftTestDialog(api, node, msgId);
+      if (added) void refreshTests(`Added: ${added.join(', ')}`);
+    } catch (ex) {
+      failed(ex, 'Could not make the test');
+    }
+  }
+
+  async function editTests(): Promise<void> {
+    try {
+      if (await editSuiteDialog(api)) void refreshTests('Saved.');
+    } catch (ex) {
+      failed(ex, 'Could not edit the tests');
+    }
+  }
 
   // ── History ────────────────────────────────────────────────────────────────
 
@@ -566,6 +660,8 @@ export function mountEditor(
     // An edit while the review is open makes the review a lie about what
     // would be deployed. Close it; pressing Deploy again reviews the new state.
     if (reviewing) endReview();
+    // So are test marks on a flow that has changed since the run.
+    canvas.setTestMarks(null);
     renderTabs();
   });
 
@@ -626,6 +722,7 @@ export function mountEditor(
   // not to matter on an edge link.
   void refreshHistory();
   historyTimer = window.setInterval(() => void refreshHistory(), 15000);
+  void refreshTests();
 
   disconnect = api.connectEvents(appendEvent, (up) => {
     connDot.className = `dot ${up ? 'green' : 'red'}`;

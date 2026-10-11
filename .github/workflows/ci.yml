@@ -426,6 +426,6 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Click through review, history, rollback and conflicts
+      - name: Click through review, history, rollback, conflicts and flow tests
         working-directory: web/e2e
         run: npx playwright test

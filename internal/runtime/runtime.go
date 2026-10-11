@@ -101,6 +101,10 @@ type Runtime struct {
 	// clock. Only a flow test sets it.
 	clock node.Clock
 
+	// capture, when set, keeps the last messages into the flow and out at
+	// the Debug nodes, for the editor to turn into tests. Nil-safe.
+	capture *Capture
+
 	// observer sees every message a node is handed and every message it sends.
 	// Only a flow test sets one: it is how a test knows what came out of a port
 	// without wiring anything into the flow it is testing.
@@ -540,6 +544,7 @@ func (rt *Runtime) newRunner(g *graph, n *engine.Node) *runner {
 
 	ctx, cancel := context.WithCancel(rt.ctx)
 	return &runner{
+		source:   rt.capture != nil && rt.isSource(n.Type),
 		id:       n.ID,
 		typ:      n.Type,
 		name:     n.Name,
@@ -804,6 +809,10 @@ func (rt *Runtime) deliver(from *runner, port int, msg *engine.Msg) {
 	if o := rt.observer; o != nil {
 		msg.EnsureID()
 		o.Sent(from.id, port, msg.Clone())
+	}
+	if from.source {
+		msg.EnsureID()
+		rt.capture.add(from.id, port, msg, rt.opts.Now())
 	}
 	wp := from.wires.Load()
 	if wp == nil || port < 0 || port >= len(*wp) {

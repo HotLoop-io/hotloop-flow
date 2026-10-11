@@ -221,6 +221,7 @@ func cmdServe(args []string) error {
 		registry:  node.Default,
 		contexts:  store.NewScopedContexts(),
 		tests:     newTestSuite(cfg),
+		capture:   runtime.NewCapture(runtime.DefaultCaptureSize, runtime.DefaultCaptureMaxBytes),
 	}
 
 	// The git mirror, if one is configured. Built before the server so a
@@ -279,6 +280,7 @@ func cmdServe(args []string) error {
 		Deploy:       app.deploy,
 		Rollback:     app.rollback,
 		Tests:        app.tests,
+		Capture:      app.capture,
 		FlowRoutes:   nodes.Routes,
 		Version:      version,
 	})
@@ -368,6 +370,9 @@ type application struct {
 	// tests is the flow test suite kept beside the flow file, and the deploy
 	// gate's way of running it.
 	tests *testSuite
+	// capture keeps the last messages into the flows and out at their Debug
+	// nodes, across deploys, for the editor to make tests from.
+	capture *runtime.Capture
 
 	mu      sync.Mutex
 	rt      *runtime.Runtime
@@ -400,6 +405,7 @@ func (a *application) runtimeOptions() runtime.Options {
 func (a *application) start(ctx context.Context, flows *engine.Flows) []runtime.StartError {
 	rt := runtime.New(a.registry, flows, a.runtimeOptions())
 	rt.SetContexts(a.contexts)
+	rt.SetCapture(a.capture)
 	rt.SetCredentials(func(nodeID string) map[string]string {
 		return a.creds.Get(nodeID)
 	})

@@ -127,6 +127,35 @@ export interface DiffResult {
   text: string;
 }
 
+/** One reason a flow test didn't pass. */
+export interface TestProblem {
+  expect?: number;
+  /** The node it's about, for the canvas to mark. */
+  node?: string;
+  message: string;
+}
+
+/** One flow test's outcome. */
+export interface TestResult {
+  name: string;
+  status: 'pass' | 'fail' | 'error';
+  seconds: number;
+  problems?: TestProblem[];
+  log?: string[];
+  /** The nodes the test put messages into and watched. */
+  nodes?: string[];
+}
+
+/** A run of the suite, as the engine reports it. */
+export interface TestReport {
+  file?: string;
+  tests: TestResult[] | null;
+  passed: number;
+  failed: number;
+  errored: number;
+  seconds: number;
+}
+
 export interface DeployResult {
   rev: string;
   deployment?: number;
@@ -137,6 +166,9 @@ export interface DeployResult {
 const TOKEN_KEY = 'hotloop-flow.token';
 
 export class ApiError extends Error {
+  /** The whole error body, for the answers that carry more than a message. */
+  body: Record<string, unknown> = {};
+
   constructor(readonly status: number, message: string, readonly mfaRequired = false) {
     super(message);
   }
@@ -324,9 +356,57 @@ export class Api {
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
+      const e = new ApiError(res.status, err.error ?? res.statusText);
+      e.body = err;
+      throw e;
+    }
+    return res.json() as Promise<T>;
+  }
+
+  /** Sends text as it is: a test file goes up as the YAML a person wrote. */
+  private async sendText<T>(method: string, path: string, text: string): Promise<T> {
+    const res = await fetch(this.base + path, {
+      method,
+      headers: {
+        'Content-Type': 'application/yaml',
+        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+      },
+      body: text,
+    });
+    if (res.status === 401) {
+      this.setToken(null);
+      throw new ApiError(401, 'session expired');
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
       throw new ApiError(res.status, err.error ?? res.statusText);
     }
     return res.json() as Promise<T>;
+  }
+
+  /** The flow test suite this instance keeps, and whether deploys are gated on it. */
+  tests(): Promise<{ tests: string; count: number; file: string; gate: boolean }> {
+    return this.get('/tests');
+  }
+
+  /** Replaces the suite. One that doesn't parse comes back as an error with the reason. */
+  saveTests(yaml: string): Promise<{ tests: number }> {
+    return this.sendText('PUT', '/tests', yaml);
+  }
+
+  /** Adds the tests in a test file of their own to the suite. */
+  addTests(yaml: string): Promise<{ added: string[] }> {
+    return this.sendText('POST', '/tests/cases', yaml);
+  }
+
+  /** Runs the suite against a working copy. Deploys nothing. */
+  runTests(flows: unknown[]): Promise<TestReport> {
+    return this.send<TestReport>('POST', '/tests/run', { flows });
+  }
+
+  /** Drafts a test from a message a Debug node showed. Saves nothing. */
+  draftTest(node: string, msgId: string): Promise<{ name: string; yaml: string }> {
+    return this.send('POST', '/tests/from-debug', { node, msgId });
   }
 
   /**
