@@ -1,3 +1,9 @@
+// decryptLegacy is ported from Node-RED 5.0.7 @node-red/runtime
+// lib/nodes/credentials.js (decryptCredentials, and the SHA-256 key from the
+// credential secret) (Apache-2.0), Copyright JS Foundation and other
+// contributors, http://js.foundation. Modified. The rest of this file is
+// HotLoop Flow's own.
+
 package store
 
 import (
