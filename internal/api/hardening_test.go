@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,6 +27,26 @@ type process struct {
 	*httptest.Server
 	srv   *Server
 	trail *audit.Log
+	logs  *lockedBuffer
+	dir   string
+}
+
+// lockedBuffer is the server's log, kept so a test can read what it said.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 func hashFor(t *testing.T) string {
@@ -55,16 +75,17 @@ func start(t *testing.T, dir string, users []config.User, mutate ...func(*config
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { trail.Close() })
+	logs := &lockedBuffer{}
 	s := New(Deps{
 		Config: cfg, Registry: node.Default, Flows: fs, Audit: trail,
-		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:       slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		Runtime:      nilRuntime,
 		SessionsPath: filepath.Join(dir, "sessions.json"),
 		Version:      "test",
 	})
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
-	return &process{Server: ts, srv: s, trail: trail}
+	return &process{Server: ts, srv: s, trail: trail, logs: logs, dir: dir}
 }
 
 func (p *process) login(t *testing.T, user, pass string) (*http.Response, string) {
@@ -275,14 +296,80 @@ func TestWebsocketTokenRidesAsASubprotocol(t *testing.T) {
 	}
 	conn.Close(websocket.StatusNormalClosure, "")
 
-	_, res, err := websocket.Dial(ctx, wsURL+"?access_token="+tok, &websocket.DialOptions{Subprotocols: []string{"hotloop-flow"}})
-	if err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("a token in the query string: %v %v", err, res)
+	if strings.Contains(p.logs.String(), "query string") {
+		t.Fatalf("the subprotocol path warned about the URL:\n%s", p.logs.String())
 	}
-	_, res, err = websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+	_, res, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		Subprotocols: []string{"hotloop-flow", "hotloop-flow.bearer.0000"},
 	})
 	if err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("a made-up token: %v %v", err, res)
+	}
+}
+
+// Scripts that connect to the websocket put the token in the URL, as every
+// release up to 2.0.5 asked them to. That still works, and says out loud that
+// it shouldn't: a URL is what proxies and access logs keep.
+func TestWebsocketTokenInTheQueryStringStillConnectsAndWarns(t *testing.T) {
+	p := start(t, t.TempDir(), []config.User{{Username: "dana", PasswordHash: hashFor(t), Permissions: []string{"*"}}})
+	_, tok := p.login(t, "dana", testPassword)
+	wsURL := "ws" + strings.TrimPrefix(p.URL, "http") + "/comms"
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	for i := 1; i <= 2; i++ {
+		conn, _, err := websocket.Dial(ctx, wsURL+"?access_token="+tok, &websocket.DialOptions{Subprotocols: []string{"hotloop-flow"}})
+		if err != nil {
+			t.Fatalf("dial %d with the token in the query string: %v", i, err)
+		}
+		conn.Close(websocket.StatusNormalClosure, "")
+		// A warning for every connection, no more and no fewer.
+		if n := strings.Count(p.logs.String(), "websocket token sent in the URL query string"); n != i {
+			t.Fatalf("after connection %d the log has %d warnings:\n%s", i, n, p.logs.String())
+		}
+	}
+	for _, want := range []string{"hotloop-flow.bearer.<token>", "proxy and access logs", "level=WARN"} {
+		if !strings.Contains(p.logs.String(), want) {
+			t.Errorf("the warning does not say %q:\n%s", want, p.logs.String())
+		}
+	}
+
+	// A token that is not one is still refused, query string or not.
+	_, res, err := websocket.Dial(ctx, wsURL+"?access_token=0000", &websocket.DialOptions{Subprotocols: []string{"hotloop-flow"}})
+	if err == nil || res == nil || res.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a made-up token in the query string: %v %v", err, res)
+	}
+}
+
+// The token is in the URL, so the URL must not get into anything Flow writes:
+// not the log, at any level, and not the audit trail.
+func TestWebsocketQueryTokenNeverReachesALog(t *testing.T) {
+	p := start(t, t.TempDir(), []config.User{{Username: "dana", PasswordHash: hashFor(t), Permissions: []string{"*"}}})
+	_, tok := p.login(t, "dana", testPassword)
+	wsURL := "ws" + strings.TrimPrefix(p.URL, "http") + "/comms"
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, wsURL+"?access_token="+tok, &websocket.DialOptions{Subprotocols: []string{"hotloop-flow"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.Close(websocket.StatusNormalClosure, "")
+	// And a refused one, which logs through a different path.
+	_, _, _ = websocket.Dial(ctx, wsURL+"?access_token="+tok+"x", &websocket.DialOptions{Subprotocols: []string{"hotloop-flow"}})
+	p.Server.CloseClientConnections()
+
+	if strings.Contains(p.logs.String(), tok) {
+		t.Errorf("the token is in the log:\n%s", p.logs.String())
+	}
+	if err := p.trail.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(p.dir, "audit.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), tok) || strings.Contains(string(b), "access_token") {
+		t.Errorf("the token is in the audit log:\n%s", b)
 	}
 }

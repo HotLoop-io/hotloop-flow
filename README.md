@@ -784,12 +784,16 @@ when one is presented and is useless to whoever copies it. A session remembers
 who, not what they may do: take a permission or a user out of the config and
 the next request knows.
 
-**No token in a URL, ever.** A browser can't put an `Authorization` header on a
-WebSocket handshake, so the editor's event stream used to carry its token in the
-query string, which is exactly where access logs, proxies and browser history
-keep things. It now offers the token as a second WebSocket subprotocol beside
-`hotloop-flow`, a header nothing logs by habit, and the server answers with
-`hotloop-flow`. A token in a query string doesn't count anywhere.
+**Send the token in a header, not a URL.** A browser can't put an `Authorization`
+header on a WebSocket handshake, so the editor's event stream used to carry its
+token in the query string, which is exactly where access logs, proxies and
+browser history keep things. It now offers the token as a second WebSocket
+subprotocol beside `hotloop-flow`, `hotloop-flow.bearer.<token>`, a header
+nothing logs by habit, and the server answers with `hotloop-flow`. A script that
+still sends `?access_token=` keeps working, because breaking it for an upgrade
+would be worse, and the server logs a warning on every such connection that says
+what to send instead. Flow never writes the URL, or the token in it, to its own
+log or the audit trail.
 
 **Everything that matters leaves a trail.** Logins, failed logins (with whether
 the name even exists, which a client never gets told but an operator should),
