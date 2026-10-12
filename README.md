@@ -54,13 +54,22 @@ what's printed.
 | | |
 |---|---|
 | Binary, linux/amd64, static | **22.0 MB** |
-| Image, `2.0.5` amd64, as `podman image inspect` reports it | **25.4 MB** |
+| Image, `2.1.0` amd64, as `podman image inspect` reports it | **32.1 MB** |
 | Start to answering its first request | **0.05 s** |
 | RSS, idle | **16.4 to 16.7 MiB** |
 | RSS, peak under the HTTP load below | **26.4 to 28.5 MiB** |
 | HTTP, five-node flow, 8 connections | **13.0k to 15.3k req/s** |
 | HTTP latency p50 / p99 | **0.39 to 0.41 ms / 1.78 to 4.03 ms** |
 | Engine, five-node chain, no I/O | **2.20 to 3.11 µs a message**, 3.9 KB allocated |
+
+The image row is the published `2.1.0` image, read on 2026-10-12 with
+`podman image inspect ghcr.io/hotloop-io/hotloop-flow:2.1.0 --format '{{.Size}}'`
+(32,057,016 bytes). It was 25.4 MB at `2.0.5`. The difference is
+`LICENSE`, `NOTICE` and `THIRD_PARTY_LICENSES` in `/usr/share/doc/hotloop-flow/`,
+the last of which is 275 KB of license text for everything compiled in, plus
+whatever else changed between the two releases. I did not split the
+growth between those, so don't read all of it as licenses. The other rows are
+still the 2026-10-02 build.
 
 The start, memory and HTTP rows are one command against
 [the bench flow](docs/bench/bench-flow.json), set up exactly as in
@@ -1203,7 +1212,7 @@ timeouts.
 | `POST /tests/cases` | `flows.write` | Adds the tests in the body, a test file of their own, to the end of the suite. |
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
-| `GET /comms` | `status.read` | The editor's status and debug websocket. The token rides as the subprotocol `hotloop-flow.bearer.<token>`, offered beside `hotloop-flow`. |
+| `GET /comms` | `status.read` | The editor's status and debug websocket. Send the token as the subprotocol `hotloop-flow.bearer.<token>`, offered beside `hotloop-flow`. That is what the editor does. `?access_token=<token>` in the URL still works for scripts that already use it, and logs a warning for every connection that does, because a URL ends up in proxy and access logs. |
 
 `/metrics` and `/health` being unauthenticated is a decision rather than an
 oversight. A Prometheus scraper carries no bearer token, so requiring one means
