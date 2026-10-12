@@ -82,8 +82,11 @@ a line stops, and today the answer is three `.bak` files.
       with who and from where. The deployment log is its first table
 - [x] MFA (TOTP), free and on for anyone who wants it. Nothing about signing in
       safely gets gated, ever
-- [x] Login rate limiting and lockout, sessions that survive a restart, and no
-      more tokens in query strings where access logs can keep them
+- [x] Login rate limiting and lockout, sessions that survive a restart, and the
+      websocket token sent as a subprotocol instead of in the URL. A token in
+      the URL still works for existing scripts and logs a warning, because
+      breaking them on an upgrade was worse than the leak; removing it waits for
+      a major release
 
 ### Phase 2: flow tests
 
