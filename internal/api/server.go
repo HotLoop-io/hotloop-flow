@@ -379,10 +379,18 @@ func (s *Server) auth(perm string, h http.HandlerFunc) http.Handler {
 			return
 		}
 
-		tok := bearerToken(r)
+		tok, viaQuery := requestToken(r)
 		if tok == "" {
 			writeError(w, http.StatusUnauthorized, "no bearer token")
 			return
+		}
+		if viaQuery {
+			// One handshake is one connection, so this is once per connection.
+			// The path and the address, never the URL: the token is in it.
+			s.log.Warn("websocket token sent in the URL query string: it works, "+
+				"but the URL lands in proxy and access logs. Send it as the "+
+				"subprotocol hotloop-flow.bearer.<token> instead",
+				"path", r.URL.Path, "remote", r.RemoteAddr)
 		}
 		user, ok := s.tokens.lookup(tok)
 		if !ok {
@@ -419,19 +427,34 @@ func requestUser(r *http.Request) string {
 	return u
 }
 
-// bearerToken reads the token from the Authorization header, or from a query
-// parameter for the websocket — browsers cannot set headers on a WebSocket
-// handshake.
+// bearerToken reads the token from the Authorization header, or for a
+// websocket from its subprotocol or, still, its query string. Browsers cannot
+// set headers on a WebSocket handshake.
 func bearerToken(r *http.Request) string {
+	tok, _ := requestToken(r)
+	return tok
+}
+
+// requestToken is bearerToken that also says whether the token came out of the
+// URL, so the caller can warn about it without ever logging the URL.
+func requestToken(r *http.Request) (tok string, viaQuery bool) {
 	if h := r.Header.Get("Authorization"); h != "" {
 		if after, found := strings.CutPrefix(h, "Bearer "); found {
-			return strings.TrimSpace(after)
+			return strings.TrimSpace(after), false
 		}
 	}
 	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-		return websocketToken(r)
+		if tok := websocketToken(r); tok != "" {
+			return tok, false
+		}
+		// Up to 2.0.5 this was the only way a websocket carried a token, and
+		// scripts depend on it, so it still works. The subprotocol is the way
+		// to send it; removing this waits for a major release.
+		if tok := r.URL.Query().Get("access_token"); tok != "" {
+			return tok, true
+		}
 	}
-	return ""
+	return "", false
 }
 
 // The editor's websocket can't set an Authorization header, because browsers
@@ -439,7 +462,8 @@ func bearerToken(r *http.Request) string {
 // query string instead, which is exactly where access logs, proxies and
 // browser history keep things. It now offers it as a subprotocol,
 // hotloop-flow.bearer.<token>, beside the real one, hotloop-flow, which is the
-// one the server picks. A header, so nobody logs it by accident.
+// one the server picks. A header, so nobody logs it by accident. The query
+// string still works for the scripts that use it, with a warning.
 const (
 	wsProtocol       = "hotloop-flow"
 	wsBearerProtocol = "hotloop-flow.bearer."
