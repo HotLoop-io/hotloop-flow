@@ -43,7 +43,7 @@ Current release is `2.1.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.1.0`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
 36,000 lines of Go, more than a third of it tests, 64 node types, and the race
-detector comes back clean on every package. Home and lab use is free, and
+detector comes back clean on every package. Home and lab use is free, schools, nonprofits and government are free, and
 business use is free through EmberNET, under HotLoop's Business Source License.
 
 ---
@@ -2176,7 +2176,7 @@ logbook, are Phase 5 of the [roadmap](docs/ROADMAP.md). Until then they run side
 by side and share nothing but a broker, if you give them one.
 
 Flow is under the same license as those four: HotLoop's Business Source License
-1.1. Home and lab use is free. Business use is free when it runs through
+1.1. Home and lab use is free, and so is use by accredited schools and educational institutions, nonprofit organizations and government bodies. Business use is free when it runs through
 [EmberNET](https://embernet.ai), and there is no other business path. Hosting
 Flow as a service for other people, reselling it and embedding it in a product
 you sell are not granted. Unlike the others, Flow's source is public, so you can
@@ -2185,7 +2185,7 @@ read every line you run.
 ## Licence
 
 HotLoop's Business Source License 1.1 (`BUSL-1.1`). It is not an open source
-license, and we won't pretend it is. Each version converts to GPL-3.0 four years
+license, and we won't pretend it is. Each version converts to GPL-3.0 or later four years
 after it is first made publicly available. [LICENSE](LICENSE) is the legal text
 and the [Terms of Service](https://hotloop.io/terms) cover the rest. A few
 pieces are ported from Node-RED and from the libraries its
