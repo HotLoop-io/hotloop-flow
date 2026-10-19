@@ -17,6 +17,11 @@ What that means on a bad night:
   A fast sensor in front of a slow historian backs up, blocks or drops by the
   policy you picked, and it shows up on a graph before it shows up as an OOM
   kill with nothing in the log.
+- **A historian going down for an hour doesn't cost you an hour.** Mark a wire
+  durable and when the node behind it stops taking messages they go to disk in
+  order, and they're still there after a `kill -9`. While it's healthy, nothing is
+  written. [Store and forward](#store-and-forward)
+  was proven against a real InfluxDB that I killed for ten minutes.
 - **Every node runs on its own.** One goroutine per node, so a Function node
   chewing on a big payload costs you a core, not the editor and every other flow
   on the box.
@@ -170,10 +175,46 @@ about it with get and set alone. With `Increment` there's nothing to race. The
 test throws 10,000 concurrent increments at one counter under the race detector
 and loses none.
 
-Know what that buys you today, though. The only store is in memory. Context
-survives a deploy and is gone on every restart, so a counter or a latch in a flow
-resets when the pod moves. A SQLite store that survives restarts is Phase 4 of
-the [roadmap](docs/ROADMAP.md).
+And it survives a restart. Flow, global and node context live in a SQLite file
+on the volume, loaded when a scope is first used and written behind, so a counter
+or a latch in a flow is where you left it when the pod comes back. The atomic
+operations are the same code as before. Changes are batched into one write every
+thirty seconds and a value set to what it already was writes nothing, because I
+care what this does to an SD card more than I care about being clever. A clean
+stop writes everything; a `kill -9` loses up to those thirty seconds, and
+`store.context.flushInterval` is the knob. Details, and what it costs a card, are
+in [docs/durable](docs/durable/README.md).
+
+## Store and forward
+
+Mark a wire durable and, while the node on the other end keeps up, it is an
+ordinary wire and writes nothing to disk. The moment that node stops taking
+messages, the wire spills to the same SQLite file before the sender moves on, and
+a pump delivers them oldest first, one at a time, until the target takes each
+one. So the historian goes down, the readings pile up on disk instead of blocking
+the flow or getting dropped, and they go in, in order, when it comes back. The
+price of writing nothing while it's healthy is that a `kill -9` then loses what
+was in memory, about one poll's worth, and I'd rather say that here than have you
+find out.
+
+```json
+{ "id": "count", "type": "function", "ew_durable": ["influx"], "wires": [["influx", "reply"]] }
+```
+
+It survives a restart, keeps order, honors a disk quota (256 MiB by default, and
+the overflow policy of the node on the other end decides what gives when it's
+full), and shows its depth as `hotloop_flow_durable_wire_depth`. It's
+at-least-once, not exactly-once, and I'd rather tell you that here than have you
+find out in a postmortem: the exact words, and how `influxdb out` stays correct
+anyway, are in [docs/durable](docs/durable/README.md).
+
+The proof is `docs/durable/store-and-forward.sh`: a real InfluxDB 2.9.1 in Podman
+under twenty readings a second, killed for ten minutes, brought back, with the
+runtime killed with `kill -9` once mid-outage and once mid-drain. 15,982 readings
+accepted, 15,982 rows stored, none missing, none doubled. A healthy durable wire
+writes nothing of its own, and with context flushed every thirty seconds the
+whole process wrote 1.7 MiB an hour at twenty messages a second (0.04 GB a day).
+The tables and the commands are in [docs/durable](docs/durable/README.md).
 
 ---
 
@@ -712,10 +753,9 @@ starts with the test's. A node that reads a password from a mounted file through
 `ew_credentialFiles` gets the test's credential for that field instead, because
 a test reads nothing off the disk, and an empty one when the test names none.
 
-Context lives in memory for a test, the same store a flow uses today. Nothing
-here is a file format, on purpose: persistent context is SQLite, on the
-[roadmap](docs/ROADMAP.md), and a fixture is YAML in the test, not a file
-pretending to be a database.
+Context lives in memory for a test, never in the state database, so a test can't
+read what the running flows left behind or leave anything for them. A fixture is
+YAML in the test, not a file pretending to be a database.
 
 ### Nothing leaves the test
 
@@ -1368,7 +1408,7 @@ server:
   maxRequestBytes: 33554432 # 32 MiB, bounds a flow deploy
 
 data:
-  dir: /data                # the PVC. Flows, credentials and the deployment log live here. Context doesn't, it's memory only
+  dir: /data                # the PVC. Flows, credentials, the deployment log and state.db live here
   flowFile: flows.json
   credentialsFile: credentials.json
   credentialSecret: ""      # empty means plaintext, which is refused by default
@@ -1405,6 +1445,16 @@ runtime:
   overflow: block           # block | drop-newest | drop-oldest | error
   blockTimeout: 30s
   closeTimeout: 15s
+
+store:
+  path: ""                  # empty is state.db in data.dir: persistent context and durable wires
+  synchronous: normal       # normal | full. full fsyncs every commit, and wears the card
+  context:
+    persist: true           # false is memory only
+    flushInterval: 30s      # a changed value waits this long; a kill -9 loses it. 0s writes at once
+  durable:
+    maxBytes: 268435456     # disk quota for every durable wire together
+    ackFlush: 100ms         # how long a delivered message waits to be marked done; 0s marks each one first
 
 discovery:
   enabled: false
@@ -1471,6 +1521,9 @@ Secret.
 | `HOTLOOP_FLOW_DEPLOY_TOKEN_HASH` | A deploy token called `deploy`, for CI: `flows.read` and `flows.write`, nothing else. The hash, never the token. |
 | `HOTLOOP_FLOW_GIT_URL`, `HOTLOOP_FLOW_GIT_USERNAME`, `HOTLOOP_FLOW_GIT_PASSWORD` | The git mirror. The password (an access token) is environment only. |
 | `HOTLOOP_FLOW_INBOX_CAPACITY`, `HOTLOOP_FLOW_OVERFLOW` | Scheduler defaults. |
+| `HOTLOOP_FLOW_STORE_PATH`, `HOTLOOP_FLOW_STORE_SYNCHRONOUS` | The state database: where it is, and whether every commit is fsynced. |
+| `HOTLOOP_FLOW_CONTEXT_PERSIST`, `HOTLOOP_FLOW_CONTEXT_FLUSH_INTERVAL` | Persistent context. `false` turns it off; the interval is a duration such as `30s`. |
+| `HOTLOOP_FLOW_DURABLE_MAX_BYTES`, `HOTLOOP_FLOW_DURABLE_ACK_FLUSH` | The disk quota for durable wires, and how long a delivered message waits to be marked done. |
 | `HOTLOOP_FLOW_TESTS_GATE` | `true` turns on the [deploy gate](#the-deploy-gate). |
 | `HOTLOOP_FLOW_LOG_LEVEL`, `HOTLOOP_FLOW_LOG_FORMAT` | Logging. |
 | `HOTLOOP_FLOW_DISCOVERY_ENABLED`, `HOTLOOP_FLOW_DISCOVERY_CIDRS` | Discovery nodes. Comma-separated CIDRs. |
@@ -1600,6 +1653,14 @@ you should not need a second container to find out that your inbox is full.
 | `hotloop_flow_git_mirror_behind_deployments` | gauge | Deployments the git mirror's remote doesn't have yet. Only with a mirror. |
 | `hotloop_flow_git_mirror_push_failures_total` | counter | Pushes to the mirror that failed and will be retried. |
 | `hotloop_flow_git_mirror_pushes_total` | counter | Pushes to the mirror that succeeded. |
+| `hotloop_flow_durable_wire_depth` | gauge | Messages waiting on a durable wire, on disk. Label `wire`. |
+| `hotloop_flow_durable_wire_bytes` | gauge | Quota charged to that wire's waiting messages. |
+| `hotloop_flow_durable_wire_delivered_total` | counter | Messages the wire handed over and the target took. |
+| `hotloop_flow_durable_wire_retries_total` | counter | Times the wire sent a message again because its target failed it. A target that is down climbs this. |
+| `hotloop_flow_durable_wire_dropped_total` | counter | Messages the quota policy refused or evicted, and queues purged when a wire stopped being durable. |
+| `hotloop_flow_durable_bytes`, `hotloop_flow_durable_max_bytes` | gauge | Quota used by every durable wire together, and the quota. |
+| `hotloop_flow_context_flushes_total`, `hotloop_flow_context_rows_written_total` | counter | Transactions that wrote context, and rows they actually changed. |
+| `hotloop_flow_context_flush_failures_total` | counter | Context flushes that failed. The changes are kept and tried again. Should be zero. |
 | `hotloop_flow_audit_write_failures_total` | counter | Audit entries that couldn't be written. Should be zero forever. |
 | `hotloop_flow_traces_kept` | gauge | Message traces in the buffer right now. |
 | `hotloop_flow_trace_bytes` | gauge | Roughly what they hold. Bounded by `trace.maxBytes`. |
@@ -1789,8 +1850,8 @@ Node-RED logs and nobody reads.
 
 **It runs.** It starts, serves the API and the editor, loads flows off the
 volume, moves messages, and comes back after a restart with its flows and
-credentials. Not its context (see below). The chart deploys it in all three
-network modes and the whole publish chain resolves.
+credentials and context. The chart deploys it in all three network modes and the
+whole publish chain resolves.
 
 **Verified against real infrastructure**, not just against my own encoders:
 mosquitto, InfluxDB 2.7 and PostgreSQL 16, in podman, on 2026-08-07. The
@@ -1816,9 +1877,13 @@ the point. A flow that leans on one breaks the day it stops being there.
 - **No S7 or EtherNet/IP nodes yet.** Modbus TCP, OPC UA and Sparkplug B are
   in. `scan` finds an EtherNet/IP device and nothing in the palette can talk to
   it. Phase 5.
-- **Persistent context.** Context lives in memory only, so flow and global
-  context are gone every time the process restarts, and a counter or a latch in a
-  flow resets when the pod moves. SQLite, Phase 4.
+- **No dead-letter queue on a durable wire.** A message its target fails forever
+  holds the wire, with the ones behind it. Fine for a historian that's down, wrong
+  for a message that's malformed. The retry counter shows it, nothing sets it
+  aside yet.
+- **Durable wires have never been on a Pi.** Store and forward and the disk
+  writes were measured on an x86 box under WSL. The Pi 4 and Zero 2 W numbers
+  are still to do, and I won't print a card figure I didn't measure on a card.
 - **A node that uses the WASM host.** The host is built and tested. Nothing in
   the palette calls it, so WASM guests can't run in a flow today.
 - **It has never run on a real plant floor.** Shepherd Boy Farms is the intended
@@ -1854,7 +1919,7 @@ hotloop-flow/
     runtime/         the scheduler, delivery, error and status routing
     flowtest/        flow tests: the YAML, the runner, JUnit; replay and tests from a trace
     otlp/            the OpenTelemetry export: spans over OTLP/HTTP
-    store/           context, flow file, credentials
+    store/           context (memory and SQLite), durable wire queues, flow file, credentials
     js/              goja host
     wasmhost/        wazero host, tested, not used by any node yet
     api/             admin REST and the editor websocket

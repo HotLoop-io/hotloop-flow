@@ -429,3 +429,66 @@ func TestTheTestsGate(t *testing.T) {
 		t.Fatalf("a negative timeout: %v", err)
 	}
 }
+
+// Context survives a restart unless somebody turns that off, the state file
+// lives on the data volume, and every knob has an environment name.
+func TestStoreDefaultsAndOverrides(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	t.Setenv("HOTLOOP_FLOW_DATA_DIR", "/vol")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Store.Context.Persist {
+		t.Error("context does not persist by default")
+	}
+	if got := cfg.StorePath(); got != filepath.Join("/vol", "state.db") {
+		t.Errorf("state database defaults to %s, want it under the data directory", got)
+	}
+	if cfg.Store.Context.FlushInterval.Seconds() != 30 || cfg.Store.Synchronous != "normal" {
+		t.Errorf("flush %v synchronous %s", cfg.Store.Context.FlushInterval, cfg.Store.Synchronous)
+	}
+
+	t.Setenv("HOTLOOP_FLOW_STORE_PATH", "/elsewhere/ctx.db")
+	t.Setenv("HOTLOOP_FLOW_CONTEXT_PERSIST", "false")
+	t.Setenv("HOTLOOP_FLOW_CONTEXT_FLUSH_INTERVAL", "30s")
+	t.Setenv("HOTLOOP_FLOW_STORE_SYNCHRONOUS", "full")
+	t.Setenv("HOTLOOP_FLOW_DURABLE_MAX_BYTES", "5242880")
+	t.Setenv("HOTLOOP_FLOW_DURABLE_ACK_FLUSH", "0s")
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StorePath() != "/elsewhere/ctx.db" || cfg.Store.Context.Persist ||
+		cfg.Store.Context.FlushInterval.Seconds() != 30 || cfg.Store.Synchronous != "full" ||
+		cfg.Store.Durable.MaxBytes != 5242880 || cfg.Store.Durable.AckFlush != 0 {
+		t.Errorf("environment not applied: %+v", cfg.Store)
+	}
+}
+
+func TestStoreFromTheFileAndRefusals(t *testing.T) {
+	clearEnv(t)
+	withAdmin(t)
+	cfg, err := Load(writeConfig(t, "store:\n  path: /data/ctx.db\n  context:\n    persist: false\n    flushInterval: 0s\n  durable:\n    maxBytes: 2097152\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StorePath() != "/data/ctx.db" || cfg.Store.Context.Persist || cfg.Store.Durable.MaxBytes != 2097152 {
+		t.Errorf("file not applied: %+v", cfg.Store)
+	}
+
+	for body, want := range map[string]string{
+		"store:\n  synchronous: sometimes\n":           "store.synchronous",
+		"store:\n  context:\n    flushInterval: -1s\n": "flushInterval",
+		"store:\n  durable:\n    maxBytes: 100\n":      "maxBytes",
+		"store:\n  durable:\n    ackFlush: -1s\n":      "ackFlush",
+		"store:\n  pth: /x\n":                          "parsing",
+	} {
+		clearEnv(t)
+		withAdmin(t)
+		if _, err := Load(writeConfig(t, body)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: err = %v, want it to mention %q", body, err, want)
+		}
+	}
+}

@@ -347,9 +347,10 @@ func (rt *Runtime) plan(old, next *graph, opts UpdateOptions) plan {
 
 // layoutKeys are the properties that only say where a node is drawn and what
 // it is wired to. Moving a node is not a reason to restart it, and wires are
-// applied to a running node without one. The same three keys Node-RED leaves
-// out when it decides what a deploy changed.
-var layoutKeys = map[string]bool{"x": true, "y": true, "wires": true}
+// applied to a running node without one. The first three are the keys Node-RED
+// leaves out when it decides what a deploy changed; ew_durable says which of
+// the wires are durable, so it is wiring too.
+var layoutKeys = map[string]bool{"x": true, "y": true, "wires": true, durableKeyProp: true}
 
 // sameNode reports whether a node would run identically in both graphs, so it
 // can be left running across the deploy.

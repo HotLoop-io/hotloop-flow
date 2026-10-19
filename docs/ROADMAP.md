@@ -121,19 +121,26 @@ Tests are YAML next to the flows, so they diff and review the same way.
 
 A historian going down for an hour shouldn't cost you an hour of readings.
 
-- [ ] Persistent context in SQLite, pure Go with no cgo, with the atomic
+- [x] Persistent context in SQLite, pure Go with no cgo, with the atomic
       operations (compare-and-swap, increment, update). One store for context now
       and durable queues next, not two. Today flow and global context are gone on
-      every restart, which is the gap most likely to bite somebody first
-- [ ] Durable wires: mark a wire durable and its queue spills to that same store
+      every restart, which is the gap most likely to bite somebody first.
+      Written behind in one transaction per thirty seconds, and a value set to what
+      it already was writes nothing
+- [x] Durable wires: mark a wire durable and its queue spills to that same store
       instead of blocking or dropping. Survives a restart, keeps order, honors a
-      disk quota, and the depth is a metric
-- [ ] Store-and-forward proven the ugly way: kill the real InfluxDB for ten
+      disk quota, and the depth is a metric. Marked in the flow file with
+      `ew_durable`, so the round trip stays byte for byte. There's no editor
+      control for it yet
+- [x] Store-and-forward proven the ugly way: kill the real InfluxDB for ten
       minutes under steady input, bring it back, count rows. None missing, none
-      doubled. Then kill -9 the runtime mid-queue and count again
+      doubled. Then kill -9 the runtime mid-queue and count again. The script, the
+      counts and the disk writes per hour are in [durable/](durable/README.md)
 - [ ] Proven on a real Pi 4 and a Zero 2 W: memory, start time, sustained
       messages per second, and SD card writes per hour, because a context store
-      that chews through an SD card is a bug
+      that chews through an SD card is a bug. The writes per hour are measured on
+      x86 under WSL and published. The boards aren't, because I haven't had them
+      in front of me, so this stays open
 
 ### Phase 5: the plant floor
 

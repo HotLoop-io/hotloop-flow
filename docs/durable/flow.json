@@ -1,0 +1,97 @@
+[
+    {
+        "id": "sf-tab",
+        "type": "tab",
+        "label": "store and forward",
+        "info": "The proof flow for durable wires. A reading comes in over HTTP, is counted in flow context, and goes to InfluxDB over a wire marked durable. While InfluxDB takes the readings the wire writes nothing to disk. When it stops taking them the wire spills to disk, and from then on the reply to the sender is on the same output after the durable wire, so a 200 means the reading is on disk."
+    },
+    {
+        "id": "sf-in",
+        "type": "http in",
+        "z": "sf-tab",
+        "name": "",
+        "url": "/reading",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 130,
+        "y": 100,
+        "wires": [
+            [
+                "sf-count"
+            ]
+        ]
+    },
+    {
+        "id": "sf-count",
+        "type": "function",
+        "z": "sf-tab",
+        "name": "count",
+        "func": "flow.set('seen', (flow.get('seen') || 0) + 1);\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 290,
+        "y": 100,
+        "ew_durable": [
+            "sf-influx"
+        ],
+        "wires": [
+            [
+                "sf-influx",
+                "sf-reply"
+            ]
+        ]
+    },
+    {
+        "id": "sf-influx",
+        "type": "influxdb out",
+        "z": "sf-tab",
+        "name": "",
+        "server": "sf-server",
+        "measurement": "readings",
+        "measurementType": "str",
+        "tags": [],
+        "fields": [
+            {
+                "column": "seq",
+                "value": "payload.seq",
+                "valueType": "msg"
+            }
+        ],
+        "timestamp": "",
+        "timestampType": "str",
+        "x": 470,
+        "y": 60,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "sf-reply",
+        "type": "http response",
+        "z": "sf-tab",
+        "name": "",
+        "statusCode": "200",
+        "headers": [],
+        "x": 470,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "sf-server",
+        "type": "hotloop-flow-influxdb",
+        "name": "proof influx",
+        "url": "http://127.0.0.1:18087",
+        "apiVersion": "2",
+        "org": "proof",
+        "bucket": "proof",
+        "precision": "ns",
+        "timeout": 5,
+        "ew_credentialFiles": {
+            "token": "@DATA@/influx-token"
+        }
+    }
+]

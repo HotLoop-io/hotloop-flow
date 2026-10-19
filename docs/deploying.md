@@ -31,8 +31,11 @@ those refusals is on purpose:
 - **Somewhere for `/data` to live.** Flows, credentials and three generations of
   backups go there. A container with no volume works right up until it restarts.
 
-Context (flow and global) lives in memory today and does not survive a restart,
-whichever way you deploy. That's on the [roadmap](ROADMAP.md).
+Context (flow, global and node) is kept in a SQLite file, `state.db`, on that same
+volume, and survives a restart whichever way you deploy. So do the queues behind
+durable wires. A container with no volume loses the file with everything else, so
+it keeps context only until the container is replaced. What gets written, how
+often, and what it costs a flash card is in [durable/README.md](durable/README.md).
 
 ---
 
@@ -121,6 +124,9 @@ finishes the handshake instead of leaving half-open connections on a PLC.
 |---|---|---|
 | `image.tag` | the chart's app version | Pin it. The explicit tag is the update mechanism. |
 | `persistence.size`, `persistence.storageClass` | `2Gi`, cluster default | Where `/data` lives. |
+| `store.context.persist`, `store.context.flushInterval` | on, `30s` | Context across restarts, and how long a changed value waits before it's written. A kill -9 loses that much. |
+| `store.durable.maxBytes`, `store.durable.ackFlush` | 256 MiB, `100ms` | The disk quota for durable wires, and how long a delivered message waits to be marked done. |
+| `store.synchronous` | `normal` | `full` fsyncs every commit. Stronger against a power cut, harder on the card. |
 | `discovery.enabled`, `discovery.allowedCIDRs` | off, empty | The scan nodes. Enabled with an empty list refuses to start. |
 | `exec.enabled`, `exec.allowedCommands` | off, empty | The exec node. Same rule. |
 | `files.allowedPaths` | empty | Extra trees the file nodes may reach beyond `/data`. |
