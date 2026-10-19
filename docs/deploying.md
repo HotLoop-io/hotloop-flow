@@ -131,6 +131,11 @@ finishes the handshake instead of leaving half-open connections on a PLC.
 | `trace.traces`, `trace.maxHops`, `trace.maxMessageBytes`, `trace.maxBytes` | `256`, `512`, `16384`, `16777216` | How much tracing keeps, in memory, and never more. A restart starts the list over. |
 | `trace.otlp.endpoint` | empty | An OpenTelemetry collector's OTLP/HTTP address, like `http://collector:4318`. Empty means no export. `trace.otlp.serviceName` and `trace.otlp.interval` go with it. |
 | `trace.otlp.headersSecret.name`, `.key` | empty, `headers` | A Secret holding the collector's headers as `Name=value` pairs separated by commas, for a hosted collector's API key. It reaches the pod as an environment variable and never touches the ConfigMap. |
+| `history.retain` | `100` | How many deployment records are kept under `/data/deployments`. `0` keeps every one, which is a decision about disk, since each record is a copy of the flow file. |
+| `history.git.url` | empty | Mirror every deploy to a git repository as a commit from whoever deployed. Empty is off. `history.git.branch`, `.path`, `.emailDomain` and `.username` go with it, and left empty they get the binary's own defaults. |
+| `history.git.passwordSecret.name`, `.key` | empty, `password` | A Secret holding the access token for that repository. It reaches the pod as `HOTLOOP_FLOW_GIT_PASSWORD` and never touches the ConfigMap. |
+| `audit.maxBytes`, `audit.keep` | 16 MiB, `4` | When `/data/audit.log` rotates, and how many rotated files stay beside it. |
+| `tests.gate`, `tests.timeout` | off, `2m` | `true` refuses a deploy whose flows fail `/data/flows.test.yaml`. Off by default, because a gate nobody asked for fails a deploy at 3 AM for a reason nobody on shift has heard of. |
 | `discovery.enabled`, `discovery.allowedCIDRs` | off, empty | The scan nodes. Enabled with an empty list refuses to start. |
 | `exec.enabled`, `exec.allowedCommands` | off, empty | The exec node. Same rule. |
 | `files.allowedPaths` | empty | Extra trees the file nodes may reach beyond `/data`. |
@@ -138,7 +143,7 @@ finishes the handshake instead of leaving half-open connections on a PLC.
 | `metrics.serviceMonitor.enabled` | off | Prometheus Operator scraping. |
 | `ingress.enabled` | off | If you want it reachable from outside the cluster. |
 
-Every `trace.*` and `store.*` value has to land in the field of the same name in
+Every `trace.*`, `store.*`, `history.*`, `audit.*` and `tests.*` value has to land in the field of the same name in
 `config.yaml`, and CI proves it: it renders the chart, takes the config out of the
 ConfigMap and loads it with the binary's own loader, which refuses keys it doesn't
 know. A default render has to equal the binary's own defaults too. I got tired of

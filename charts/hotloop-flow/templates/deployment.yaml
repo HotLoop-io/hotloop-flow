@@ -122,6 +122,13 @@ spec:
                   name: {{ .Values.trace.otlp.headersSecret.name }}
                   key: {{ .Values.trace.otlp.headersSecret.key }}
             {{- end }}
+            {{- if .Values.history.git.passwordSecret.name }}
+            - name: HOTLOOP_FLOW_GIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.history.git.passwordSecret.name }}
+                  key: {{ .Values.history.git.passwordSecret.key }}
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

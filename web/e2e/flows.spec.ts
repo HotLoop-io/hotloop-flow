@@ -117,3 +117,53 @@ test('the only flow cannot be deleted', async ({ page, request }) => {
   await expect(tabs(page)).toHaveCount(1);
   await expect(allNodes(page)).toHaveCount(3);
 });
+
+/** Catch, Status and Complete nodes on the first flow, watching nodes on both. */
+function watchers(): Entry[] {
+  const at = (id: string, type: string, y: number, scope: string[]): Entry => ({ id, type, z: 't1', name: id, scope, x: 120, y, wires: [[]] });
+  return [
+    ...twoFlows(),
+    at('k1', 'catch', 300, ['c1', 'd2']),
+    at('s1', 'status', 360, ['d2', 'c1']),
+    at('p1', 'complete', 420, ['d2']),
+    at('k2', 'catch', 480, ['d2']),
+    at('s2', 'status', 540, ['d2']),
+  ];
+}
+
+test('deleting a flow takes its nodes out of the Catch, Status and Complete scopes that named them', async ({ page, request }) => {
+  await seed(request, watchers());
+  await signIn(page);
+  await tabs(page).nth(1).click();
+  await page.locator('[data-test="flow-properties"]').click();
+  await page.locator('[data-test="flow-delete"]').click();
+  await page.locator('[data-test="flow-delete-confirm"]').click();
+  await deploy(page);
+
+  const flows = await deployed(request);
+  const scope = (id: string) => flows.find((e) => e.id === id)!.scope;
+  expect(scope('k1')).toEqual(['c1']);
+  expect(scope('s1')).toEqual(['c1']);
+  // Complete watches nothing when its list is empty, so emptying it changes nothing.
+  expect(scope('p1')).toEqual([]);
+  // An empty list on a Catch or a Status is the whole flow, which is not what a
+  // node that only ever watched one thing meant. These keep their last id and
+  // stay as quiet as they were.
+  expect(scope('k2')).toEqual(['d2']);
+  expect(scope('s2')).toEqual(['d2']);
+});
+
+test('deleting a node takes it out of the scopes that named it', async ({ page, request }) => {
+  await seed(request, watchers());
+  await signIn(page);
+  await canvasNode(page, 'c1').locator('.node-body').click();
+  await focusCanvas(page);
+  await page.keyboard.press('Delete');
+  await deploy(page);
+
+  const flows = await deployed(request);
+  const scope = (id: string) => flows.find((e) => e.id === id)!.scope;
+  expect(scope('k1')).toEqual(['d2']);
+  expect(scope('s1')).toEqual(['d2']);
+  expect(scope('p1')).toEqual(['d2']);
+});

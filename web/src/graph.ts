@@ -27,6 +27,45 @@ const PORT_ID = /^@(in|out):(.+):([0-9]+)$/;
 /** The id the editor gives a template's port, which exists nowhere in the file. */
 export const portId = (kind: 'in' | 'out', subflow: string, n: number): string => `@${kind}:${subflow}:${n}`;
 
+/** `$(NAME)` or `${NAME}` in a string. */
+const ENV_REF = /\$[({]([A-Za-z_][A-Za-z0-9_.-]*)[)}]/g;
+/** `env.get("NAME")` in function code, and `$env("NAME")` in JSONata. */
+const ENV_CALL = /(?:\benv\.get|\$env)\(\s*["']([^"']+)["']\s*\)/g;
+
+/**
+ * The environment variables an entry reads: a typed field whose type is env
+ * (the name is in the field beside the type), `$(NAME)` and `${NAME}` inside
+ * any string, and env.get calls in code. Credentials are not in the entry and
+ * so are not looked at.
+ */
+export function envNamesIn(entry: FlowEntry): Set<string> {
+  const names = new Set<string>();
+  const walk = (v: unknown, key: string): void => {
+    if (typeof v === 'string') {
+      for (const re of [ENV_REF, ENV_CALL]) for (const m of v.matchAll(re)) names.add(m[1]!);
+      return;
+    }
+    if (Array.isArray(v)) { for (const x of v) walk(x, key); return; }
+    if (!v || typeof v !== 'object') return;
+    const obj = v as Record<string, unknown>;
+    for (const [k, x] of Object.entries(obj)) {
+      if (x === 'env' && k !== 'type') {
+        // `to` beside `tot`, `v` beside `vt`, `value` beside `valueType`.
+        const base = k.endsWith('Type') ? k.slice(0, -4) : k.endsWith('t') ? k.slice(0, -1) : '';
+        const named = obj[base];
+        if (base && typeof named === 'string' && named) names.add(named);
+      }
+      if (k === 'type' && x === 'env' && typeof obj.value === 'string' && obj.value) names.add(obj.value);
+      walk(x, k);
+    }
+  };
+  for (const [k, x] of Object.entries(entry)) {
+    if (k === 'id' || k === 'z' || k === 'g' || k === 'wires' || k === 'type') continue;
+    walk(x, k);
+  }
+  return names;
+}
+
 export function parsePortId(id: string): { kind: 'in' | 'out'; subflow: string; n: number } | null {
   const m = PORT_ID.exec(id);
   return m ? { kind: m[1] as 'in' | 'out', subflow: m[2]!, n: Number(m[3]) } : null;
@@ -459,6 +498,17 @@ export class Graph {
           }
         }
       }
+      // Catch, Status and Complete name the nodes they watch. A deleted id left
+      // in the list watches nothing, and the editor would show a node that is
+      // not there. An empty list is not "nothing" for Catch and Status though,
+      // it is the whole flow, so a list that would empty keeps its last id and
+      // stays as inert as it was. Complete watches nothing when it is empty.
+      if ((e.type === 'catch' || e.type === 'status' || e.type === 'complete') && Array.isArray(e.scope)) {
+        const kept = (e.scope as unknown[]).filter((id) => !(typeof id === 'string' && doomed.has(id)));
+        if (kept.length !== (e.scope as unknown[]).length) {
+          e.scope = kept.length === 0 && e.type !== 'complete' ? (e.scope as unknown[]).slice(-1) : kept;
+        }
+      }
       // Link nodes name each other across flows, and a durable wire names the
       // node it goes to. Both are lists of ids that outlive what they name.
       if (Array.isArray(e.links)) e.links = (e.links as string[]).filter((id) => !doomed.has(id));
@@ -789,6 +839,55 @@ export class Graph {
       out: leaves.map((l) => ({ x: snap(maxX + dx + 220), y: snap((l.node.y ?? 0) + dy), wires: [{ id: l.node.id, port: l.port }] })),
     };
 
+    // Configuration nodes scoped to the flow (they carry a z) are only usable
+    // from that flow. The nodes that used them are leaving it, so the ones only
+    // those nodes use go in with them, and one that something staying behind
+    // also uses becomes global so both ends keep sharing the one connection.
+    // Left where it was, the node in the subflow would point at a config node
+    // that belongs to somebody else's flow, and deleting that flow would take
+    // it out from under the subflow.
+    const closure = this.flowScopedConfigsUsedBy(nodes, scope);
+    const staying = new Set<string>();
+    const outside = (cfg: FlowEntry, movingOut: Set<string>) => this.entries.some((e) =>
+      e.id !== cfg.id && !inside.has(e.id) && !movingOut.has(e.id)
+      && Object.entries(e).some(([k, v]) => k !== 'id' && k !== 'z' && k !== 'g' && v === cfg.id));
+    for (let changed = true; changed;) {
+      changed = false;
+      const leaving = new Set([...closure].filter((id) => !staying.has(id)));
+      for (const id of leaving) {
+        const cfg = this.entries.find((e) => e.id === id)!;
+        // Something that is not moving uses it, or a config that is staying does.
+        const leavingToo = new Set([...closure].filter((c) => c !== id && !staying.has(c)));
+        if (outside(cfg, leavingToo)) { staying.add(id); changed = true; }
+      }
+    }
+    // Everything a staying config names has to stay reachable from it.
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const id of [...staying]) {
+        for (const ref of this.configRefsOf(this.entries.find((e) => e.id === id)!)) {
+          if (closure.has(ref) && !staying.has(ref)) { staying.add(ref); changed = true; }
+        }
+      }
+    }
+    for (const id of closure) {
+      const cfg = this.entries.find((e) => e.id === id)!;
+      if (staying.has(id)) delete cfg.z; else cfg.z = tplId;
+    }
+
+    // `$(NAME)` and `${NAME}` references, env-typed fields and env.get calls
+    // that name a variable the flow declares. The subflow declares it too, as a
+    // property that forwards to whoever places it, so the value still comes
+    // from the same flow it did, an instance can override it, and the template
+    // says what it needs. A copy of the value would stop following the flow.
+    const declared = ((scopeTpl ?? this.entries.find((e) => e.id === scope && e.type === 'tab'))?.env as { name: string }[] | undefined) ?? [];
+    const wanted = new Set<string>();
+    for (const e of [...nodes, ...[...closure].filter((id) => !staying.has(id)).map((id) => this.entries.find((x) => x.id === id)!)]) {
+      for (const name of envNamesIn(e)) wanted.add(name);
+    }
+    tpl.env = declared.filter((v) => v.name && wanted.has(v.name)).map((v) => ({ name: v.name, type: 'env', value: v.name }));
+
+
     const instance: FlowEntry = {
       id: instanceId, type: SUBFLOW_PREFIX + tplId, z: scope, name: '', x: at.x, y: at.y, env: [],
       wires: leaves.map(() => []),
@@ -844,6 +943,36 @@ export class Graph {
     this.touch();
     return instance;
   }
+
+  /** The ids of the configuration nodes an entry names through its settings. */
+  private configRefsOf(e: FlowEntry): string[] {
+    const out: string[] = [];
+    for (const p of this.descriptor(e.type)?.props ?? []) {
+      if (p.kind !== 'configRef') continue;
+      const v = e[p.name];
+      if (typeof v === 'string' && v) out.push(v);
+    }
+    return out;
+  }
+
+  /**
+   * The configuration nodes scoped to `scope` that these nodes use, and
+   * whatever those use in turn.
+   */
+  private flowScopedConfigsUsedBy(nodes: FlowEntry[], scope: string): Set<string> {
+    const found = new Set<string>();
+    const queue = [...nodes];
+    while (queue.length > 0) {
+      for (const id of this.configRefsOf(queue.pop()!)) {
+        const cfg = this.entries.find((e) => e.id === id);
+        if (!cfg || found.has(id) || cfg.z !== scope || !this.isConfig(cfg)) continue;
+        found.add(id);
+        queue.push(cfg);
+      }
+    }
+    return found;
+  }
+
 
   // ── Durable wires ──────────────────────────────────────────────────────────
 
