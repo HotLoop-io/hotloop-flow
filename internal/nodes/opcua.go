@@ -72,16 +72,43 @@ type opcuaServer struct {
 	clientCertDER []byte
 	clientKey     *rsa.PrivateKey
 
-	mu sync.Mutex
-	cl *opcua.Client
+	// mu guards cl and dial and is never held across the network. A connect
+	// is one goroutine, shared by everybody who wants the session, so a slow
+	// endpoint discovery costs the callers waiting on it their own timeout
+	// and nothing else: Close, lost and a caller whose flow was stopped all
+	// get through while it runs.
+	mu     sync.Mutex
+	cl     *opcua.Client
+	dial   *opcuaDial
+	closed bool
+	life   context.Context
+	stop   context.CancelFunc
+}
+
+// opcuaDial is one connect in flight. done closes when cl or err is set.
+type opcuaDial struct {
+	done chan struct{}
+	cl   *opcua.Client
+	err  error
 }
 
 // opcuaPolicies are the policies this node offers: the two that open a channel
 // against a real server in this repository's tests. gopcua also names
-// Aes256_Sha256_RsaPss, Basic256 and Basic128Rsa15. The first fails against
-// Microsoft's OPC PLC with BadSecurityChecksFailed on the client's signature,
-// and the other two are deprecated by the OPC Foundation and the test server
-// doesn't offer them, so a setting nobody could check isn't in the list.
+// Aes256_Sha256_RsaPss, Basic256 and Basic128Rsa15.
+//
+// Aes256_Sha256_RsaPss is left out because of a bug in gopcua, not in the server
+// and not in how this node uses it. gopcua v0.9.1 (the latest release) sets
+// uapolicy.RSAOAEPMinPaddingSHA256 to (2*64)+2 where RSA-OAEP with SHA-256 needs
+// (2*32)+2. The OpenSecureChannel plaintext is split into 126 byte blocks where a
+// server expects 190, and a server that checks the layout, the .NET stack under
+// Microsoft's OPC PLC, answers BadSecurityChecksFailed: "Could not verify the
+// signature on the message". With that one constant changed, the same client
+// connects to the same OPC PLC in both Sign and SignAndEncrypt. The fix is open
+// upstream as gopcua/opcua pull requests 915 and 931. TestOPCUAAes256RsaPssWaitsOnGopcua
+// fails the day a gopcua update carries it, which is the day to add the policy back.
+//
+// Basic256 and Basic128Rsa15 are deprecated by the OPC Foundation and the test
+// server doesn't offer them, so a setting nobody could check isn't in the list.
 var opcuaPolicies = []string{"Basic256Sha256", "Aes128_Sha256_RsaOaep"}
 
 func registerOPCUAConfig() {
@@ -149,6 +176,7 @@ func newOPCUAServer(def *node.Definition) (node.Node, error) {
 		return nil, fmt.Errorf("endpoint %q has to look like opc.tcp://host:4840. The scheme is opc.tcp", endpoint)
 	}
 	s := &opcuaServer{endpoint: endpoint, svc: def.Services, tlsID: p.PropString("tls", "")}
+	s.life, s.stop = context.WithCancel(context.Background())
 
 	switch p.PropString("securityMode", "None") {
 	case "None", "":
@@ -288,7 +316,9 @@ func (s *opcuaServer) Close(ctx context.Context, _ bool) error {
 	s.mu.Lock()
 	cl := s.cl
 	s.cl = nil
+	s.closed = true
 	s.mu.Unlock()
+	s.stop()
 	if cl != nil {
 		cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
@@ -316,11 +346,15 @@ func (s *opcuaServer) lost(cl *opcua.Client) {
 
 func (s *opcuaServer) client(ctx context.Context) (*opcua.Client, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	if s.closed {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("the OPC UA server config for %s was removed or redeployed while this was waiting", s.endpoint)
+	}
 	if s.cl != nil {
 		if s.cl.State() == opcua.Connected {
-			return s.cl, nil
+			cl := s.cl
+			s.mu.Unlock()
+			return cl, nil
 		}
 		old := s.cl
 		s.cl = nil
@@ -330,8 +364,49 @@ func (s *opcuaServer) client(ctx context.Context) (*opcua.Client, error) {
 			_ = old.Close(cctx)
 		}()
 	}
+	d := s.dial
+	if d == nil {
+		d = &opcuaDial{done: make(chan struct{})}
+		s.dial = d
+		go s.connect(d)
+	}
+	s.mu.Unlock()
 
-	cctx, cancel := context.WithTimeout(ctx, s.timeout+5*time.Second)
+	select {
+	case <-d.done:
+		return d.cl, d.err
+	case <-s.life.Done():
+		// Closed while waiting. The connect goroutine is still unwinding from
+		// a dial that may not heed its context, and nobody should sit out its
+		// timeout for that.
+		return nil, fmt.Errorf("the OPC UA server config for %s was removed or redeployed while this was waiting", s.endpoint)
+	case <-ctx.Done():
+		return nil, s.explain("waiting for the session", ctx.Err())
+	}
+}
+
+// connect opens the one session everybody is waiting on. It runs on the
+// server's own context rather than a caller's, so the caller that happened to
+// ask first walking away doesn't fail the ones behind it.
+func (s *opcuaServer) connect(d *opcuaDial) {
+	cl, err := s.open()
+	s.mu.Lock()
+	if err == nil && s.closed {
+		go func() { _ = cl.Close(context.Background()) }()
+		cl, err = nil, fmt.Errorf("the OPC UA server config for %s was removed or redeployed while this was connecting", s.endpoint)
+	}
+	if err == nil {
+		s.cl = cl
+	}
+	s.dial = nil
+	d.cl, d.err = cl, err
+	s.mu.Unlock()
+	close(d.done)
+}
+
+// open does the network part: discovery, then the session. It holds no lock.
+func (s *opcuaServer) open() (*opcua.Client, error) {
+	cctx, cancel := context.WithTimeout(s.life, s.timeout+5*time.Second)
 	defer cancel()
 
 	opts := []opcua.Option{
@@ -388,7 +463,6 @@ func (s *opcuaServer) client(ctx context.Context) (*opcua.Client, error) {
 		_ = cl.Close(context.Background())
 		return nil, s.explain("connecting", err)
 	}
-	s.cl = cl
 	return cl, nil
 }
 

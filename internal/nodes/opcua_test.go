@@ -24,6 +24,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/ua"
+	"github.com/gopcua/opcua/uapolicy"
 )
 
 // ---------------------------------------------------------------------------
@@ -813,5 +814,133 @@ func TestOPCUAUnknownHostSaysSo(t *testing.T) {
 	_, _, err := opcRead(t, svc, "ns=2;s=A")
 	if err == nil || !strings.Contains(err.Error(), "couldn't find a host called") {
 		t.Errorf("error = %v", err)
+	}
+}
+
+// A server that accepts the connection and never says a word. Endpoint
+// discovery against it takes the whole timeout plus five seconds, and the
+// connect used to hold the server config's lock for all of it, so Close, and
+// every other node on the same server, queued behind one hung dial.
+func TestOPCUAHungDiscoveryDoesNotLockOutTheOtherNodes(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip("no loopback")
+	}
+	var held []net.Conn
+	var heldMu sync.Mutex
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			heldMu.Lock()
+			held = append(held, c)
+			heldMu.Unlock()
+		}
+	}()
+	defer func() {
+		l.Close()
+		heldMu.Lock()
+		for _, c := range held {
+			c.Close()
+		}
+		heldMu.Unlock()
+	}()
+
+	svc, done := opcLive(t, l.Addr().String(), opcOpts{extra: `,"timeout":4`})
+	srv := svc.configs["srv"].(*opcuaServer)
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := srv.client(context.Background())
+		first <- err
+	}()
+	time.Sleep(300 * time.Millisecond)
+
+	// A second node whose flow gives up after half a second leaves after half a
+	// second, not after the first node's nine.
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	_, err = srv.client(ctx)
+	cancel()
+	if err == nil || time.Since(start) > 2*time.Second {
+		t.Fatalf("a second caller waited %s and got %v", time.Since(start), err)
+	}
+
+	// Closing the config while the dial hangs returns at once, and the caller
+	// still waiting is told why instead of sitting out the timeout.
+	start = time.Now()
+	if err := srv.Close(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("Close took %s behind a hung dial", took)
+	}
+	select {
+	case err := <-first:
+		if err == nil {
+			t.Error("the hung connect reported success")
+		}
+		t.Logf("the first caller was told: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Error("the first caller was still waiting 3s after Close")
+	}
+	_ = done
+}
+
+// Five nodes asking at once is one discovery and one session, not five.
+func TestOPCUAConcurrentNodesShareOneSession(t *testing.T) {
+	addr := requireEnv(t, "HOTLOOP_FLOW_TEST_OPCUA")
+	line := newFlakyOPC(t, addr)
+	svc, done := opcLive(t, line.addr(), opcOpts{})
+	defer done()
+	srv := svc.configs["srv"].(*opcuaServer)
+
+	var wg sync.WaitGroup
+	clients := make([]*opcua.Client, 5)
+	errs := make([]error, 5)
+	for i := range clients {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			clients[i], errs[i] = srv.client(context.Background())
+		}()
+	}
+	wg.Wait()
+	for i := range clients {
+		if errs[i] != nil {
+			t.Fatalf("caller %d: %v", i, errs[i])
+		}
+		if clients[i] != clients[0] {
+			t.Errorf("caller %d got a different session", i)
+		}
+	}
+	// One connection for discovery, one for the session.
+	if n := line.accepted.Load(); n != 2 {
+		t.Errorf("%d connections to the server for five callers, want 2 (discovery and the session)", n)
+	}
+	t.Logf("five callers, %d connections", line.accepted.Load())
+}
+
+// Aes256_Sha256_RsaPss is not in the policy list because gopcua gets the RSA-OAEP
+// SHA-256 padding wrong. This test stands guard: it passes while that is still
+// true, and the day a gopcua update fixes it, it fails and says what to do.
+func TestOPCUAAes256RsaPssWaitsOnGopcua(t *testing.T) {
+	const wrong = (2 * 64) + 2
+	const right = (2 * 32) + 2 // RFC 8017 section 7.1.1: 2 * hLen + 2, and SHA-256's hLen is 32
+	switch uapolicy.RSAOAEPMinPaddingSHA256 {
+	case wrong:
+		for _, p := range opcuaPolicies {
+			if p == "Aes256_Sha256_RsaPss" {
+				t.Fatalf("Aes256_Sha256_RsaPss is on the list while gopcua still pads RSA-OAEP-SHA256 with %d bytes instead of %d, "+
+					"which Microsoft's OPC PLC refuses with BadSecurityChecksFailed", wrong, right)
+			}
+		}
+	case right:
+		t.Fatalf("gopcua now pads RSA-OAEP-SHA256 with %d bytes. Add Aes256_Sha256_RsaPss back to opcuaPolicies and the dropdown, "+
+			"add it to TestOPCUASecurityModesPoliciesAndLogins, and delete this test", right)
+	default:
+		t.Fatalf("gopcua's RSAOAEPMinPaddingSHA256 is %d, which is neither the old %d nor the right %d. Look at it before trusting the policy", uapolicy.RSAOAEPMinPaddingSHA256, wrong, right)
 	}
 }
