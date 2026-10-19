@@ -361,6 +361,34 @@ jobs:
           echo "$OUT" | grep -q "1673 of 1686 cases pass" || {
             echo "::error::the JSONata pass count is not the one the docs state"; exit 1; }
 
+      - name: The S7 and EtherNet/IP tests actually ran
+        # Same reasoning as the Modbus and OPC UA check: a simulator that failed
+        # to come up turns every one of these into a skip, and a skip reads as a
+        # pass.
+        env:
+          HOTLOOP_FLOW_TEST_S7: localhost:1102
+          HOTLOOP_FLOW_TEST_ENIP: localhost:44818
+        run: |
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'S7|EtherNetIP' 2>&1)
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::an S7 or EtherNet/IP test skipped; the simulator is not reachable"
+            exit 1
+          fi
+          for t in TestS7ReadsWhatTheRealServerHolds \
+            TestS7WriteIsReadBackFromTheRealServer \
+            TestS7StringsKeepTheirMaximumLength \
+            TestS7ABitIsWrittenAsABitAndNotAsAByte \
+            TestS7CPUSaysNoAndTheErrorSaysWhatToDo \
+            TestS7DeviceGoesSilentThenComesBack \
+            TestS7NodesShareOneConnectionAndTakeTurns \
+            TestEtherNetIPWriteIsReadBackFromTheRealServer \
+            TestEtherNetIPControllerSaysNoAndTheErrorSaysWhatToDo \
+            TestEtherNetIPDeviceGoesSilentThenComesBack \
+            TestEtherNetIPNodesShareOneConnectionAndTakeTurns; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
+
   chart:
     name: Chart
     runs-on: ubuntu-latest
@@ -648,31 +676,3 @@ jobs:
         # types from GET /nodes on the binary it is testing, so it cannot go stale.
         working-directory: web/e2e
         run: npx playwright test
-
-      - name: The S7 and EtherNet/IP tests actually ran
-        # Same reasoning as the Modbus and OPC UA check: a simulator that failed
-        # to come up turns every one of these into a skip, and a skip reads as a
-        # pass.
-        env:
-          HOTLOOP_FLOW_TEST_S7: localhost:1102
-          HOTLOOP_FLOW_TEST_ENIP: localhost:44818
-        run: |
-          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'S7|EtherNetIP' 2>&1)
-          echo "$OUT" | grep -E '^(---|ok|FAIL)'
-          if echo "$OUT" | grep -q -- "--- SKIP"; then
-            echo "::error::an S7 or EtherNet/IP test skipped; the simulator is not reachable"
-            exit 1
-          fi
-          for t in TestS7ReadsWhatTheRealServerHolds \
-            TestS7WriteIsReadBackFromTheRealServer \
-            TestS7StringsKeepTheirMaximumLength \
-            TestS7ABitIsWrittenAsABitAndNotAsAByte \
-            TestS7CPUSaysNoAndTheErrorSaysWhatToDo \
-            TestS7DeviceGoesSilentThenComesBack \
-            TestS7NodesShareOneConnectionAndTakeTurns \
-            TestEtherNetIPWriteIsReadBackFromTheRealServer \
-            TestEtherNetIPControllerSaysNoAndTheErrorSaysWhatToDo \
-            TestEtherNetIPDeviceGoesSilentThenComesBack \
-            TestEtherNetIPNodesShareOneConnectionAndTakeTurns; do
-            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
-          done
