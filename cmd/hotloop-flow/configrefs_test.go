@@ -1,11 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -111,16 +110,12 @@ func TestTheEditorIsToldAboutADanglingConfigReferenceWhenItLoads(t *testing.T) {
 
 func TestImportNamesTheNodesWhoseConfigNodeIsNotInTheFile(t *testing.T) {
 	file := writeFile(t, t.TempDir(), "flows.json", danglingFlow)
-	out := captureStdout(t, func() {
-		if err := cmdImport([]string{file}); err != nil {
-			t.Fatal(err)
-		}
-	})
+	out := runImport(t, file)
 	for _, want := range []string{
-		"Config nodes that are not in the file, so these nodes will not start",
+		"Config nodes that are not in the file or are the wrong kind, so these nodes will not start",
 		`mqtt out m1 (to the broker)`, `"deleted-broker"`,
 		`mqtt in m2`, `"also-gone"`,
-		"2 node(s) point at config nodes that are not in the file",
+		"2 node(s) point at config nodes that are not in the file or are the wrong kind",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the import report is missing %q:\n%s", want, out)
@@ -134,34 +129,46 @@ func TestImportOfAFlowWithNoDanglingReferenceStaysQuiet(t *testing.T) {
   {"id":"b","type":"mqtt-broker","name":"plant","broker":"localhost","port":"1883"},
   {"id":"m","type":"mqtt in","z":"t1","broker":"b","topic":"x","wires":[[]]}
 ]`)
-	out := captureStdout(t, func() {
-		if err := cmdImport([]string{file}); err != nil {
-			t.Fatal(err)
-		}
-	})
-	if strings.Contains(out, "Config nodes that are not in the file") {
+	out := runImport(t, file)
+	if strings.Contains(out, "Config nodes that are not in the file") || strings.Contains(out, "wrong kind") {
 		t.Errorf("a flow whose broker is in the file was reported:\n%s", out)
 	}
 }
 
-// captureStdout runs fn and returns what it printed. The import report prints
-// straight to standard output.
-func captureStdout(t *testing.T, fn func()) string {
+// runImport runs the import report into a buffer. The command writes to the
+// writer it is given, so nothing here touches standard output.
+func runImport(t *testing.T, file string) string {
 	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
+	var out bytes.Buffer
+	if err := cmdImport([]string{file}, &out); err != nil {
 		t.Fatal(err)
 	}
-	old := os.Stdout
-	os.Stdout = w
-	done := make(chan string)
-	go func() {
-		b, _ := io.ReadAll(r)
-		done <- string(b)
-	}()
-	defer func() { os.Stdout = old }()
-	fn()
-	w.Close()
-	os.Stdout = old
-	return <-done
+	return out.String()
+}
+
+// A config reference can also name something that is in the file and is not
+// what the setting takes: a hand edit that pasted the wrong id. The report says
+// so in the same list as the ones that name nothing.
+func TestImportNamesTheNodesWhoseConfigReferenceIsTheWrongKind(t *testing.T) {
+	file := writeFile(t, t.TempDir(), "flows.json", `[
+  {"id":"t1","type":"tab","label":"Line 3"},
+  {"id":"b","type":"mqtt-broker","name":"plant","broker":"localhost","port":"1883"},
+  {"id":"d","type":"debug","z":"t1","name":"alive","complete":"payload","wires":[]},
+  {"id":"m1","type":"mqtt in","z":"t1","name":"on a debug","broker":"d","topic":"x","wires":[[]]},
+  {"id":"m2","type":"mqtt in","z":"t1","name":"on a tab","broker":"t1","topic":"x","wires":[[]]},
+  {"id":"m3","type":"mqtt in","z":"t1","name":"fine","broker":"b","topic":"x","wires":[[]]}
+]`)
+	out := runImport(t, file)
+	for _, want := range []string{
+		"mqtt in m1 (on a debug)", `"d", which is a debug and not a config node`,
+		"mqtt in m2 (on a tab)", `"t1", which is a tab and not a config node`,
+		"2 node(s) point at config nodes that are not in the file or are the wrong kind",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the import report is missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "mqtt in m3") {
+		t.Errorf("the node with a good broker was reported:\n%s", out)
+	}
 }

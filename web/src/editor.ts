@@ -669,12 +669,19 @@ export function mountEditor(
   // a line without seeing what they're pushing, and the note is what the next
   // person reads in the history when they're trying to work out why.
 
-  function reportFailures(res: { failures?: { id: string; type: string; error: string }[]; warnings?: string[] }): void {
+  /**
+   * Puts a deploy's answer in the log and returns the warnings it logged, so a
+   * caller that is about to reload the flows, which logs the file's warnings
+   * itself, can tell load() which ones are already on screen.
+   */
+  function reportFailures(res: { failures?: { id: string; type: string; error: string }[]; warnings?: string[] }): Set<string> {
     // What the file got wrong that isn't one node's failure, such as a node
     // pointing at a config node that isn't in it, comes back with the deploy
     // and goes in the log the way it does when the editor loads.
+    const said = new Set<string>();
     for (const w of res.warnings ?? []) {
       appendEvent({ topic: 'error', data: { error: w }, at: new Date().toISOString() });
+      said.add(w);
     }
     // Per-node failures are not a failed deploy: the rest of the flow is
     // running. Reporting them rather than swallowing them is what stops
@@ -686,6 +693,7 @@ export function mountEditor(
         at: new Date().toISOString(),
       });
     }
+    return said;
   }
 
   function endReview(): void {
@@ -1003,12 +1011,14 @@ export function mountEditor(
     const attempt = async (rev: string): Promise<boolean> => {
       try {
         const res = await api.rollback(d.seq, rev, note);
-        reportFailures(res);
+        const said = reportFailures(res);
         closeView();
         endReview();
         // Load what's running now, which is the rolled-back flows, rather than
-        // patching the working copy, so the editor and the runtime agree.
-        await load();
+        // patching the working copy, so the editor and the runtime agree. The
+        // rollback's answer already carried the file's warnings and they are in
+        // the log, so the reload leaves those out instead of saying each twice.
+        await load(said);
         void refreshHistory();
         return true;
       } catch (ex) {
@@ -1263,13 +1273,14 @@ export function mountEditor(
   };
   window.addEventListener('beforeunload', beforeUnload);
 
-  async function load(): Promise<void> {
+  async function load(alreadyLogged?: Set<string>): Promise<void> {
     const doc = await api.flows();
     graph.load(doc.flows as FlowEntry[], doc.rev);
     renderTabs();
     canvas.render();
     canvas.fit();
     for (const w of doc.warnings ?? []) {
+      if (alreadyLogged?.has(w)) continue;
       appendEvent({ topic: 'error', data: { error: w }, at: new Date().toISOString() });
     }
   }

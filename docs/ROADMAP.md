@@ -260,6 +260,16 @@ but plenty of people drop one that doesn't.
       it) is reported by `hotloop-flow import`, in the editor on load and on
       deploy, and in the deploy answer, and the node is a start failure instead
       of a node that quietly never works
+- [x] The gaps that one left: a config reference that names a tab, a subflow, a
+      group, a plain node or the wrong kind of config node is reported and
+      fails to start like one that names nothing, a rollback puts the file's
+      warnings in the editor log once and not twice, and `hotloop-flow import`
+      writes its report to a writer like `deploy` does, so its tests stop
+      swapping out standard output
+- [ ] gos7 writes raw timeout lines to Go's global logger on every network error
+      (`tcpclient.go`, the `log.Printf` in `Send`) and offers no way to turn
+      it off. Needs an upstream change; redirecting the global logger would hide
+      other libraries' output
 - [x] The durable wire kill test passed locally and failed on a slower runner.
       The queue counted a message as waiting before it was on disk, so a copy
       taken the moment the count hit 100 could be one short. It counts after the

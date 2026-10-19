@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -68,7 +69,7 @@ func run() error {
 		case "hash-password":
 			return cmdHashPassword(os.Args[2:])
 		case "import":
-			return cmdImport(os.Args[2:])
+			return cmdImport(os.Args[2:], os.Stdout)
 		case "diff":
 			return cmdDiff(os.Args[2:], os.Stdout)
 		case "test":
@@ -902,7 +903,7 @@ func cmdHashPassword(args []string) error {
 // cmdImport reports what would happen to a Node-RED flow file before anyone
 // deploys it, which is the difference between finding out now and finding out
 // when a line stops.
-func cmdImport(args []string) error {
+func cmdImport(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -952,59 +953,59 @@ func cmdImport(args []string) error {
 		}
 	}
 
-	fmt.Printf("%s\n\n", fs.Arg(0))
-	fmt.Printf("  %d entries: %d nodes, %d tabs, %d subflows, %d groups\n",
+	fmt.Fprintf(stdout, "%s\n\n", fs.Arg(0))
+	fmt.Fprintf(stdout, "  %d entries: %d nodes, %d tabs, %d subflows, %d groups\n",
 		len(flows.Order), len(flows.Nodes), len(flows.Tabs), len(flows.Subflows), len(flows.Groups))
 	if n := len(expansion.Instances); n > 0 {
-		fmt.Printf("  %d subflow instance(s), expanding to %d nodes in total\n",
+		fmt.Fprintf(stdout, "  %d subflow instance(s), expanding to %d nodes in total\n",
 			n, len(graph.Nodes))
 	}
-	fmt.Println()
+	fmt.Fprintln(stdout)
 
 	warnings := append(append([]string(nil), flows.Warnings...), expansion.Warnings...)
 	missing := runtime.MissingConfigRefs(node.Default, flows)
 	if len(warnings) > 0 {
-		fmt.Printf("Warnings\n")
+		fmt.Fprintf(stdout, "Warnings\n")
 		for _, w := range warnings {
-			fmt.Printf("  - %s\n", w)
+			fmt.Fprintf(stdout, "  - %s\n", w)
 		}
-		fmt.Println()
+		fmt.Fprintln(stdout)
 	}
 
-	fmt.Printf("Supported node types\n")
+	fmt.Fprintf(stdout, "Supported node types\n")
 	for _, t := range sortedCounts(supported) {
-		fmt.Printf("  %-32s %d\n", t.name, t.count)
+		fmt.Fprintf(stdout, "  %-32s %d\n", t.name, t.count)
 	}
-	fmt.Println()
+	fmt.Fprintln(stdout)
 
 	if len(missing) > 0 {
-		fmt.Printf("Config nodes that are not in the file, so these nodes will not start\n")
+		fmt.Fprintf(stdout, "Config nodes that are not in the file or are the wrong kind, so these nodes will not start\n")
 		for _, c := range missing {
-			fmt.Printf("  %s\n      %s\n", c.Label(), c.Problem())
+			fmt.Fprintf(stdout, "  %s\n      %s\n", c.Label(), c.Problem())
 		}
-		fmt.Printf("\nThe usual cause is a flow deleted along with its own config nodes while a subflow\nor a hand edit still points at them.\n\n")
+		fmt.Fprintf(stdout, "\nThe usual cause is a flow deleted along with its own config nodes while a subflow\nor a hand edit still points at them.\n\n")
 	}
 
 	if len(partial) > 0 {
-		fmt.Printf("Partially supported — read these before deploying\n")
+		fmt.Fprintf(stdout, "Partially supported — read these before deploying\n")
 		for t, notes := range partial {
-			fmt.Printf("  %s\n      %s\n", t, notes)
+			fmt.Fprintf(stdout, "  %s\n      %s\n", t, notes)
 		}
-		fmt.Println()
+		fmt.Fprintln(stdout)
 	}
 
 	if len(unsupported) > 0 {
-		fmt.Printf("NOT supported — these nodes will not start\n")
+		fmt.Fprintf(stdout, "NOT supported — these nodes will not start\n")
 		for _, t := range sortedCounts(unsupported) {
-			fmt.Printf("  %-32s %d\n", t.name, t.count)
+			fmt.Fprintf(stdout, "  %-32s %d\n", t.name, t.count)
 		}
-		fmt.Printf("\nThe rest of the flow still runs. See docs/compatibility.md.\n")
+		fmt.Fprintf(stdout, "\nThe rest of the flow still runs. See docs/compatibility.md.\n")
 		return nil
 	}
 
-	fmt.Printf("Every node type in this flow is implemented.\n")
+	fmt.Fprintf(stdout, "Every node type in this flow is implemented.\n")
 	if len(missing) > 0 {
-		fmt.Printf("%d node(s) point at config nodes that are not in the file and will not start.\n", len(missing))
+		fmt.Fprintf(stdout, "%d node(s) point at config nodes that are not in the file or are the wrong kind and will not start.\n", len(missing))
 	}
 	return nil
 }
