@@ -353,6 +353,9 @@ func cmdServe(args []string) error {
 	for _, w := range flows.Warnings {
 		log.Warn("flow warning", "detail", w)
 	}
+	for _, w := range runtime.ConfigRefWarnings(app.registry, flows) {
+		log.Warn("flow warning", "detail", w)
+	}
 	app.recordBaseline(flows.Rev)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -812,7 +815,7 @@ func (a *application) apply(ctx context.Context, flows *engine.Flows, expectedRe
 		return api.DeployResult{
 			Rev:        rev,
 			Deployment: seq,
-			Warnings:   append(append(append([]string(nil), flows.Warnings...), a.warnings()...), warnings...),
+			Warnings:   append(append(append(append([]string(nil), flows.Warnings...), runtime.ConfigRefWarnings(a.registry, flows)...), a.warnings()...), warnings...),
 			Failures:   up.Failures,
 			Update:     up,
 		}, nil
@@ -830,7 +833,7 @@ func (a *application) apply(ctx context.Context, flows *engine.Flows, expectedRe
 	return api.DeployResult{
 		Rev:        rev,
 		Deployment: seq,
-		Warnings:   append(append(append([]string(nil), flows.Warnings...), a.warnings()...), warnings...),
+		Warnings:   append(append(append(append([]string(nil), flows.Warnings...), runtime.ConfigRefWarnings(a.registry, flows)...), a.warnings()...), warnings...),
 		Failures:   failures,
 		Update:     a.fullUpdate(),
 	}, nil
@@ -959,6 +962,7 @@ func cmdImport(args []string) error {
 	fmt.Println()
 
 	warnings := append(append([]string(nil), flows.Warnings...), expansion.Warnings...)
+	missing := runtime.MissingConfigRefs(node.Default, flows)
 	if len(warnings) > 0 {
 		fmt.Printf("Warnings\n")
 		for _, w := range warnings {
@@ -972,6 +976,14 @@ func cmdImport(args []string) error {
 		fmt.Printf("  %-32s %d\n", t.name, t.count)
 	}
 	fmt.Println()
+
+	if len(missing) > 0 {
+		fmt.Printf("Config nodes that are not in the file, so these nodes will not start\n")
+		for _, c := range missing {
+			fmt.Printf("  %s\n      %s\n", c.Label(), c.Problem())
+		}
+		fmt.Printf("\nThe usual cause is a flow deleted along with its own config nodes while a subflow\nor a hand edit still points at them.\n\n")
+	}
 
 	if len(partial) > 0 {
 		fmt.Printf("Partially supported — read these before deploying\n")
@@ -991,6 +1003,9 @@ func cmdImport(args []string) error {
 	}
 
 	fmt.Printf("Every node type in this flow is implemented.\n")
+	if len(missing) > 0 {
+		fmt.Printf("%d node(s) point at config nodes that are not in the file and will not start.\n", len(missing))
+	}
 	return nil
 }
 

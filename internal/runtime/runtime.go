@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -534,6 +535,13 @@ func (rt *Runtime) build(g *graph, n *engine.Node) (node.Node, error) {
 	reg, ok := rt.reg.Lookup(n.Type)
 	if !ok {
 		return nil, fmt.Errorf("unknown node type %q", n.Type)
+	}
+	// A node pointing at a config node that isn't in the flow does not start.
+	// Left to build, some nodes look their config up only when the first
+	// message arrives, so the deploy would say nothing and the node would do
+	// nothing.
+	if refs := missingRefsOf(rt.reg, g.flows, n); len(refs) > 0 {
+		return nil, errors.New(refs[0].Error())
 	}
 	files, err := rt.credentialFiles(n)
 	if err != nil {
