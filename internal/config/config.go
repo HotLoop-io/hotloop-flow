@@ -14,6 +14,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,6 +41,50 @@ type Config struct {
 	History   History   `yaml:"history"`
 	Audit     Audit     `yaml:"audit"`
 	Tests     Tests     `yaml:"tests"`
+	Trace     Trace     `yaml:"trace"`
+}
+
+// Trace is message tracing: where a message went, how long each node had it,
+// and what it looked like there. It is bounded in every direction, so there is
+// no setting that lets it grow.
+type Trace struct {
+	// Enabled turns tracing on. It is on by default; the editor's trace view,
+	// replay and tests from a trace all read what this keeps.
+	Enabled bool `yaml:"enabled"`
+
+	// Traces is how many journeys are kept, newest. Each is one message
+	// entering the flow and everything that came of it.
+	Traces int `yaml:"traces"`
+	// MaxHops is the most hops one trace keeps, which is what stops a loop in
+	// a flow from writing itself down forever.
+	MaxHops int `yaml:"maxHops"`
+	// MaxMessageBytes is the biggest message a hop keeps a copy of. A bigger
+	// one is marked as too big and keeps its timing.
+	MaxMessageBytes int `yaml:"maxMessageBytes"`
+	// MaxBytes is the most all the traces may hold together, roughly counted.
+	// The oldest go first.
+	MaxBytes int64 `yaml:"maxBytes"`
+	// PerSecond is the most new traces started in a second. A busier source
+	// has the rest of that second's messages go untraced, which is what keeps
+	// tracing from costing a fast line what it can't spare. 0 traces every
+	// message.
+	PerSecond int `yaml:"perSecond"`
+
+	// OTLP sends the hops to an OpenTelemetry collector as spans.
+	OTLP OTLP `yaml:"otlp"`
+}
+
+// OTLP is the OpenTelemetry export. No endpoint, no export.
+type OTLP struct {
+	// Endpoint is the collector's OTLP/HTTP address, like
+	// http://collector:4318. /v1/traces is added.
+	Endpoint string `yaml:"endpoint"`
+	// Headers go on every request, for a hosted collector's API key.
+	Headers map[string]string `yaml:"headers"`
+	// ServiceName is the service.name the spans carry.
+	ServiceName string `yaml:"serviceName"`
+	// Interval is the longest a finished hop waits before it is sent.
+	Interval time.Duration `yaml:"interval"`
 }
 
 // Tests is the flow test suite this instance keeps beside its flow file, and
@@ -362,6 +407,10 @@ func Default() Config {
 		History: History{Retain: 100},
 		Audit:   Audit{MaxBytes: 16 << 20, Keep: 4},
 		Tests:   Tests{Timeout: 2 * time.Minute},
+		Trace: Trace{
+			Enabled: true, Traces: 256, MaxHops: 512, MaxMessageBytes: 16 << 10, MaxBytes: 16 << 20, PerSecond: 1000,
+			OTLP: OTLP{ServiceName: "hotloop-flow", Interval: 2 * time.Second},
+		},
 	}
 }
 
@@ -411,6 +460,8 @@ func applyEnv(cfg *Config) {
 
 	envInt("HOTLOOP_FLOW_INBOX_CAPACITY", &cfg.Runtime.InboxCapacity)
 	envStr("HOTLOOP_FLOW_OVERFLOW", &cfg.Runtime.Overflow)
+
+	envStr("HOTLOOP_FLOW_TRACE_OTLP_ENDPOINT", &cfg.Trace.OTLP.Endpoint)
 
 	envStr("HOTLOOP_FLOW_LOG_LEVEL", &cfg.Logging.Level)
 	envStr("HOTLOOP_FLOW_LOG_FORMAT", &cfg.Logging.Format)
@@ -544,6 +595,22 @@ func (c *Config) Validate() error {
 	}
 	if c.Tests.Timeout <= 0 {
 		return fmt.Errorf("tests.timeout must be above zero; it's how long a run of the flow tests may take")
+	}
+
+	if c.Trace.Traces < 1 || c.Trace.MaxHops < 1 || c.Trace.MaxMessageBytes < 1 || c.Trace.MaxBytes < 1 {
+		return fmt.Errorf("trace.traces, trace.maxHops, trace.maxMessageBytes and trace.maxBytes must each be at least 1; " +
+			"to turn tracing off, set trace.enabled to false")
+	}
+	if c.Trace.PerSecond < 0 {
+		return fmt.Errorf("trace.perSecond must not be negative; 0 traces every message")
+	}
+	if ep := c.Trace.OTLP.Endpoint; ep != "" {
+		if u, err := url.Parse(ep); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("trace.otlp.endpoint %q is not an http or https address like http://collector:4318", ep)
+		}
+		if c.Trace.OTLP.Interval <= 0 {
+			return fmt.Errorf("trace.otlp.interval must be above zero")
+		}
 	}
 
 	switch c.Runtime.Overflow {

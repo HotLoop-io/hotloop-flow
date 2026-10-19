@@ -84,6 +84,14 @@ type Deps struct {
 	// nodes, which is what a test drafted from the debug sidebar is made of.
 	Capture *runtime.Capture
 
+	// Tracer keeps the journeys messages made through the flows. Nil means
+	// tracing is off.
+	Tracer *engine.Tracer
+
+	// Replay puts a captured message into a flow safely and compares the
+	// result. Nil means this instance can't.
+	Replay Replayer
+
 	// Version identifies this build in /settings and the log.
 	Version string
 
@@ -248,6 +256,11 @@ func (s *Server) routes() {
 	s.mux.Handle("POST "+s.path("/tests/run"), s.auth(PermFlowsRead, s.handleRunTests))
 	s.mux.Handle("POST "+s.path("/tests/from-debug"), s.auth(PermFlowsRead, s.handleTestFromDebug))
 	s.mux.Handle("POST "+s.path("/tests/cases"), s.auth(PermFlowsWrite, s.handleAddTests))
+	s.mux.Handle("GET "+s.path("/traces"), s.auth(PermFlowsRead, s.handleListTraces))
+	s.mux.Handle("GET "+s.path("/traces/find"), s.auth(PermFlowsRead, s.handleFindTrace))
+	s.mux.Handle("GET "+s.path("/traces/{id}"), s.auth(PermFlowsRead, s.handleGetTrace))
+	s.mux.Handle("POST "+s.path("/traces/{id}/test"), s.auth(PermFlowsRead, s.handleTraceToTest))
+	s.mux.Handle("POST "+s.path("/traces/{id}/replay"), s.auth(PermFlowsRead, s.handleReplay))
 	s.mux.Handle("GET "+s.path("/runtime/stats"), s.auth(PermStatusRead, s.handleStats))
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))

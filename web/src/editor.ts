@@ -1,7 +1,7 @@
 // The editor view: palette, tabs, canvas, review and deploy, history, and the
 // live sidebar.
 
-import type { Api, Deployment, Descriptor, DiffResult, NodeStat, RuntimeEvent } from './api';
+import type { Api, Deployment, Descriptor, DiffResult, NodeStat, RuntimeEvent, TraceView } from './api';
 import { ApiError } from './api';
 import { Canvas } from './canvas';
 import { editNode } from './dialog';
@@ -10,7 +10,8 @@ import { Graph, type FlowEntry } from './graph';
 import { confirmRollback, describe, resolveConflict } from './history';
 import { setDarkMode } from './theme';
 import { twoFactorDialog } from './account';
-import { draftTestDialog, editSuiteDialog, marksFrom, renderReport } from './tests';
+import { draftTestDialog, draftTestFromTraceDialog, editSuiteDialog, marksFrom, renderReport } from './tests';
+import { overlayFrom as traceOverlay, renderReplay, renderTrace } from './trace';
 import type { TestReport } from './api';
 
 export interface EditorHandles {
@@ -200,6 +201,8 @@ export function mountEditor(
     el('div', { class: 'empty' }, 'Loading…'));
   const testsBody = el('div', { class: 'tests', 'data-test': 'tests' },
     el('div', { class: 'empty' }, 'Loading…'));
+  const traceBody = el('div', { class: 'trace', 'data-test': 'trace' },
+    el('div', { class: 'empty' }, 'Click Trace on a debug message to see the path it took.'));
 
   function renderSidebar(): void {
     const clear = el('button', { class: 'ghost' }, 'Clear');
@@ -220,6 +223,8 @@ export function mountEditor(
       historyBody,
       el('div', { class: 'side-head' }, el('h3', {}, 'Tests'), el('div', { class: 'spacer' }), runTestsBtn, editTestsBtn),
       testsBody,
+      el('div', { class: 'side-head' }, el('h3', {}, 'Trace')),
+      traceBody,
       el('div', { class: 'side-head' }, el('h3', {}, 'Debug'), el('div', { class: 'spacer' }), clear),
       logBody,
       el('div', { class: 'side-head' }, el('h3', {}, 'Runtime')),
@@ -310,7 +315,14 @@ export function mountEditor(
         title: 'Make a flow test from this message',
       }, 'Test');
       make.onclick = () => void makeTest(String(e.data.id), String(e.data.msgId));
-      line.append(make);
+      // The path it took: lit on the canvas, with timing and the message at
+      // every hop.
+      const path = el('button', {
+        class: 'ghost log-trace', 'data-test': 'debug-trace',
+        title: 'Light the path this message took',
+      }, 'Trace');
+      path.onclick = () => void showTrace(String(e.data.id), String(e.data.msgId));
+      line.append(path, make);
     }
     logBody.append(line);
 
@@ -518,6 +530,78 @@ export function mountEditor(
       if (await editSuiteDialog(api)) void refreshTests('Saved.');
     } catch (ex) {
       failed(ex, 'Could not edit the tests');
+    }
+  }
+
+  // ── Tracing ────────────────────────────────────────────────────────────────
+
+  /** The trace on show, so Replay and Make test know what they're about. */
+  let shownTrace: { trace: TraceView; focus: number | null; path: number[] | null } | null = null;
+
+  function drawTrace(): void {
+    if (!shownTrace) return;
+    const { trace, focus, path } = shownTrace;
+    renderTrace(traceBody, trace, focus, path, graph, {
+      pick: (id) => {
+        const entry = graph.byId(id);
+        if (!entry) return;
+        if (entry.z) graph.activeTab = entry.z;
+        graph.selection = new Set([id]);
+        renderTabs();
+        canvas.render();
+      },
+      makeTest: () => void makeTraceTest(trace.id),
+      replay: () => void replayTrace(trace.id),
+      clear: () => {
+        shownTrace = null;
+        canvas.setTrace(null);
+        traceBody.replaceChildren(el('div', { class: 'empty' }, 'Click Trace on a debug message to see the path it took.'));
+      },
+    });
+    canvas.setTrace(traceOverlay(trace, focus, path));
+  }
+
+  async function showTrace(node: string, msgId: string): Promise<void> {
+    try {
+      const found = await api.findTrace(msgId, node);
+      shownTrace = { trace: found.trace, focus: found.focus, path: found.path };
+      // On the tab the Debug node is on, which is where the path ends.
+      const at = found.trace.hops[found.focus];
+      const entry = at ? graph.byId(at.canvas || at.node) : undefined;
+      if (entry?.z && graph.activeTab !== entry.z) {
+        graph.activeTab = entry.z;
+        renderTabs();
+      }
+      drawTrace();
+    } catch (ex) {
+      if (ex instanceof ApiError && ex.status === 404) {
+        traceBody.replaceChildren(el('div', { class: 'empty', 'data-test': 'trace-gone' }, ex.message));
+        canvas.setTrace(null);
+        return;
+      }
+      failed(ex, 'Could not load the trace');
+    }
+  }
+
+  async function makeTraceTest(traceId: string): Promise<void> {
+    try {
+      const added = await draftTestFromTraceDialog(api, traceId);
+      if (added) void refreshTests(`Added: ${added.join(', ')}`);
+    } catch (ex) {
+      failed(ex, 'Could not make the test');
+    }
+  }
+
+  async function replayTrace(traceId: string): Promise<void> {
+    traceBody.replaceChildren(el('div', { class: 'empty' }, 'Replaying…'));
+    try {
+      // The working copy, deployed or not: that's what a draft is.
+      const res = await api.replay(traceId, graph.all());
+      renderReplay(traceBody, res, drawTrace);
+      if (res.trace) canvas.setTrace(traceOverlay(res.trace, null, null));
+    } catch (ex) {
+      drawTrace();
+      failed(ex, 'Could not replay the message');
     }
   }
 

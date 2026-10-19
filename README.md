@@ -743,6 +743,159 @@ datagrams, no files written, nothing executed. A node that reaches outside and
 has no stand-in is refused by name before anything runs, and the palette test
 fails if anybody adds one.
 
+## Tracing and replay
+
+A value goes wrong at 2 AM and the debug sidebar tells you the value. It does
+not tell you which of the nine nodes it went through changed it, how long the
+slow one sat on it, or what it looked like going in. You find that out by
+sprinkling Debug nodes through the flow, deploying, waiting for it to happen
+again, and taking them out. I've done that on a live line. Never again.
+
+So every message that enters the flow gets a trace. Every debug message in the
+sidebar has a **Trace** button, and one click lights the path that message took
+on the canvas: the nodes it went through, the wires it travelled, and
+everything it never touched dimmed. Each node on the path says how long it had
+the message (`8.3 µs`, or `8.3 µs ×3` when it handled three pieces of it), and
+the Trace panel beside it lists every hop in order with the message as that
+node was handed it. Click a row and you're at the node. A hop that failed is
+red, with the error under it.
+
+It follows the message where it actually goes:
+
+- **Through a split.** One reading becomes three, and all three are on the
+  trace, each its own hop at every node after the split.
+- **Through a join.** The hop after a join has every message the join took in
+  for it as a parent, not just the one that happened to arrive last. The three
+  branches that fed it are all lit.
+- **Through a subflow.** The nodes inside run as copies with ids of their own,
+  and the hops are written down under those ids. The canvas lights the subflow
+  instance, because that's the node on the tab you're looking at.
+- **Into a Catch.** The node that failed has the error on its hop, and the Catch
+  that got it is the next hop, marked as reached by an error.
+
+The trace rides on the message but isn't in it. No flow can read it or break it
+with `msg = {...}`, and it never shows up in a Debug node, a test or a payload on
+the wire.
+
+### It can't grow
+
+This runs on the line it's watching, so every direction is bounded, and the
+limits are `trace:` in the [configuration](#configuration):
+
+| | Default |
+|---|---|
+| Traces kept, newest | 256 |
+| Hops one trace keeps, so a loop can't write itself down forever | 512 |
+| Biggest message a hop keeps a copy of | 16 KiB |
+| Everything together, roughly counted, oldest forgotten first | 16 MiB |
+| New traces started in a second | 1,000 |
+
+A message over 16 KiB keeps its timing and is marked as too big to show, and can't
+be replayed or turned into a test. Past 1,000 new traces a second the rest of
+that second's messages go untraced, because a sensor talking a hundred thousand
+times a second would otherwise pay for a trace on every one of them. A message
+that was skipped, or whose trace was pushed out while it was still on its way,
+stays untraced for the rest of its trip; starting a new trace halfway would only
+fill the buffer with the tails of journeys whose heads are gone. All of it is
+counted on `/metrics`, so you can see when it's happening.
+
+The soak: **a million messages through five nodes, 2026-10-18**, same machine as
+[the numbers above](#the-numbers). Heap after a forced GC, sampled every hundred
+thousand messages:
+
+| | Heap, every checkpoint | Messages a second |
+|---|---|---|
+| Tracing off | **1.3 MiB** | 192,596 |
+| Tracing every message (`perSecond: 0`) | **2.7 MiB** | 115,770 |
+| Default limits | **4.0 MiB** | 195,199 |
+
+It's the same number at all ten checkpoints. The tracer held 808,448 bytes in 256
+traces from the first checkpoint to the last, forgot 999,744 of the million as it
+went, and never went near its 16 MiB. Tracing every message does cost: it took
+this chain from 192k a second to 116k. That's why the default limit exists. At
+1,000 traces a second the cost is lost in the noise, and below that a trace is
+about 3 KB. If you want every message anyway, set `perSecond: 0` and
+read the first row of that table before you decide. Reproduce it with:
+
+```bash
+HOTLOOP_FLOW_SOAK_MESSAGES=1000000 go test ./internal/runtime/ \
+  -run TestTraceMemoryStaysFlatUnderASoak -v
+```
+
+It runs a smaller soak in every `go test`, and CI runs the full million on every
+pull request. If the heap stops being flat the test fails.
+
+### Replay it into a draft
+
+You found the bad value, you think you know the fix, and you've changed a node
+on the canvas. Don't deploy to find out. **Replay into draft** takes the message
+that started the trace, puts it into the flow as it is on your canvas right now,
+deployed or not, and tells you where it ends up compared with where it ended up
+the first time.
+
+"Ends up" means the places the message stopped: a Debug node, an MQTT Out, a
+Switch that matched nothing, a Join still waiting. For each one the comparison
+says it's the same, or which properties changed (`payload: "HIGH" -> "CRITICAL"`),
+or that the original ended there and the replay didn't, or the other way round.
+The replay's own path is lit on the canvas, so you can see where the draft
+sent it. **Back to the original trace** puts the first one back.
+
+It runs the way a [flow test](#tests-next-to-the-flows) runs, in a child process
+with the real runtime and the real nodes, and for the same reason: your draft
+starts every node in it and nothing in it can touch the plant. That means a node
+that would have called a web service answers with nothing, so a flow whose
+output depends on an answer shows up as a difference. That's the honest result.
+It will not pretend to have talked to a PLC it never talked to.
+
+### A trace becomes a test
+
+**Make test** in the Trace panel drafts a [flow test](#tests-from-the-editor)
+from the whole trace: the message that started it, put in at the source it came
+in at, and every place it ended that a test can watch, with what that node was
+handed expected there. It's the same two clicks as a test from a debug message,
+and it's better for the awkward flows, because a trace remembers every end a
+message reached. A split into three Debug nodes is three expectations, where one
+debug message was one.
+
+It says why when it can't. A trace that started inside a subflow, from a
+source's second output, or from a message too big to keep can't be put back in
+the way a test needs. And a message that was dropped by a Switch ends nowhere a
+test can watch, so it's refused rather than written as a test with nothing in it,
+because a test with nothing to check passes.
+
+### OpenTelemetry
+
+Point it at a collector and every hop goes out as a span:
+
+```yaml
+trace:
+  otlp:
+    endpoint: http://collector:4318   # OTLP over HTTP; /v1/traces is added
+    headers: {x-api-key: ...}         # if the collector wants one
+    serviceName: hotloop-flow
+```
+
+A trace is an OpenTelemetry trace and a hop is a span, with the hop that sent
+the message as its parent. A join's span has the first as its parent and the rest
+as links. Each span carries the node id, the node type, the message id, how many
+messages the node sent on, and the output port it was reached by, and an error
+is a span with an error status. **The messages never leave.** A payload is a
+plant's data and a collector is somebody else's server, so what goes out is the
+shape of the journey and its timing.
+
+It speaks OTLP/HTTP with the JSON encoding the spec defines, written out by hand
+in one file, rather than pulling in the OpenTelemetry SDK with its protobuf and
+gRPC to do the same single POST. The binary has a size budget and I'm not
+spending it on that. A hand-written client has to be proved the only way that
+counts, so CI
+starts the stock `otel/opentelemetry-collector` image, a pinned release, sends
+real traces through real splits, joins, subflows and a failing Function, and
+reads back what the collector says it received. Every span id, parent, link,
+name, attribute and error status has to match. There's no mock in that test
+anywhere. If the collector is down, the export drops spans and counts them and
+the flow never notices; `hotloop_flow_otlp_spans_failed_total` going above zero
+is how you find out.
+
 ---
 
 ## Security posture
@@ -1136,6 +1289,18 @@ audit:
 tests:
   gate: false               # refuse a deploy that fails data.dir/flows.test.yaml
   timeout: 2m               # wall clock for one run of the flow tests
+
+trace:                      # where every message went, kept in memory, bounded
+  enabled: true
+  traces: 256               # journeys kept, newest
+  maxHops: 512              # hops one journey keeps
+  maxMessageBytes: 16384    # the biggest message a hop keeps a copy of
+  maxBytes: 16777216        # everything together, oldest forgotten first
+  perSecond: 1000           # new traces a second; 0 traces every message
+  otlp:
+    endpoint: ""            # http://collector:4318 sends every hop as a span
+    serviceName: hotloop-flow
+    interval: 2s            # the longest a finished hop waits to be sent
 ```
 
 A typo in that file is a startup failure rather than a setting that silently does
@@ -1210,6 +1375,11 @@ timeouts.
 | `POST /tests/run` | `flows.read` | Runs the suite, or `"tests"` from the body, against `"flows"` from the body or what's running. Returns the report. Deploys nothing. |
 | `POST /tests/from-debug` | `flows.read` | Drafts a test from `{"node", "msgId"}`, a message a Debug node showed. Saves nothing. |
 | `POST /tests/cases` | `flows.write` | Adds the tests in the body, a test file of their own, to the end of the suite. |
+| `GET /traces` | `flows.read` | The traces kept, newest first, with what the buffer holds and its limits. `?limit=N`. 404 with `trace.enabled: false`. |
+| `GET /traces/find` | `flows.read` | The trace a message was in, from `?msgId=` and `?node=`, the id and Debug node the sidebar shows. Returns every hop and the path to the one asked about. |
+| `GET /traces/{id}` | `flows.read` | One trace, every hop with its timing and the message as the node was handed it. |
+| `POST /traces/{id}/test` | `flows.read` | Drafts a flow test from the trace. Saves nothing. |
+| `POST /traces/{id}/replay` | `flows.read` | Puts the message that started the trace into `"flows"` from the body, or what's running, in a child process, and returns where it ends up against where it ended up. Deploys nothing. |
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
 | `GET /comms` | `status.read` | The editor's status and debug websocket. Send the token as the subprotocol `hotloop-flow.bearer.<token>`, offered beside `hotloop-flow`. That is what the editor does. `?access_token=<token>` in the URL still works for scripts that already use it, and logs a warning for every connection that does, because a URL ends up in proxy and access logs. |
@@ -1285,6 +1455,15 @@ you should not need a second container to find out that your inbox is full.
 | `hotloop_flow_git_mirror_push_failures_total` | counter | Pushes to the mirror that failed and will be retried. |
 | `hotloop_flow_git_mirror_pushes_total` | counter | Pushes to the mirror that succeeded. |
 | `hotloop_flow_audit_write_failures_total` | counter | Audit entries that couldn't be written. Should be zero forever. |
+| `hotloop_flow_traces_kept` | gauge | Message traces in the buffer right now. |
+| `hotloop_flow_trace_bytes` | gauge | Roughly what they hold. Bounded by `trace.maxBytes`. |
+| `hotloop_flow_traces_started_total` | counter | Message traces started. |
+| `hotloop_flow_traces_forgotten_total` | counter | Traces pushed out to make room. |
+| `hotloop_flow_traces_skipped_total` | counter | Messages not traced because `trace.perSecond` was reached. |
+| `hotloop_flow_trace_hops_dropped_total` | counter | Hops not written down: their trace was full or already forgotten. |
+| `hotloop_flow_otlp_spans_exported_total` | counter | Spans the OpenTelemetry collector accepted. Only with an endpoint. |
+| `hotloop_flow_otlp_spans_dropped_total` | counter | Spans dropped because the export queue was full. |
+| `hotloop_flow_otlp_spans_failed_total` | counter | Spans the collector didn't take after a retry. Above zero means it isn't getting them. |
 
 The one to alert on is `hotloop_flow_node_queue_high_water` against
 `hotloop_flow_node_queue_capacity`. High water is the early warning that a flow is
@@ -1529,7 +1708,8 @@ hotloop-flow/
     node/            what a node type is: Descriptor, registry, contracts
     nodes/           the built-in palette
     runtime/         the scheduler, delivery, error and status routing
-    flowtest/        flow tests: the YAML, the runner, JUnit
+    flowtest/        flow tests: the YAML, the runner, JUnit; replay and tests from a trace
+    otlp/            the OpenTelemetry export: spans over OTLP/HTTP
     store/           context, flow file, credentials
     js/              goja host
     wasmhost/        wazero host, tested, not used by any node yet

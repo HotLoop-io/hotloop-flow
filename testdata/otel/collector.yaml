@@ -1,0 +1,19 @@
+# The collector the OpenTelemetry export is tested against. The stock
+# otel/opentelemetry-collector image, this file mounted over its config: an
+# OTLP/HTTP receiver where the export sends, and the debug exporter printing
+# every span it accepts so the test can read what actually arrived.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [debug]

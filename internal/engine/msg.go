@@ -22,6 +22,11 @@ import (
 type Msg struct {
 	// Data holds every property, including payload, topic and _msgid.
 	Data map[string]any
+
+	// Trace says where the message has been, when the runtime is tracing. It
+	// is not part of the message: no flow can read it, and a clone carries it
+	// so everything made from a message stays on its trace.
+	Trace *TraceTag
 }
 
 // Conventional property names, spelled once so a typo cannot diverge.
@@ -197,7 +202,7 @@ func (m *Msg) Clone() *Msg {
 	if m == nil {
 		return nil
 	}
-	return &Msg{Data: cloneMap(m.Data, 0, make(map[any]bool))}
+	return &Msg{Data: cloneMap(m.Data, 0, make(map[any]bool)), Trace: m.Trace}
 }
 
 func cloneMap(src map[string]any, depth int, seen map[any]bool) map[string]any {

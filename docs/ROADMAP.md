@@ -109,13 +109,13 @@ Tests are YAML next to the flows, so they diff and review the same way.
 
 ### Phase 3: tracing and replay
 
-- [ ] Click a debug message and the canvas lights up the path it took, with
+- [x] Click a debug message and the canvas lights up the path it took, with
       timing and the payload at every hop, through splits, joins and subflows
-- [ ] Bounded trace buffer. Memory stays flat under a million-message soak, and
+- [x] Bounded trace buffer. Memory stays flat under a million-message soak, and
       the number is published
-- [ ] Replay a captured message into a draft of the flow and compare the output
-- [ ] A captured trace becomes a Phase 2 test
-- [ ] OpenTelemetry export, proven against a real collector
+- [x] Replay a captured message into a draft of the flow and compare the output
+- [x] A captured trace becomes a Phase 2 test
+- [x] OpenTelemetry export, proven against a real collector
 
 ### Phase 4: durable state
 

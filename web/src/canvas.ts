@@ -11,6 +11,7 @@ import {
 } from './graph';
 import { type DiffOverlay, wireKey } from './diff';
 import type { TestMark } from './tests';
+import { type TraceOverlay, fmtNanos, tipFor } from './trace';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -53,6 +54,7 @@ export class Canvas {
   private statuses = new Map<string, { fill: string; shape: string; text: string }>();
   private diff: DiffOverlay | null = null;
   private testMarks = new Map<string, TestMark>();
+  private trace: TraceOverlay | null = null;
   private readonly readOnly: boolean;
   private lastPress = { id: '', at: 0 };
 
@@ -382,6 +384,17 @@ export class Canvas {
     this.renderNodes();
   }
 
+  /**
+   * Lights the path a traced message took: the nodes it went through with how
+   * long each had it, the wires it travelled, and everything else dimmed.
+   * Null puts the canvas back.
+   */
+  setTrace(overlay: TraceOverlay | null): void {
+    this.trace = overlay;
+    this.svg.classList.toggle('tracing', overlay !== null);
+    this.render();
+  }
+
   render(): void {
     this.renderGrid();
     this.renderWires();
@@ -452,7 +465,8 @@ export class Canvas {
       const path = document.createElementNS(SVG_NS, 'path');
       path.setAttribute('d', wirePath(outputPort(from, port, total), inputPort(to)));
       const added = this.diff?.addedWires.has(wireKey(from.id, port, to.id));
-      path.setAttribute('class', added ? 'wire diff-added' : 'wire');
+      const lit = this.trace?.edges.get(`${from.id}>${to.id}`);
+      path.setAttribute('class', `${added ? 'wire diff-added' : 'wire'}${lit === undefined ? '' : lit ? ' trace-on' : ' trace-side'}`);
       path.setAttribute('data-from', from.id);
       path.setAttribute('data-port', String(port));
       path.setAttribute('data-to', to.id);
@@ -551,6 +565,25 @@ export class Canvas {
       c.setAttribute('data-port', String(i));
       c.setAttribute('data-node', n.id);
       g.append(c);
+    }
+
+    // The path of a traced message: how long it was in this node, and what
+    // it looked like when it got there.
+    const hit = this.trace?.nodes.get(n.id);
+    if (hit) {
+      g.classList.add('trace-hit', hit.onPath ? 'trace-path' : 'trace-side');
+      if (hit.focus) g.classList.add('trace-focus');
+      if (hit.hops.some((h) => h.error)) g.classList.add('trace-failed');
+      const t = document.createElementNS(SVG_NS, 'text');
+      t.setAttribute('x', String(x));
+      t.setAttribute('y', String(y - NODE_HEIGHT / 2 - 6));
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('class', 'trace-time');
+      t.setAttribute('data-trace-time', String(hit.nanos));
+      t.textContent = `${fmtNanos(hit.nanos)}${hit.hops.length > 1 ? ` ×${hit.hops.length}` : ''}`;
+      const tip = document.createElementNS(SVG_NS, 'title');
+      tip.textContent = tipFor(hit);
+      g.append(t, tip);
     }
 
     // How the last run of the flow tests went for this node.
