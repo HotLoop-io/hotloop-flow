@@ -315,11 +315,60 @@ deploys it.
 theirs was. Now it says who deployed, when, their note, and their change node by
 node, then lets you load theirs, overwrite with yours, or keep editing.
 
+**Copy, cut and paste work like you'd expect, and they speak the flow file.**
+Select nodes, Ctrl+C, and what's on your clipboard is the same JSON every other
+flow tool reads, so you can paste it into a chat, a ticket, or another box. Paste
+puts it where your pointer is, with new ids every time, so pasting twice gives
+you two copies and never a collision. A wire to something you didn't copy is cut
+rather than left pointing at nothing, and a configuration node the nodes use
+comes along. If that configuration node is already in the flow you are pasting into, the copy
+shares it instead of opening a second connection to something that counts them.
+Credentials never go on the clipboard. A password in a paste buffer is how it ends
+up in a bug report.
+
+**Import and Export** do the same for a selection, one flow, or everything, with
+a box to copy from, a Download button, and a file picker on the way in. Garbage
+gets a reason ("the id a appears twice", "entry 1 has no id") and the dialog
+stays open. A node type this runtime doesn't have comes in grey and dashed, and
+the import tells you which ones, because a silently dropped node is worse than a
+loud one.
+
+**Subflows are edited on a canvas of their own.** Press *+ subflow*, and it opens
+with its input and output ports on it. Wire them to the nodes inside like
+anything else. *Subflow properties* sets the name, the colour, how many outputs
+it has, and the properties an instance can set. Instances on flows follow when
+the shape changes, and the palette lists every subflow so you can drop one.
+Double-click an instance to give it its own name and its own value for each
+property. A subflow can't be placed inside itself or inside one that holds it,
+and one still in use can't be deleted. The editor says so rather than letting the
+next deploy find out.
+
+**Groups.** Ctrl+G wraps the selection, Ctrl+Shift+G takes it apart. Double-click
+the title bar to name and colour it. Drag a group and everything in it goes with
+it. Drag a node into one and it joins, drag it out and it leaves. Groups nest.
+Deleting a group deletes what's in it, and Ctrl+Z puts it all back.
+
+**Search** (Ctrl+F, or the button) looks in every flow and subflow at once: names,
+types, ids, and every setting, including a line in the middle of a function body.
+A hit takes you to the right tab with the node selected and in the middle of the
+view. Configuration nodes show up too, and their hit opens their dialog, since
+they have no place on a canvas.
+
+**Debug filtering.** Narrow the sidebar to one flow, to the nodes you've got
+selected, to a word, or to just the errors. It applies to what's already in the
+log, not only to what arrives next, so narrowing it never makes the line you were
+looking at disappear.
+
 All of it is clicked through in a real browser on every pull request, against the
-real binary with the editor embedded. Playwright is a dev dependency of
-`web/e2e` only and never reaches the bundle. Writing those tests found that
-double-clicking a node to open its dialog had never worked in Chromium, which is
-about as embarrassing as a bug gets in a visual editor. Fixed.
+real binary with the editor embedded. That includes every node dialog the runtime
+offers: the list comes from `GET /nodes`, so a node added next month is in the
+test next month without anyone remembering to add it. Playwright is a dev
+dependency of `web/e2e` only and never reaches the bundle. Writing those tests
+found two things that had never worked in Chromium: double-clicking a node to open
+its dialog, and dragging a wire onto a node. The canvas holds the pointer for the
+whole drag, so the event's target was always the canvas and a wire let go over a
+node never found the node. Both about as embarrassing as bugs get in a visual
+editor. Both fixed.
 
 ### Flows as code
 
@@ -1495,9 +1544,6 @@ the point. A flow that leans on one breaks the day it stops being there.
   flow resets when the pod moves. SQLite, Phase 4.
 - **A node that uses the WASM host.** The host is built and tested. Nothing in
   the palette calls it, so WASM guests can't run in a flow today.
-- **Editor click-through for the newer nodes.** The dialogs are built from each
-  node's descriptor, so they render, but nobody has clicked through the HTTP,
-  WebSocket, TCP or UDP ones by hand yet.
 - **It has never run on a real plant floor.** Shepherd Boy Farms is the intended
   first site. Everything past the deploy line is unproven in the field, and I'm
   not calling it production-hardened until a plant has had a real go at
@@ -1585,7 +1631,7 @@ tests genuinely ran rather than silently skipping, that the editor bundle is
 actually inside the binary, that the binary is under 40MiB and statically linked,
 a 60-second fuzz run against the property expression parser, a 30-second one
 proving a flow never differs from itself, a rollback against a real broker that
-refuses anonymous clients, and the editor clicked through in a real browser.
+refuses anonymous clients, and the editor clicked through in a real browser, every node dialog included.
 Every one of those exists because the alternative was a green checkmark over
 something broken, and a green checkmark is worse than a red one.
 

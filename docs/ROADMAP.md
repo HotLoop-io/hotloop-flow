@@ -195,9 +195,9 @@ but plenty of people drop one that doesn't.
 - [x] Join by timeout and reduce, batch by time, split streaming
 - [x] MQTT v5 and last will
 - [x] TLS on TCP, cookies and multipart on HTTP
-- [ ] Editor: copy and paste, import and export a selection, subflow and group
+- [x] Editor: copy and paste, import and export a selection, subflow and group
       editing, search across flows, debug filtering
-- [ ] Browser tests for the editor in CI, and a click-through of every node
+- [x] Browser tests for the editor in CI, and a click-through of every node
       dialog
 - [x] Secrets by reference: a node reads a password from a mounted Kubernetes
       Secret or file, so it never lives in the flow file at all
