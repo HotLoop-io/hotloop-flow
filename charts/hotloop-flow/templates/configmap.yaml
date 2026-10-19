@@ -35,6 +35,16 @@ data:
       blockTimeout: {{ .Values.runtime.blockTimeout }}
       closeTimeout: {{ .Values.runtime.closeTimeout }}
 
+    store:
+      path: {{ .Values.store.path | quote }}
+      synchronous: {{ .Values.store.synchronous }}
+      context:
+        persist: {{ .Values.store.context.persist }}
+        flushInterval: {{ .Values.store.context.flushInterval }}
+      durable:
+        maxBytes: {{ .Values.store.durable.maxBytes | int64 }}
+        ackFlush: {{ .Values.store.durable.ackFlush }}
+
     discovery:
       enabled: {{ .Values.discovery.enabled }}
       allowedCIDRs:

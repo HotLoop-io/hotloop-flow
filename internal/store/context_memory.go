@@ -12,12 +12,12 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 )
 
-// MemoryContext is a volatile context store.
+// MemoryContext is a context store held in memory.
 //
-// It is the only context store there is, for every scope, matching Node-RED's
-// "memory" store. Values do not survive a restart, and there is no persistent
-// store to reach for yet. Node-RED ships a file-backed one, so that is a gap,
-// not a divergence.
+// On its own it is Node-RED's "memory" store: values are gone at restart. The
+// persistent store is this same type with a change hook that writes each change
+// through to SQLite (see PersistentContexts), so the atomic operations below
+// are one implementation, not two that have to be kept in agreement.
 //
 // Every operation is atomic with respect to every other, which is what makes
 // CompareAndSwap and Increment meaningful. Node-RED's context API offers only
@@ -27,6 +27,11 @@ import (
 type MemoryContext struct {
 	mu   sync.RWMutex
 	data map[string]any
+
+	// onChange, when set, is told about every change before it is applied, and
+	// a change it refuses is not made. Called with the lock held, so it must
+	// not call back into the store.
+	onChange func(key string, value any, deleted bool) error
 }
 
 // NewMemoryContext returns an empty in-memory store.
@@ -57,11 +62,26 @@ func (c *MemoryContext) Set(key string, value any) error {
 	if value == nil {
 		// Node-RED treats setting undefined as a delete, and flows rely on it
 		// to clear a key.
+		if err := c.changed(key, nil, true); err != nil {
+			return err
+		}
 		delete(c.data, key)
 		return nil
 	}
-	c.data[key] = cloneContextValue(value)
+	stored := cloneContextValue(value)
+	if err := c.changed(key, stored, false); err != nil {
+		return err
+	}
+	c.data[key] = stored
 	return nil
+}
+
+// changed reports a pending change to the persistence hook, if there is one.
+func (c *MemoryContext) changed(key string, value any, deleted bool) error {
+	if c.onChange == nil {
+		return nil
+	}
+	return c.onChange(key, value, deleted)
 }
 
 // Keys returns every key, sorted so that iteration order is stable.
@@ -80,6 +100,12 @@ func (c *MemoryContext) Keys() ([]string, error) {
 func (c *MemoryContext) Delete(key string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if _, ok := c.data[key]; !ok {
+		return nil
+	}
+	if err := c.changed(key, nil, true); err != nil {
+		return err
+	}
 	delete(c.data, key)
 	return nil
 }
@@ -98,9 +124,18 @@ func (c *MemoryContext) CompareAndSwap(key string, prev, next any) (bool, error)
 		return false, nil
 	}
 	if next == nil {
+		if exists {
+			if err := c.changed(key, nil, true); err != nil {
+				return false, err
+			}
+		}
 		delete(c.data, key)
 	} else {
-		c.data[key] = cloneContextValue(next)
+		stored := cloneContextValue(next)
+		if err := c.changed(key, stored, false); err != nil {
+			return false, err
+		}
+		c.data[key] = stored
 	}
 	return true, nil
 }
@@ -122,6 +157,9 @@ func (c *MemoryContext) Increment(key string, delta float64) (float64, error) {
 		cur = f
 	}
 	next := cur + delta
+	if err := c.changed(key, next, false); err != nil {
+		return 0, err
+	}
 	c.data[key] = next
 	return next, nil
 }
@@ -145,10 +183,18 @@ func (c *MemoryContext) Update(key string, fn func(cur any) (any, error)) (any, 
 		return nil, err
 	}
 	if next == nil {
+		if ok {
+			if err := c.changed(key, nil, true); err != nil {
+				return nil, err
+			}
+		}
 		delete(c.data, key)
 		return nil, nil
 	}
 	stored := cloneContextValue(next)
+	if err := c.changed(key, stored, false); err != nil {
+		return nil, err
+	}
 	c.data[key] = stored
 	return cloneContextValue(stored), nil
 }
@@ -222,8 +268,13 @@ type ScopedContexts struct {
 	nodes  map[string]node.Context
 
 	// newStore builds a store for a scope that does not exist yet. Swapping it
-	// is how a persistent store would replace the memory one. None exists yet.
+	// is how the persistent store replaces the memory one.
 	newStore func(scope string) node.Context
+
+	// onClean, when set, is told which scopes survive a Clean so a persistent
+	// store can forget the rest; see PersistentContexts.
+	onClean func(keepNode, keepFlow func(id string) bool)
+	onDrop  func(scope string)
 }
 
 // NewScopedContexts returns a set of context scopes backed by memory stores.
@@ -284,6 +335,9 @@ func (s *ScopedContexts) DropNode(nodeID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.nodes, nodeID)
+	if s.onDrop != nil {
+		s.onDrop("node:" + nodeID)
+	}
 }
 
 // Clean removes the context of every node that is not in the supplied set of
@@ -300,5 +354,8 @@ func (s *ScopedContexts) Clean(liveNodes, liveFlows map[string]bool) {
 		if !liveFlows[id] {
 			delete(s.flows, id)
 		}
+	}
+	if s.onClean != nil {
+		s.onClean(func(id string) bool { return liveNodes[id] }, func(id string) bool { return liveFlows[id] })
 	}
 }

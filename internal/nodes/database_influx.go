@@ -29,10 +29,15 @@ func init() {
 
 // influxConfig holds the endpoint and credentials.
 type influxConfig struct {
-	writeURL string
-	header   http.Header
-	client   *http.Client
+	writeURL  string
+	header    http.Header
+	client    *http.Client
+	precision string
 }
+
+// Precision is the timestamp precision the server was configured with, which is
+// the unit a point's timestamp has to be written in.
+func (c *influxConfig) Precision() string { return c.precision }
 
 // InfluxTarget is how an action node reaches its config node.
 type InfluxTarget interface {
@@ -98,8 +103,9 @@ func newInfluxConfig(def *node.Definition) (node.Node, error) {
 	}
 
 	c := &influxConfig{
-		header: http.Header{},
-		client: &http.Client{Timeout: timeout},
+		header:    http.Header{},
+		client:    &http.Client{Timeout: timeout},
+		precision: precision,
 	}
 	c.header.Set("Content-Type", "text/plain; charset=utf-8")
 
@@ -216,7 +222,8 @@ func registerInfluxOut() {
 			}},
 			{Name: "timestamp", Kind: node.PropTypedInput, Label: "Timestamp",
 				TypeProp: "timestampType",
-				Help:     "Leave empty to let InfluxDB stamp it on arrival."},
+				Help: "Leave empty to let InfluxDB stamp it on arrival. A message that waited on a " +
+					"durable wire is stamped with when it entered the wire instead."},
 		},
 		Help: "Writes a measurement to InfluxDB. Tags are indexed and must be " +
 			"strings; fields hold the values.",
@@ -278,6 +285,9 @@ func (n *influxOutNode) Receive(ctx context.Context, m *engine.Msg, out node.Emi
 			return fmt.Errorf("config node %s is not an InfluxDB server", n.cfgID)
 		}
 		n.target = t
+		if p, ok := cfg.(interface{ Precision() string }); ok {
+			n.precision = p.Precision()
+		}
 	}
 
 	line, err := n.buildLine(m)
@@ -364,7 +374,20 @@ func (n *influxOutNode) buildLine(m *engine.Msg) (string, error) {
 		return "", fmt.Errorf("no field resolved to a value; InfluxDB rejects a point with no fields")
 	}
 
-	if n.timestamp.Value != "" {
+	if n.timestamp.Value == "" {
+		// No timestamp configured, so InfluxDB would stamp the point when it
+		// arrives. For a message that waited on a durable wire that is the
+		// wrong time: an hour of readings queued through an outage would all
+		// land in the minute the historian came back. The wire records when
+		// the message entered it, and that is when the reading happened. It
+		// also makes a message delivered twice after a crash the same point
+		// written twice, which InfluxDB treats as an overwrite, not a second
+		// row.
+		if at, ok := queuedAt(m); ok {
+			b.WriteByte(' ')
+			b.WriteString(strconv.FormatInt(unixIn(at, n.precision), 10))
+		}
+	} else {
 		ts, ok, err := n.timestamp.Eval(ec)
 		if err != nil {
 			return "", fmt.Errorf("timestamp: %w", err)
@@ -380,6 +403,30 @@ func (n *influxOutNode) buildLine(m *engine.Msg) (string, error) {
 	}
 
 	return b.String(), nil
+}
+
+// queuedAt reads the time a durable wire stamped on the message.
+func queuedAt(m *engine.Msg) (time.Time, bool) {
+	s, ok := m.Data["_queuedAt"].(string)
+	if !ok {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339Nano, s)
+	return t, err == nil
+}
+
+// unixIn is a time as a count of the precision's unit since the epoch.
+func unixIn(t time.Time, precision string) int64 {
+	switch precision {
+	case "s":
+		return t.Unix()
+	case "ms":
+		return t.UnixMilli()
+	case "us":
+		return t.UnixMicro()
+	default:
+		return t.UnixNano()
+	}
 }
 
 // Line-protocol escaping.

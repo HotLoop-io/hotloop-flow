@@ -566,3 +566,63 @@ func BenchmarkParseFlows(b *testing.B) {
 		}
 	}
 }
+
+// Marking a wire durable adds a key to the node it leaves. A file that carries
+// it comes back byte for byte once it is in the format a save writes, in the
+// order it was written, and touching a different node doesn't disturb it.
+func TestRoundTripCarriesDurableWires(t *testing.T) {
+	src := `[
+    {"id":"t1","type":"tab","label":"Line 3"},
+    {"id":"a","type":"function","z":"t1","name":"count","func":"return msg;","outputs":1,"x":290,"y":100,"ew_durable":["b"],"wires":[["b","c"]]},
+    {"id":"b","type":"influxdb out","z":"t1","x":470,"y":60,"wires":[]},
+    {"id":"c","type":"http response","z":"t1","x":470,"y":140,"wires":[]}
+]`
+	f, err := ParseFlows([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := f.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A saved file loads and saves again byte for byte.
+	g, err := ParseFlows(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := g.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again) != string(saved) {
+		w, got := firstDiffContext(string(saved), string(again))
+		t.Fatalf("round trip changed the file\n--- want ---\n%s\n--- got ---\n%s", w, got)
+	}
+
+	var nodes []map[string]any
+	if err := json.Unmarshal(saved, &nodes); err != nil {
+		t.Fatal(err)
+	}
+	durable, ok := nodes[1]["ew_durable"].([]any)
+	if !ok || len(durable) != 1 || durable[0] != "b" {
+		t.Fatalf("ew_durable did not survive the save: %#v", nodes[1]["ew_durable"])
+	}
+	if strings.Index(string(saved), `"ew_durable"`) > strings.Index(string(saved), `"wires"`) {
+		t.Fatal("ew_durable moved after wires: key order was not kept")
+	}
+
+	g.Touch("c")
+	out, err := g.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `"ew_durable"`) {
+		t.Fatalf("an untouched node lost its durable wire:\n%s", out)
+	}
+	if a := g.Nodes["a"]; a == nil {
+		t.Fatal("node a is gone")
+	} else if raw, ok := a.Prop("ew_durable"); !ok || raw.([]any)[0] != "b" {
+		t.Fatalf("ew_durable parsed as %#v", raw)
+	}
+}

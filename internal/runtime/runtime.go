@@ -71,6 +71,13 @@ type Runtime struct {
 
 	contexts *store.ScopedContexts
 
+	// spool is the disk behind durable wires. Nil in a flow test, where a
+	// durable wire is an ordinary one.
+	spool *store.Spool
+	// durable holds the pump of every durable wire in the running flows.
+	durableMu sync.Mutex
+	durable   map[string]*durableWire
+
 	// credentials returns a node's decrypted credentials.
 	credentials func(nodeID string) map[string]string
 
@@ -283,6 +290,10 @@ func (rt *Runtime) Instances() []string {
 	}
 	return nil
 }
+
+// SetSpool gives the runtime the disk durable wires queue on. Without one a wire
+// marked durable is an ordinary wire.
+func (rt *Runtime) SetSpool(sp *store.Spool) { rt.spool = sp }
 
 // SetContexts replaces the context stores, which is how a persistent store is
 // substituted for the default in-memory one.
@@ -573,13 +584,18 @@ func (rt *Runtime) newRunner(g *graph, n *engine.Node) *runner {
 // at a node that was not started — unknown type, disabled, failed to build — are
 // dropped here, which is why delivery itself never has to check.
 func (rt *Runtime) wire(g *graph) {
+	durable := rt.syncDurable(g)
 	for id, r := range g.runners {
 		n := g.flows.Nodes[id]
-		wires := make([][]*runner, len(n.Wires))
+		wires := make([][]wireTarget, len(n.Wires))
 		for port, targets := range n.Wires {
 			for _, tid := range targets {
+				if d, ok := durable[durableKey(id, port, tid)]; ok {
+					wires[port] = append(wires[port], wireTarget{d: d})
+					continue
+				}
 				if t, ok := g.runners[tid]; ok {
-					wires[port] = append(wires[port], t)
+					wires[port] = append(wires[port], wireTarget{r: t})
 				}
 			}
 		}
@@ -664,6 +680,7 @@ func (rt *Runtime) Stop(ctx context.Context) []error {
 	rt.configsMu.RUnlock()
 
 	errs := rt.retire(ctx, runners, configIDs, nil)
+	rt.stopDurable(ctx)
 
 	rt.eventsMu.Lock()
 	rt.eventsClosed = true
@@ -783,13 +800,14 @@ func (rt *Runtime) salvage(old *runner) {
 		case d := <-old.inbox:
 			if next, ok := rt.graph().runners[old.id]; ok && next != old && !next.exited.Load() {
 				// enqueue counts it again for the runner it moves to.
-				next.enqueue(rt.ctx, d.msg, nil)
+				next.enqueueDelivery(rt.ctx, d, nil)
 				rt.outstanding.Add(-1)
 				continue
 			}
 			rt.outstanding.Add(-1)
 			old.stats.Dropped.Add(1)
 			rt.onDropped(old, d.msg, "node-stopped")
+			d.reject()
 		default:
 			return
 		}
@@ -837,7 +855,11 @@ func (rt *Runtime) deliver(from *runner, port int, msg *engine.Msg, ec *engine.T
 	rt.tracer.Outgoing(msg, from.id, from.typ, port, "", ec, eh, rt.opts.Now())
 	from.stats.Sent.Add(1)
 	for _, t := range targets {
-		t.enqueue(rt.ctx, msg.Clone(), from)
+		if t.d != nil {
+			t.d.offer(msg.Clone(), from)
+			continue
+		}
+		t.r.enqueue(rt.ctx, msg.Clone(), from)
 	}
 }
 
