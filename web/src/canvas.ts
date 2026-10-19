@@ -7,7 +7,7 @@
 
 import {
   type FlowEntry, type Graph, type Point,
-  NODE_HEIGHT, NODE_WIDTH, PORT_RADIUS, inputPort, outputPort, snap, wirePath,
+  GROUP_HEAD, NODE_HEIGHT, NODE_WIDTH, PORT_RADIUS, SUBFLOW_PREFIX, inputPort, outputPort, snap, wirePath,
 } from './graph';
 import { type DiffOverlay, wireKey } from './diff';
 import type { TestMark } from './tests';
@@ -29,6 +29,8 @@ type Mode =
 export interface CanvasCallbacks {
   onEditNode: (entry: FlowEntry) => void;
   onSelectionChange: () => void;
+  /** Something the person should be told, such as why a group could not be made. */
+  onNotice?: (message: string) => void;
 }
 
 export interface CanvasOptions {
@@ -44,6 +46,7 @@ export class Canvas {
   private svg: SVGSVGElement;
   private layers: {
     grid: SVGGElement;
+    groups: SVGGElement;
     wires: SVGGElement;
     nodes: SVGGElement;
     overlay: SVGGElement;
@@ -57,6 +60,8 @@ export class Canvas {
   private trace: TraceOverlay | null = null;
   private readonly readOnly: boolean;
   private lastPress = { id: '', at: 0 };
+  /** Where the pointer last was over the canvas, in canvas coordinates. */
+  private pointer: Point | null = null;
 
   constructor(
     private readonly host: HTMLElement,
@@ -71,11 +76,12 @@ export class Canvas {
 
     this.layers = {
       grid: this.group('layer-grid'),
+      groups: this.group('layer-groups'),
       wires: this.group('layer-wires'),
       nodes: this.group('layer-nodes'),
       overlay: this.group('layer-overlay'),
     };
-    this.svg.append(this.layers.grid, this.layers.wires, this.layers.nodes, this.layers.overlay);
+    this.svg.append(this.layers.grid, this.layers.groups, this.layers.wires, this.layers.nodes, this.layers.overlay);
     host.append(this.svg);
 
     this.bindEvents();
@@ -142,7 +148,8 @@ export class Canvas {
       const type = e.dataTransfer?.getData('text/hotloop-flow-node');
       if (!type) return;
       const at = this.toCanvas(e.clientX, e.clientY);
-      const entry = this.graph.addNode(type, at);
+      const entry = this.place(type, at);
+      if (!entry) return;
       this.cb.onSelectionChange();
       this.cb.onEditNode(entry);
     });
@@ -211,6 +218,37 @@ export class Canvas {
       return;
     }
 
+    // A group's border or its title bar. Its inside is not a hit, so a
+    // marquee can still start over a group full of nodes.
+    const groupEl = target.closest('[data-group-id]');
+    if (groupEl) {
+      const id = groupEl.getAttribute('data-group-id')!;
+      const entry = this.graph.byId(id);
+      const now = performance.now();
+      if (!this.readOnly && entry && this.lastPress.id === id && now - this.lastPress.at < DOUBLE_PRESS_MS) {
+        this.lastPress = { id: '', at: 0 };
+        this.cb.onEditNode(entry);
+        return;
+      }
+      this.lastPress = { id, at: now };
+      if (e.shiftKey || e.ctrlKey || e.metaKey) {
+        if (this.graph.selection.has(id)) this.graph.selection.delete(id);
+        else this.graph.selection.add(id);
+      } else if (!this.graph.selection.has(id)) {
+        this.graph.selection = new Set([id]);
+      }
+      this.cb.onSelectionChange();
+      if (this.readOnly) {
+        this.render();
+        return;
+      }
+      this.graph.checkpoint('move');
+      this.mode = { kind: 'drag', last: at, moved: false };
+      this.svg.setPointerCapture(e.pointerId);
+      this.render();
+      return;
+    }
+
     // Empty canvas: marquee select.
     if (!e.shiftKey) {
       this.graph.selection.clear();
@@ -223,6 +261,7 @@ export class Canvas {
 
   private onPointerMove(e: PointerEvent): void {
     const at = this.toCanvas(e.clientX, e.clientY);
+    this.pointer = at;
 
     switch (this.mode.kind) {
       case 'pan': {
@@ -259,7 +298,11 @@ export class Canvas {
     const at = this.toCanvas(e.clientX, e.clientY);
 
     if (this.mode.kind === 'wire') {
-      const target = (e.target as Element).closest('[data-node-id]');
+      // Asked of the page, not read off the event: the canvas holds the pointer
+      // for the whole drag, so the event's target is the canvas itself, and a
+      // wire let go over a node never found the node. The browser tests were
+      // the first thing to try it in a real browser.
+      const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-node-id]');
       if (target) {
         const toId = target.getAttribute('data-node-id')!;
         this.graph.connect(this.mode.fromId, this.mode.port, toId);
@@ -269,6 +312,8 @@ export class Canvas {
         // Snap once at the end rather than continuously, so dragging feels
         // smooth instead of stepping.
         this.graph.snapSelection();
+        // Let go inside a group and you are in it; dragged out and you are not.
+        this.graph.rehomeSelection();
       }
     } else if (this.mode.kind === 'marquee') {
       this.selectWithin(this.mode.start, at, e.shiftKey);
@@ -287,7 +332,7 @@ export class Canvas {
     const y1 = Math.min(a.y, b.y), y2 = Math.max(a.y, b.y);
     if (!additive) this.graph.selection.clear();
 
-    for (const n of this.graph.nodesOn(this.graph.activeTab)) {
+    for (const n of this.graph.visibleNodes(this.graph.activeTab)) {
       const nx = n.x ?? 0, ny = n.y ?? 0;
       const left = nx - NODE_WIDTH / 2, right = nx + NODE_WIDTH / 2;
       const top = ny - NODE_HEIGHT / 2, bottom = ny + NODE_HEIGHT / 2;
@@ -330,9 +375,21 @@ export class Canvas {
     }
     if (mod && e.key.toLowerCase() === 'a') {
       e.preventDefault();
-      for (const n of this.graph.nodesOn(this.graph.activeTab)) this.graph.selection.add(n.id);
+      for (const n of this.graph.visibleNodes(this.graph.activeTab)) this.graph.selection.add(n.id);
       this.cb.onSelectionChange();
       this.render();
+      return;
+    }
+    // Group and ungroup, with the keys Node-RED uses for them.
+    if (mod && e.key.toLowerCase() === 'g') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        if (this.graph.ungroupSelection() === 0) this.cb.onNotice?.('Select a group to ungroup.');
+      } else {
+        const made = this.graph.groupSelection();
+        if (typeof made === 'string') this.cb.onNotice?.(made);
+      }
+      this.cb.onSelectionChange();
       return;
     }
     if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -395,8 +452,38 @@ export class Canvas {
     this.render();
   }
 
+  /** Puts a new node, or a subflow instance, on the active canvas. */
+  place(type: string, at: Point): FlowEntry | undefined {
+    if (type.startsWith(SUBFLOW_PREFIX)) {
+      const placed = this.graph.addInstance(type.slice(SUBFLOW_PREFIX.length), at);
+      if (!placed) this.cb.onNotice?.('A subflow cannot be placed inside itself, or inside one that holds it.');
+      return placed;
+    }
+    return this.graph.addNode(type, at);
+  }
+
+  /** Where the pointer last was over the canvas, or null if it never has been. */
+  lastPointer(): Point | null { return this.pointer; }
+
+  /** The middle of what is in view. */
+  viewCenter(): Point {
+    return { x: this.view.x + this.view.w / 2, y: this.view.y + this.view.h / 2 };
+  }
+
+  /** Pans so a node is in the middle of the view, keeping the zoom. */
+  centerOn(id: string): void {
+    const n = this.graph.byId(id);
+    if (!n || n.x === undefined || n.y === undefined) return;
+    const x = n.type === 'group' ? Number(n.x) + Number(n.w) / 2 : n.x;
+    const y = n.type === 'group' ? Number(n.y) + Number(n.h) / 2 : n.y;
+    this.view.x = x - this.view.w / 2;
+    this.view.y = y - this.view.h / 2;
+    this.applyView();
+  }
+
   render(): void {
     this.renderGrid();
+    this.renderGroups();
     this.renderWires();
     this.renderNodes();
     this.renderOverlay();
@@ -404,7 +491,7 @@ export class Canvas {
 
   /** Fits the view to the nodes on the active tab. */
   fit(): void {
-    const nodes = this.graph.nodesOn(this.graph.activeTab);
+    const nodes = this.graph.visibleNodes(this.graph.activeTab);
     if (nodes.length === 0) {
       this.view = { x: -100, y: -100, w: 1200, h: 800 };
       this.applyView();
@@ -416,6 +503,14 @@ export class Canvas {
       maxX = Math.max(maxX, (n.x ?? 0) + NODE_WIDTH);
       minY = Math.min(minY, (n.y ?? 0) - NODE_HEIGHT * 2);
       maxY = Math.max(maxY, (n.y ?? 0) + NODE_HEIGHT * 2);
+    }
+    // A group reaches past its nodes, and its title bar is what you grab.
+    for (const g of this.graph.groupsOn(this.graph.activeTab)) {
+      if (!(Number(g.w) > 0)) continue;
+      minX = Math.min(minX, Number(g.x) - 20);
+      maxX = Math.max(maxX, Number(g.x) + Number(g.w) + 20);
+      minY = Math.min(minY, Number(g.y) - 20);
+      maxY = Math.max(maxY, Number(g.y) + Number(g.h) + 20);
     }
     const rect = this.svg.getBoundingClientRect();
     const aspect = rect.height / (rect.width || 1);
@@ -454,6 +549,63 @@ export class Canvas {
       frag.append(line);
     }
     this.layers.grid.append(frag);
+  }
+
+  /** Groups sit under the wires and the nodes, outermost first. */
+  private renderGroups(): void {
+    this.layers.groups.replaceChildren();
+    const frag = document.createDocumentFragment();
+    const groups = this.graph.groupsOn(this.graph.activeTab);
+    const depth = (g: FlowEntry): number => {
+      let d = 0;
+      for (let p = g.g; p; p = this.graph.byId(p)?.g) d++;
+      return d;
+    };
+    groups.sort((a, b) => depth(a) - depth(b));
+
+    for (const g of groups) {
+      const x = Number(g.x), y = Number(g.y), w = Number(g.w), h = Number(g.h);
+      if (!(w > 0 && h > 0)) continue;
+      const style = (g.style as Record<string, unknown> | undefined) ?? {};
+      const selected = this.graph.selection.has(g.id);
+
+      const box = document.createElementNS(SVG_NS, 'g');
+      box.setAttribute('class', `group${selected ? ' selected' : ''}`);
+      box.setAttribute('data-group-id', g.id);
+
+      const rect = document.createElementNS(SVG_NS, 'rect');
+      rect.setAttribute('x', String(x));
+      rect.setAttribute('y', String(y));
+      rect.setAttribute('width', String(w));
+      rect.setAttribute('height', String(h));
+      rect.setAttribute('rx', '8');
+      rect.setAttribute('class', 'group-box');
+      if (typeof style.fill === 'string' && style.fill) {
+        rect.style.fill = style.fill;
+        rect.style.fillOpacity = '0.2';
+      }
+      if (typeof style.stroke === 'string' && style.stroke) rect.style.stroke = style.stroke;
+      box.append(rect);
+
+      const head = document.createElementNS(SVG_NS, 'rect');
+      head.setAttribute('x', String(x));
+      head.setAttribute('y', String(y));
+      head.setAttribute('width', String(w));
+      head.setAttribute('height', String(GROUP_HEAD));
+      head.setAttribute('class', 'group-head');
+      box.append(head);
+
+      if (style.label !== false && g.name) {
+        const label = document.createElementNS(SVG_NS, 'text');
+        label.setAttribute('x', String(x + 10));
+        label.setAttribute('y', String(y + GROUP_HEAD - 7));
+        label.setAttribute('class', 'group-label');
+        label.textContent = truncate(String(g.name), Math.max(8, Math.floor(w / 7)));
+        box.append(label);
+      }
+      frag.append(box);
+    }
+    this.layers.groups.append(frag);
   }
 
   private renderWires(): void {
@@ -508,7 +660,7 @@ export class Canvas {
       g.setAttribute('data-ghost-id', ghost.id);
       frag.append(g);
     }
-    for (const n of this.graph.nodesOn(this.graph.activeTab)) {
+    for (const n of this.graph.visibleNodes(this.graph.activeTab)) {
       frag.append(this.renderNode(n));
     }
     this.layers.nodes.append(frag);

@@ -507,3 +507,105 @@ textarea.test-yaml { width: 100%; min-width: min(560px, 80vw); }
 .trace-hop .ns { margin-left: auto; font-variant-numeric: tabular-nums; }
 .trace-msg { margin: 2px 0 0; white-space: pre-wrap; max-height: 80px; overflow: auto; }
 .log-trace { flex-shrink: 0; font-size: 10px; padding: 2px 8px; }
+
+/* ── Groups ───────────────────────────────────────────────────────────────────
+   A box under the nodes. Only its border and its title bar take the pointer, so
+   a marquee can still start over a group full of nodes. */
+
+.group-box {
+  fill: var(--accent-wash);
+  fill-opacity: 0.5;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  pointer-events: stroke;
+  cursor: move;
+}
+.group-head { fill: transparent; pointer-events: all; cursor: move; }
+.group.selected .group-box { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: none; }
+.group-label {
+  fill: var(--text-sub);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--hl-font);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* A subflow tab is told apart from a flow tab by a small marker. */
+.tab-subflow::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 2px;
+  background: #DDAA99;
+  vertical-align: baseline;
+}
+
+/* ── Notice, search and the debug filter ─────────────────────────────────── */
+
+.toast {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: calc(100% - 32px);
+  padding: 8px 14px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-input);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+.toast[hidden], .search-panel[hidden] { display: none; }
+
+.search-panel {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 6;
+  width: min(380px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-input);
+  box-shadow: var(--shadow);
+}
+.search-head { display: flex; gap: 6px; align-items: center; }
+.search-head input { flex: 1; font-size: 13px; padding: 6px 10px; }
+.search-count { font-size: 11px; color: var(--text-sub); }
+.search-results { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.search-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-input);
+  color: var(--text-main);
+}
+.search-hit:hover { background: var(--accent-wash); border-color: var(--border-color); }
+.hit-label { font-size: 13px; font-weight: 700; }
+.hit-meta, .hit-snippet { font-size: 11px; color: var(--text-sub); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.debug-filter { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.debug-filter select { flex: 0 0 auto; font-size: 11px; padding: 4px 6px; }
+.debug-filter input[type="search"] { flex: 1 1 100px; min-width: 0; font-size: 11px; padding: 4px 8px; }
+.topic-filter { display: flex; gap: 8px; }
+.topic-filter label { display: flex; align-items: center; gap: 3px; font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-sub); }
+.filter-count { font-size: 11px; color: var(--text-sub); margin-left: auto; }
