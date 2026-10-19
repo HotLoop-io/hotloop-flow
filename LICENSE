@@ -7,23 +7,33 @@ Licensor: HotLoop LLC
 
 Licensed Work: HotLoop IoT, HotLoop Edge, HotLoop Gateway, HotLoop Edge Relay, HotLoop Flow and HotLoop Cascade, in the version of each that you received. The Licensed Work is (c) 2026 HotLoop LLC.
 
-Additional Use Grant: You may make production use of the Licensed Work in these two ways, and only these two.
+Additional Use Grant: You may make production use of the Licensed Work in these three ways, and only these three.
 
 (1) Home and Lab Use. You may use the Licensed Work for personal, household, hobby, non-commercial, educational, evaluation, development and testing purposes. Evaluation, development and testing count as Home and Lab Use only while the Licensed Work is not running, monitoring or controlling live operations of a business.
 
-(2) Business Use through EmberNET. You may make Business Use of the Licensed Work if, and only if, you run it through EmberNET (https://embernet.ai), HotLoop's channel for business use, under the EmberNET terms in effect for your account.
+(2) Education, Nonprofit and Government Use. If you are an Educational Institution, a Nonprofit Organization or a Government Body, you may use the Licensed Work for your own operations and mission, anywhere, without running it through EmberNET. You may have a contractor install and operate the Licensed Work for you, on equipment you own or control.
+
+(3) Business Use through EmberNET. You may make Business Use of the Licensed Work if, and only if, you run it through EmberNET (https://embernet.ai), HotLoop's channel for business use, under the EmberNET terms in effect for the account you run it under.
 
 For purposes of this grant:
 
-"Business Use" means any use by, for or on behalf of a company, partnership, sole proprietorship or other for-profit organization, or in the course of earning a living, to run, monitor, control or support its operations, facilities, products or services. It is Business Use whether the use is purely internal or reaches customers, and whether or not a fee is charged. Use that is not Home and Lab Use is Business Use.
+"Educational Institution" means a school, college, university or other institution that is accredited or licensed by a government authority or a recognized accrediting body to provide education.
 
-"Run it through EmberNET" means that each copy of the Licensed Work you use for Business Use is deployed and operated under your own EmberNET account.
+"Nonprofit Organization" means an organization that is organized and operated as a nonprofit under the law of the place where it is organized, whose net earnings do not benefit any private owner or member, and that is recognized as tax-exempt or as a charity in that place.
+
+"Government Body" means a national, state, provincial, regional, local or tribal government, or an agency, department or public authority of one, acting in its governmental capacity. A company that a government owns and that sells goods or services for profit is not a Government Body.
+
+Each of the three is the institution itself. A for-profit subsidiary, affiliate or spin-off of an Educational Institution, a Nonprofit Organization or a Government Body is not one, and neither is a for-profit business that serves one.
+
+"Business Use" means any use by, for or on behalf of a company, partnership, sole proprietorship or other for-profit organization, or in the course of earning a living, to run, monitor, control or support its operations, facilities, products or services. It is Business Use whether the use is purely internal or reaches customers, and whether or not a fee is charged. Use that is not Home and Lab Use and is not covered by paragraph (2) is Business Use.
+
+"Run it through EmberNET" means that each copy of the Licensed Work used for Business Use is deployed and operated under an EmberNET account. The account may be the account of the organization the Licensed Work is operated for, or the account of a systems integrator that installs and operates it for that organization. Either one is acceptable. A "systems integrator" is a business that installs, configures and operates the Licensed Work for its customers on equipment or in cloud accounts that the customer owns or controls. A systems integrator may charge for its own services, such as installation, configuration and support, but not for the Licensed Work itself or for access to it.
 
 This grant does not extend to any of the following: (a) offer the Licensed Work, or any of its functionality, to third parties as a hosted, managed or software-as-a-service offering; (b) sell, resell, sublicense, rent or lease the Licensed Work; (c) embed or bundle the Licensed Work in a product or service that you sell, license or otherwise provide for a fee; or (d) charge anyone for access to the Licensed Work.
 
 Change Date: Four years after the date the version of the Licensed Work you received was first made publicly available under this License.
 
-Change License: GNU General Public License, Version 3.0
+Change License: GNU General Public License, Version 3.0 or any later version (GPL-3.0-or-later)
 
 Notice
 
