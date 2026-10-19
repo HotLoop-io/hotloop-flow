@@ -1249,8 +1249,8 @@ register 40001 in a manual is address 0.
 
 **S7** is `s7 read` and `s7 write` on a `hotloop-flow-s7` server, over ISO on TCP.
 gos7 is a Go implementation of the protocol and has none of Snap7's C library in
-it, which matters because Snap7 is LGPL and I'm not linking that into an Apache
-project. You write the address the way Siemens does: `DB1.DBX0.0`, `DB1.DBW4`,
+it, which matters because Snap7 is LGPL and I'm not linking that into a product I ship. You
+write the address the way Siemens does: `DB1.DBX0.0`, `DB1.DBW4`,
 `M10.2`, `MW20`, `I0.0`, `QB4`, with `E` and `A` for the German spellings. The
 size letter has to agree with the data type, so `DB1.DBW0` read as a float32 is
 refused before it goes anywhere, with the address you meant. A quantity of 3 on a
