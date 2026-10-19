@@ -172,16 +172,16 @@ func TestSparkplugArraysAreDecodedFromTheirPackedForm(t *testing.T) {
 	}
 }
 
-func TestSparkplugDataSetsAndTemplatesArriveMarkedNotInvented(t *testing.T) {
-	// A metric with a datatype of DataSet and a dataset_value (field 17).
-	metric := []byte{0x0a, 0x01, 'D', 0x20, spDataSet, 0x8a, 0x01, 0x00}
+func TestSparkplugADataSetOrTemplateThatIsntThereSaysSoInsteadOfInventing(t *testing.T) {
+	// A metric whose datatype is DataSet and whose value field is something else.
+	metric := []byte{0x0a, 0x01, 'D', 0x20, spDataSet, 0x72, 0x01, 'x'}
 	pb := append([]byte{0x12, byte(len(metric))}, metric...)
 	p, err := decodeSPPayload(pb)
 	if err != nil {
 		t.Fatal(err)
 	}
 	m := p.Metrics[0]
-	if err := m.resolve(m.DataType); err != nil || m.Unsupported != "DataSet" || m.Value != nil {
+	if err := m.resolve(m.DataType); err == nil || !strings.Contains(err.Error(), "DataSet and carries none") {
 		t.Errorf("%+v, %v", m, err)
 	}
 }
@@ -448,11 +448,13 @@ func TestSparkplugBytesAreWhatTheEclipseSchemaSays(t *testing.T) {
 	if m := byName["Hist"]; !m.IsHistorical || !m.IsTransient {
 		t.Errorf("flags: %+v", m)
 	}
-	if m := byName["DS"]; m.Unsupported != "DataSet" || m.Value != nil {
+	if m := byName["DS"]; m.Unsupported != "" || !reflect.DeepEqual(m.Value, map[string]any{
+		"columns": []any{"a"}, "types": []any{"Double"}, "rows": []any{}}) {
 		t.Errorf("a DataSet: %+v", m)
 	}
-	if m := byName["Props"]; m.Value != 2.0 {
-		t.Errorf("property sets are skipped over and the value kept: %+v", m)
+	if m := byName["Props"]; m.Value != 2.0 || !reflect.DeepEqual(m.Properties, map[string]any{
+		"Quality": map[string]any{"type": "Int32", "value": 192.0}}) {
+		t.Errorf("a metric's property set is read with its value: %+v", m)
 	}
 }
 

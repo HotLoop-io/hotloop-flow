@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -49,7 +51,28 @@ const (
 	spMaxBackoff   = 30 * time.Second
 	spRebirthRetry = 5 * time.Second
 	spSettle       = 250 * time.Millisecond
+	spMoveDelay    = time.Second
+	spMaxMoveDelay = 5 * time.Second
 )
+
+// spStateWait is how long an edge node with more than one broker waits on a
+// broker for the primary host's STATE before it takes the broker to be one the
+// host isn't on and moves to the next. A retained STATE arrives with the
+// subscription, so this is for a broker that never had one. A variable so the
+// tests don't sit it out.
+var spStateWait = 5 * time.Second
+
+// spMove ends a session on purpose, to go to the next broker, or to start over
+// because the primary host said it is offline. It isn't a failure, and the
+// wait before the next try is short.
+type spMove struct{ why string }
+
+func (e *spMove) Error() string { return e.why }
+
+type spBroker struct {
+	host string
+	port int
+}
 
 // spEvent is one Sparkplug message as a host or a command listener sees it.
 type spEvent struct {
@@ -78,8 +101,9 @@ type spServer struct {
 	svc  node.Services
 	role string
 
-	host      string
-	port      int
+	brokers   []spBroker
+	cur       atomic.Int32 // the broker the next session dials
+	primary   string       // the primary host application ID, edge only; empty waits for nobody
 	tlsCfg    *tls.Config
 	user      string
 	pass      string
@@ -122,9 +146,10 @@ func registerSparkplugConfig() {
 		Compatibility: node.Compatibility{
 			Level: node.CompatOnly,
 			Notes: "HotLoop Flow's own Sparkplug B connection, either as an edge node or as a host " +
-				"application, on MQTT 3.1.1. It does not wait for a primary host application before it " +
-				"is born, it does not move to a second broker, and it does not carry DataSet, Template " +
-				"or PropertySet values.",
+				"application, on MQTT 3.1.1. An edge node can wait for a primary host application's STATE " +
+				"before it is born and can move through a list of brokers. A host application connects to " +
+				"one broker. Metrics carry arrays, DataSet, Template and PropertySet values. A metric's " +
+				"MetaData (files and multi-part bytes) is not carried.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -135,6 +160,16 @@ func registerSparkplugConfig() {
 				}},
 			{Name: "broker", Kind: node.PropString, Label: "Broker host", Required: true, Placeholder: "10.20.1.5"},
 			{Name: "port", Kind: node.PropNumber, Label: "Port", Default: 1883},
+			{Name: "moreBrokers", Kind: node.PropList, Label: "Other brokers", Fields: []node.Prop{
+				{Name: "host", Kind: node.PropString, Label: "Host", Placeholder: "10.20.2.5"},
+				{Name: "port", Kind: node.PropNumber, Label: "Port", Default: 1883},
+			}, Help: "Edge node only. Brokers to try, in this order after the one above, when it can't be reached or when " +
+				"the primary host application says it is offline there. The username, password and TLS config are the " +
+				"same for every broker. The edge node is on one broker at a time."},
+			{Name: "primaryHost", Kind: node.PropString, Label: "Primary host application ID",
+				Help: "Edge node only. When set, the edge node subscribes to spBv1.0/STATE/<this ID> and publishes no birth " +
+					"until that host application says it is online. When the host says it is offline, the edge node " +
+					"publishes its death, disconnects and starts over on the next broker. Empty waits for nobody."},
 			{Name: "tls", Kind: node.PropConfigRef, Label: "TLS", ConfigType: "tls-config",
 				Help: "Optional. A TLS config to connect over TLS, and to present a client certificate."},
 			{Name: "username", Kind: node.PropString, Label: "Username"},
@@ -166,8 +201,7 @@ func newSparkplugServer(def *node.Definition) (node.Node, error) {
 	s := &spServer{
 		svc:       def.Services,
 		role:      p.PropString("role", spRoleEdge),
-		host:      strings.TrimSpace(p.PropString("broker", "")),
-		port:      p.PropInt("port", 1883),
+		primary:   strings.TrimSpace(p.PropString("primaryHost", "")),
 		user:      p.PropString("username", ""),
 		group:     strings.TrimSpace(p.PropString("groupId", "")),
 		edgeNode:  strings.TrimSpace(p.PropString("edgeNodeId", "")),
@@ -186,11 +220,36 @@ func newSparkplugServer(def *node.Definition) (node.Node, error) {
 	if s.role != spRoleEdge && s.role != spRoleHost {
 		return nil, fmt.Errorf("role %q is not edge or host", s.role)
 	}
-	if s.host == "" {
+	first := spBroker{host: strings.TrimSpace(p.PropString("broker", "")), port: p.PropInt("port", 1883)}
+	if first.host == "" {
 		return nil, fmt.Errorf("a broker host is required")
 	}
-	if s.port < 1 || s.port > 65535 {
-		return nil, fmt.Errorf("port %d is out of range, it has to be 1 to 65535", s.port)
+	s.brokers = []spBroker{first}
+	extra, _ := p.Raw["moreBrokers"].([]any)
+	for _, r := range extra {
+		m, ok := r.(map[string]any)
+		if !ok {
+			continue
+		}
+		host := strings.TrimSpace(stringOr(m["host"], ""))
+		if host == "" {
+			continue
+		}
+		port := 1883
+		if f, ok := asFloat(m["port"]); ok && m["port"] != nil && m["port"] != "" {
+			port = int(f)
+		}
+		s.brokers = append(s.brokers, spBroker{host, port})
+	}
+	seen := map[spBroker]bool{}
+	for _, b := range s.brokers {
+		if b.port < 1 || b.port > 65535 {
+			return nil, fmt.Errorf("port %d of broker %s is out of range, it has to be 1 to 65535", b.port, b.host)
+		}
+		if seen[b] {
+			return nil, fmt.Errorf("broker %s:%d is listed twice", b.host, b.port)
+		}
+		seen[b] = true
 	}
 	if s.keepalive < time.Second {
 		return nil, fmt.Errorf("keepalive has to be at least one second")
@@ -206,6 +265,12 @@ func newSparkplugServer(def *node.Definition) (node.Node, error) {
 			return fmt.Errorf("%s %q can't contain +, / or #, which Sparkplug reserves for topics", label, v)
 		}
 		return nil
+	}
+	if s.role == spRoleHost && (s.primary != "" || len(s.brokers) > 1) {
+		return nil, fmt.Errorf("a host application connects to one broker and has no primary host. Other brokers and a primary host application ID are for edge nodes")
+	}
+	if err := check("primary host application ID", s.primary, false); err != nil {
+		return nil, err
 	}
 	switch s.role {
 	case spRoleEdge:
@@ -319,12 +384,26 @@ func (s *spServer) fanOut(ev *spEvent) {
 	}
 }
 
-func (s *spServer) endpoint() string { return fmt.Sprintf("%s:%d", s.host, s.port) }
+// broker is the one the next session dials.
+func (s *spServer) broker() spBroker { return s.brokers[int(s.cur.Load())%len(s.brokers)] }
+
+func (s *spServer) endpoint() string {
+	b := s.broker()
+	return fmt.Sprintf("%s:%d", b.host, b.port)
+}
+
+// nextBroker moves on in the list, round and round.
+func (s *spServer) nextBroker() {
+	if len(s.brokers) > 1 {
+		s.cur.Store(int32((int(s.cur.Load()) + 1) % len(s.brokers)))
+	}
+}
 
 // run keeps a session alive: connect, work until it is lost, wait, again. The
 // wait grows to thirty seconds and starts over after a session that held.
 func (s *spServer) run(ctx context.Context) {
 	wait := time.Second
+	moves := 0
 	s.broadcastStatus(node.Status{Fill: "yellow", Shape: "ring", Text: "connecting"})
 	// A flow starts its nodes one after another, a few milliseconds apart.
 	// Connecting before the last of them has said what it publishes would be
@@ -344,8 +423,30 @@ func (s *spServer) run(ctx context.Context) {
 		s.ready, s.client = false, nil
 		s.lastErr = err.Error()
 		s.mu.Unlock()
+		from := s.endpoint()
+		s.nextBroker()
+		var mv *spMove
+		if errors.As(err, &mv) {
+			// Leaving on purpose: no growing back off, since the next broker
+			// may be just what the host is waiting on. Once every broker has
+			// been tried in a row with no luck, slow down to a few seconds.
+			moves++
+			delay := spMoveDelay
+			if over := moves - len(s.brokers); over > 0 {
+				delay = min(spMaxMoveDelay, spMoveDelay<<uint(over))
+			}
+			s.broadcastStatus(node.Status{Fill: "yellow", Shape: "ring", Text: truncate(mv.why, 32)})
+			s.svc.Log(node.LogInfo, "Sparkplug left %s: %s. Next is %s, in %s", from, mv.why, s.endpoint(), delay)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(delay):
+			}
+			continue
+		}
+		moves = 0
 		s.broadcastStatus(node.Status{Fill: "red", Shape: "ring", Text: truncate(err.Error(), 32)})
-		s.svc.Log(node.LogWarn, "Sparkplug connection to %s lost, trying again in %s: %v", s.endpoint(), wait, err)
+		s.svc.Log(node.LogWarn, "Sparkplug connection to %s lost, trying again in %s: %v", from, wait, err)
 		if time.Since(up) > time.Minute {
 			wait = time.Second
 		}
@@ -413,7 +514,7 @@ func (s *spServer) explainConnect(err error) error {
 	case strings.Contains(m, "identifier rejected"):
 		return fmt.Errorf("%s rejected the client ID. Another client may have it, or the broker restricts them", s.endpoint())
 	case strings.Contains(m, "no such host"):
-		return fmt.Errorf("couldn't find a host called %q. Check the spelling, that this host can reach its DNS, or use the broker's IP address", s.host)
+		return fmt.Errorf("couldn't find a host called %q. Check the spelling, that this host can reach its DNS, or use the broker's IP address", s.broker().host)
 	case strings.Contains(m, "i/o timeout"), strings.Contains(m, "timed out"), strings.Contains(m, "no answer"):
 		return fmt.Errorf("no answer from %s. Check the address, the route to it and any firewall", s.endpoint())
 	}
@@ -483,6 +584,22 @@ func (s *spServer) edgeSession(ctx context.Context) error {
 		return err
 	}
 
+	var primary *spPrimary
+	var hostEvents <-chan bool
+	if s.primary != "" {
+		primary = newSpPrimary(s.primary)
+		if err := spWait(c.Subscribe(spNamespace+"/STATE/"+s.primary, 1, primary.handle(s)), "subscribing to the STATE of "+s.primary, 10*time.Second); err != nil {
+			c.Disconnect(100)
+			return err
+		}
+		hostEvents = primary.events
+		// Sparkplug 3.0, section 5.4: no birth until the primary host has said
+		// it is online, on this broker.
+		if err := s.waitForPrimary(ctx, c, primary, lost); err != nil {
+			return err
+		}
+	}
+
 	s.mu.Lock()
 	s.client, s.bdSeq = c, bd
 	s.mu.Unlock()
@@ -491,18 +608,122 @@ func (s *spServer) edgeSession(ctx context.Context) error {
 		return err
 	}
 
-	select {
-	case <-ctx.Done():
-		// Leaving on purpose: an NDEATH first, because a clean DISCONNECT
-		// throws the will away, and the hosts would never hear.
-		s.mu.Lock()
-		s.ready = false
-		s.mu.Unlock()
-		spWait(c.Publish(s.edgeTopic("NDEATH", ""), 1, false, dp), "publishing NDEATH", 2*time.Second)
-		c.Disconnect(250)
-		return ctx.Err()
-	case err := <-lost:
-		return err
+	for {
+		select {
+		case on := <-hostEvents:
+			if on {
+				continue
+			}
+			// The primary host went offline here: NDEATH at once, disconnect,
+			// and start over on the next broker (section 5.5).
+			s.mu.Lock()
+			s.ready = false
+			s.mu.Unlock()
+			spWait(c.Publish(s.edgeTopic("NDEATH", ""), 1, false, dp), "publishing NDEATH", 2*time.Second)
+			c.Disconnect(250)
+			return &spMove{why: "host " + s.primary + " is offline on " + s.endpoint()}
+		case <-ctx.Done():
+			// Leaving on purpose: an NDEATH first, because a clean DISCONNECT
+			// throws the will away, and the hosts would never hear.
+			s.mu.Lock()
+			s.ready = false
+			s.mu.Unlock()
+			spWait(c.Publish(s.edgeTopic("NDEATH", ""), 1, false, dp), "publishing NDEATH", 2*time.Second)
+			c.Disconnect(250)
+			return ctx.Err()
+		case err := <-lost:
+			return err
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// The primary host application
+// ---------------------------------------------------------------------------
+
+// spPrimary follows the STATE of the primary host application on one broker.
+// Its events carry true for an online STATE that counts and false for an
+// offline one that does, in the order they arrived.
+type spPrimary struct {
+	id     string
+	mu     sync.Mutex
+	last   uint64 // the timestamp of the last online STATE
+	have   bool
+	events chan bool
+}
+
+func newSpPrimary(id string) *spPrimary { return &spPrimary{id: id, events: make(chan bool, 32)} }
+
+// handle is the subscription handler. Sparkplug 3.0, section 5.4: the host ID
+// is the last token of the topic, the payload says online, and a STATE older
+// than the last online one is somebody's late death certificate and is ignored.
+func (p *spPrimary) handle(s *spServer) mqtt.MessageHandler {
+	return func(_ mqtt.Client, m mqtt.Message) {
+		if !strings.HasSuffix(m.Topic(), "/"+p.id) {
+			return
+		}
+		var st struct {
+			Online    *bool    `json:"online"`
+			Timestamp *float64 `json:"timestamp"`
+		}
+		if err := json.Unmarshal(m.Payload(), &st); err != nil || st.Online == nil || st.Timestamp == nil || *st.Timestamp < 0 {
+			s.svc.Log(node.LogWarn, "Sparkplug STATE on %s isn't {\"online\": true or false, \"timestamp\": milliseconds}, so it is ignored: %s", m.Topic(), truncate(string(m.Payload()), 80))
+			return
+		}
+		ts := uint64(*st.Timestamp)
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if p.have && ts < p.last {
+			return
+		}
+		if *st.Online {
+			p.last, p.have = ts, true
+		}
+		select {
+		case p.events <- *st.Online:
+		default:
+		}
+	}
+}
+
+// waitForPrimary holds the edge node, connected and subscribed, until the
+// primary host is online. With other brokers to go to, a host that is offline
+// here, or that never published here, sends the edge node on to the next one.
+func (s *spServer) waitForPrimary(ctx context.Context, c mqtt.Client, p *spPrimary, lost <-chan error) error {
+	s.mu.Lock()
+	s.lastErr = "waiting for primary host " + p.id
+	s.mu.Unlock()
+	s.broadcastStatus(node.Status{Fill: "yellow", Shape: "ring", Text: truncate("waiting for host "+p.id, 32)})
+	var silent <-chan time.Time
+	if len(s.brokers) > 1 {
+		t := time.NewTimer(spStateWait)
+		defer t.Stop()
+		silent = t.C
+	}
+	for {
+		select {
+		case on := <-p.events:
+			if on {
+				return nil
+			}
+			// An offline STATE before any birth. With another broker to try,
+			// leave for it, with no NDEATH, since this session never had a
+			// birth for one to end. With only this broker there is nowhere to
+			// go and coming back would find the same retained STATE, so the
+			// edge node stays, subscribed, and is born when the host is.
+			if len(s.brokers) > 1 {
+				c.Disconnect(250)
+				return &spMove{why: "host " + p.id + " is offline on " + s.endpoint()}
+			}
+		case <-silent:
+			c.Disconnect(250)
+			return &spMove{why: "host " + p.id + " has no STATE on " + s.endpoint()}
+		case err := <-lost:
+			return err
+		case <-ctx.Done():
+			c.Disconnect(250)
+			return ctx.Err()
+		}
 	}
 }
 
@@ -541,9 +762,20 @@ func (s *spServer) birth() error {
 			}
 		}
 	}
+	// Template definitions belong to the NBIRTH alone, and an instance has to
+	// point at one that is in it (Sparkplug 3.0, section 6.4.10).
+	defs := map[string]bool{}
 	if o, ok := s.outs[""]; ok {
 		ms, err := o.birthMetrics(now, s.aliases)
 		if err != nil {
+			return err
+		}
+		for _, m := range ms {
+			if m.tplDef {
+				defs[m.Name] = true
+			}
+		}
+		if err := spCheckTemplates(ms, defs, false); err != nil {
 			return err
 		}
 		nb.Metrics = append(nb.Metrics, ms...)
@@ -561,6 +793,9 @@ func (s *spServer) birth() error {
 		if err != nil {
 			return err
 		}
+		if err := spCheckTemplates(ms, defs, true); err != nil {
+			return fmt.Errorf("device %s: %w", d, err)
+		}
 		db := &spPayload{Timestamp: now, HasTimestamp: true, Metrics: ms}
 		db.Seq, db.HasSeq = s.nextSeq(), true
 		if err := s.publishLocked(s.edgeTopic("DBIRTH", d), db); err != nil {
@@ -572,6 +807,21 @@ func (s *spServer) birth() error {
 	s.lastErr = ""
 	count := len(nb.Metrics)
 	go s.broadcastStatus(node.Status{Fill: "green", Shape: "dot", Text: fmt.Sprintf("born, %d metrics", count)})
+	return nil
+}
+
+// spCheckTemplates refuses a birth whose Template metrics break the rules a
+// host relies on: a definition in a DBIRTH, or an instance of a definition that
+// the NBIRTH doesn't carry.
+func spCheckTemplates(ms []*spMetric, defs map[string]bool, device bool) error {
+	for _, m := range ms {
+		if m.tplDef && device {
+			return fmt.Errorf("metric %q is a Template definition, and a definition is only allowed in the edge node's own birth. Move it to the Sparkplug Out node that has no device ID", m.Name)
+		}
+		if m.tplRef != "" && !defs[m.tplRef] {
+			return fmt.Errorf("metric %q is an instance of Template %q, and the edge node's birth has no definition by that name. Declare a Template metric named %q with isDefinition true on the Sparkplug Out node that has no device ID", m.Name, m.tplRef, m.tplRef)
+		}
+	}
 	return nil
 }
 
@@ -685,6 +935,9 @@ func (s *spServer) publishData(o *spOutNode, updates []spUpdate, device bool) er
 	// What the metrics hold now, for the next birth, which has to say so.
 	for _, u := range updates {
 		o.values[u.decl.name] = u.value
+		if u.props != nil {
+			o.props[u.decl.name] = u.props
+		}
 	}
 	if !o.alive && device {
 		// A device that died and came back gets its birth first, with what it
@@ -709,6 +962,9 @@ func (s *spServer) publishData(o *spOutNode, updates []spUpdate, device bool) er
 		m, err := spMetricFor(u.decl.name, u.decl.dt, u.value, false, ts)
 		if err != nil {
 			return fmt.Errorf("metric %q: %w", u.decl.name, err)
+		}
+		if err := m.setProps(u.props); err != nil {
+			return fmt.Errorf("metric %q: properties: %w", u.decl.name, err)
 		}
 		if s.aliases && u.decl.alias != 0 {
 			// With aliases the name is for births. Data carries the number.
@@ -829,6 +1085,14 @@ func spInfer(r spRaw) any {
 		return r.s
 	case 'x':
 		return r.x
+	case 'D':
+		if v, err := spDataSetValue(r.x); err == nil {
+			return v
+		}
+	case 'T':
+		if v, err := spTemplateValue(r.x); err == nil {
+			return v
+		}
 	}
 	return nil
 }
