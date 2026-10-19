@@ -87,6 +87,19 @@ jobs:
           for i in $(seq 1 20); do (echo > /dev/tcp/127.0.0.1/1884) 2>/dev/null && break; sleep 1; done
           sudo podman logs mosquitto-auth
 
+      - name: Start a real OpenTelemetry collector
+        # The tracing export is tested against the stock collector image, not a
+        # stand-in for one, with the config in testdata/otel mounted over its
+        # own: an OTLP/HTTP receiver, and the debug exporter printing every span
+        # it accepts into a file the test reads back. The image is pinned to a
+        # release, so a collector change shows up as a version bump in a PR.
+        run: |
+          docker run -d --name otel -p 4318:4318             -v "$PWD/testdata/otel/collector.yaml:/etc/otelcol/config.yaml:ro"             otel/opentelemetry-collector:0.163.1 --config /etc/otelcol/config.yaml
+          : > "$RUNNER_TEMP/otel.log"
+          nohup docker logs -f otel > "$RUNNER_TEMP/otel.log" 2>&1 &
+          for _ in $(seq 1 30); do grep -q "Everything is ready" "$RUNNER_TEMP/otel.log" && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/otel.log"; exit 1
+
       - name: Test with race detector
         # The race detector needs cgo. This is the test build only — the shipped
         # binary is built CGO_ENABLED=0 in the Dockerfile so it stays static and
@@ -97,6 +110,8 @@ jobs:
           HOTLOOP_FLOW_TEST_MQTT_AUTH: 127.0.0.1:1884
           HOTLOOP_FLOW_TEST_MQTT_USER: line3
           HOTLOOP_FLOW_TEST_MQTT_PASSWORD: ci-broker-pass
+          HOTLOOP_FLOW_TEST_OTLP: localhost:4318
+          HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
         run: go test -race -count=1 -coverprofile=coverage.out ./...
 
       - name: The broker tests actually ran
@@ -169,6 +184,35 @@ jobs:
           fi
           echo "$OUT" | grep -q -- "--- PASS: TestTLSConfigReadsWhatOpenSSLWrites" || {
             echo "::error::the OpenSSL interop test did not pass"; exit 1; }
+
+      - name: The collector actually received the spans
+        # No collector turns the test into a skip, and a skip reads as a pass.
+        env:
+          HOTLOOP_FLOW_TEST_OTLP: localhost:4318
+          HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
+        run: |
+          OUT=$(go test ./internal/otlp/ -count=1 -v -run TestSpansReachARealCollector 2>&1)
+          echo "$OUT" | grep -E 'reached the collector|^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::the collector test skipped; the collector is not reachable"; exit 1
+          fi
+          echo "$OUT" | grep -q -- "--- PASS: TestSpansReachARealCollector" || {
+            echo "::error::the collector test did not pass"; exit 1; }
+          echo "### Spans the real collector received" >> "$GITHUB_STEP_SUMMARY"
+          grep -c '^Span #' "$RUNNER_TEMP/otel.log" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: A million messages through the tracer
+        # The README says tracing every message through a flow keeps memory flat,
+        # and the number is published. The race run above does 50,000; this is
+        # the million, without the race detector so it finishes in seconds.
+        # Anything that stops the heap being flat fails the test itself.
+        env:
+          HOTLOOP_FLOW_SOAK_MESSAGES: "1000000"
+          HOTLOOP_FLOW_SOAK_OUT: ${{ runner.temp }}/soak.txt
+        run: |
+          go test ./internal/runtime/ -count=1 -run TestTraceMemoryStaysFlatUnderASoak -v 2>&1 | grep -E '^(---|ok|FAIL)'
+          cat "$HOTLOOP_FLOW_SOAK_OUT"
+          { echo '### Trace soak'; echo '```'; cat "$HOTLOOP_FLOW_SOAK_OUT"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: The JSONata suite actually ran
         # A missing suite turns the test into a skip, and a skip reads as a

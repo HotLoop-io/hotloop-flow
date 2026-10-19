@@ -360,11 +360,13 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 	if r.rt.capture != nil && r.typ == "debug" {
 		r.rt.capture.add(r.id, -1, d.msg, r.rt.opts.Now())
 	}
+	tr, hop := r.rt.tracer.Receive(d.msg, r.id, r.typ, r.rt.opts.Now())
 	r.stats.Received.Add(1)
 	r.inFlight.Add(1)
 	defer r.inFlight.Add(-1)
 	r.rt.observeQueueLatency(r, r.rt.opts.Now().Sub(d.enqueued))
 
+	start := r.rt.opts.Now()
 	defer func() {
 		if p := recover(); p != nil {
 			// A node panicking is a bug in that node. Node-RED's equivalent —
@@ -373,13 +375,15 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 			// this pod alive.
 			r.stats.Errors.Add(1)
 			err := fmt.Errorf("node %s (%s) panicked: %v", r.id, r.typ, p)
+			tr.Finish(hop, r.rt.opts.Now().Sub(start), err)
 			r.rt.raiseError(r, err, d.msg)
 		}
 	}()
 
-	start := r.rt.opts.Now()
-	err := r.node.Receive(ctx, d.msg, r.emitter())
-	r.rt.observeExecTime(r, r.rt.opts.Now().Sub(start))
+	err := r.node.Receive(ctx, d.msg, r.emitterIn(tr, hop))
+	took := r.rt.opts.Now().Sub(start)
+	r.rt.observeExecTime(r, took)
+	tr.Finish(hop, took, err)
 
 	if err != nil {
 		r.stats.Errors.Add(1)
@@ -389,7 +393,13 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 
 // emitter returns this runner's Emitter. It is a value type wrapping the runner
 // pointer, so handing it out costs nothing and it is safe to keep.
-func (r *runner) emitter() node.Emitter { return emitter{r: r} }
+func (r *runner) emitter() node.Emitter { return emitter{r: r, hop: -1} }
+
+// emitterIn is the Emitter for one Receive call: its sends know which hop of
+// which trace they were made in.
+func (r *runner) emitterIn(tr *engine.Trace, hop int) node.Emitter {
+	return emitter{r: r, tr: tr, hop: hop}
+}
 
 // idle reports whether the node has nothing queued, nothing in a handler and
 // nothing held back on a timer.
@@ -469,7 +479,11 @@ func (r *runner) attach(inst node.Node) {
 
 // emitter is the Emitter handed to a node. Every method is safe to call from any
 // goroutine, so a node doing asynchronous work can emit from a callback.
-type emitter struct{ r *runner }
+type emitter struct {
+	r   *runner
+	tr  *engine.Trace
+	hop int
+}
 
 var _ node.Emitter = emitter{}
 
@@ -477,14 +491,14 @@ func (e emitter) Send(port int, msg *engine.Msg) {
 	if msg == nil {
 		return
 	}
-	e.r.rt.deliver(e.r, port, msg)
+	e.r.rt.deliver(e.r, port, msg, e.tr, e.hop)
 }
 
 func (e emitter) SendAll(byPort [][]*engine.Msg) {
 	for port, msgs := range byPort {
 		for _, m := range msgs {
 			if m != nil {
-				e.r.rt.deliver(e.r, port, m)
+				e.r.rt.deliver(e.r, port, m, e.tr, e.hop)
 			}
 		}
 	}

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowtest"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
@@ -55,6 +56,9 @@ type TestBundle struct {
 	Runtime BundleRuntime   `json:"runtime"`
 	Match   string          `json:"match,omitempty"`
 	File    string          `json:"file,omitempty"`
+	// Replay, when set, makes this a replay and not a test run: put the
+	// message that started this trace into Flows and say how it came out.
+	Replay *engine.TraceView `json:"replay,omitempty"`
 }
 
 // BundleRuntime is the part of runtime.Options a bundle carries: the queues
@@ -179,15 +183,19 @@ func testBundle(stdin io.Reader, stdout io.Writer) error {
 	if err := dec.Decode(&b); err != nil {
 		return fmt.Errorf("reading the test bundle: %w", err)
 	}
-	suite, err := flowtest.Parse([]byte(b.Tests))
-	if err != nil {
-		return err
-	}
 	opts := flowtest.Options{Registry: node.Default, Runtime: runtime.Options{
 		InboxCapacity: b.Runtime.InboxCapacity,
 		Overflow:      runtime.OverflowPolicy(b.Runtime.Overflow),
 		BlockTimeout:  b.Runtime.BlockTimeout,
 	}}
+	if b.Replay != nil {
+		res := flowtest.Replay(context.Background(), b.Flows, b.Replay.Snapshot(), opts)
+		return json.NewEncoder(stdout).Encode(res)
+	}
+	suite, err := flowtest.Parse([]byte(b.Tests))
+	if err != nil {
+		return err
+	}
 	if b.Match != "" {
 		if opts.Match, err = regexp.Compile(b.Match); err != nil {
 			return fmt.Errorf("match: %w", err)
