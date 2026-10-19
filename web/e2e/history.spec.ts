@@ -187,6 +187,33 @@ test('rolling back from the history puts the old flows back, as a new record', a
   expect((await live(request)).flows.find((e) => e.id === 'c1')?.name).toBe('known good');
 });
 
+test('a rollback says what the flow file got wrong once, not once from the rollback and again from the reload', async ({ page, request }) => {
+  // The deployment rolled back to has a node pointing at a broker that is not in
+  // the file. The rollback's answer carries that as a warning and the reload
+  // after it reads the same warning off the file, and the log used to show both.
+  const withDangling = [
+    ...lineThree('has a bad broker'),
+    { id: 'm2', type: 'mqtt in', z: 't1', name: 'from the line', broker: 'also-gone', topic: 'line3/in', x: 340, y: 220, wires: [['d1']] },
+  ];
+  const old = await deployAs(request, 'admin', withDangling, 'the one with a bad broker');
+  await deployAs(request, 'sam', lineThree('later'), 'fixed it');
+  await signIn(page);
+  await expect(nodeLabel(page, 'c1')).toHaveText('later');
+
+  await page.locator(`[data-test="history-item"][data-seq="${old}"] [data-test="history-rollback"]`).click();
+  await page.locator('[data-test="rollback-confirm"]').click();
+
+  // The history row comes after the reload, so by the time it is there both
+  // reports have been made.
+  await expect(page.locator('[data-test="history-item"]').first()).toContainText(`rollback to #${old}`);
+  await expect(nodeLabel(page, 'c1')).toHaveText('has a bad broker');
+  const warnings = page.locator('.log-line[data-topic="error"]', { hasText: 'mqtt in m2 (from the line)' });
+  await expect(warnings).toHaveCount(1);
+  await expect(warnings).toContainText('no node with that id is in the file');
+  // The node's own failure is a different line and is still there.
+  await expect(page.locator('.log-line[data-topic="error"][data-node="m2"]', { hasText: 'did not start' })).toHaveCount(1);
+});
+
 test('a deploy conflict shows what the other person changed, and loading theirs throws mine away', async ({ page, request }) => {
   await deployAs(request, 'admin', lineThree('set'), 'seed');
   await signIn(page);

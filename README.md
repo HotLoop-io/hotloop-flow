@@ -1950,6 +1950,14 @@ bad id. The rest of the flow keeps running. A node you disabled, and a TLS
 setting that is blank or says `true` or `false`, are not reported, because
 those are not mistakes.
 
+An id that exists is not the same as an id that works. I missed that the first
+time. If the setting points at a tab, a subflow, a group or a plain node, or at
+a config node of the wrong kind, like a TLS setting aimed at an MQTT broker,
+it gets the same report and the same failed start, and the line says what the
+id actually is and which kind the setting wants. The editor only offers you the
+right kind, so this only comes from a hand edit or a pasted id, which is
+exactly where it bites.
+
 By compatibility level the 64 node types are 12 full, 21 partial, 14 deliberately
 divergent, and 17 of Flow's own. Every node declares how it relates to
 Node-RED's node of the same name, and **a test fails the build if a node claims
@@ -2029,6 +2037,14 @@ the point. A flow that leans on one breaks the day it stops being there.
 
 **Not done yet**, roughly in the order it bothers me:
 
+- **gos7 prints to the global logger.** When an S7 read times out, the library
+  writes a raw `*net.OpError ... i/o timeout` line to Go's global `log` from
+  `tcpclient.go` (the `log.Printf` in `Send`), and it has no logger field or
+  option that turns it off. The node's own error already says what happened and
+  what to check, so that line is noise on stderr. I won't redirect the global
+  logger to hide it, because that would swallow every other library's output
+  too. The fix is upstream: drop that `log.Printf` or send it through the
+  handler's `Logger`.
 - **The S7 and EtherNet/IP nodes have only met simulators.** They are tested
   against real servers that speak the protocols, and they have not talked to a
   Siemens CPU or a Logix controller. Phase 5 stays that honest until they have.
