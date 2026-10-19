@@ -669,7 +669,13 @@ export function mountEditor(
   // a line without seeing what they're pushing, and the note is what the next
   // person reads in the history when they're trying to work out why.
 
-  function reportFailures(res: { failures?: { id: string; type: string; error: string }[] }): void {
+  function reportFailures(res: { failures?: { id: string; type: string; error: string }[]; warnings?: string[] }): void {
+    // What the file got wrong that isn't one node's failure, such as a node
+    // pointing at a config node that isn't in it, comes back with the deploy
+    // and goes in the log the way it does when the editor loads.
+    for (const w of res.warnings ?? []) {
+      appendEvent({ topic: 'error', data: { error: w }, at: new Date().toISOString() });
+    }
     // Per-node failures are not a failed deploy: the rest of the flow is
     // running. Reporting them rather than swallowing them is what stops
     // somebody wondering why one node does nothing.

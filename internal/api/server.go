@@ -635,8 +635,12 @@ func (s *Server) handleGetFlows(w http.ResponseWriter, _ *http.Request) {
 	// Assembled by hand so the flow array goes out as the raw bytes the store
 	// produced, preserving key order rather than being re-encoded through a map.
 	fmt.Fprintf(w, `{"rev":%q,"flows":%s`, flows.Rev, raw)
-	if len(flows.Warnings) > 0 {
-		wb, _ := json.Marshal(flows.Warnings)
+	// What the file itself gets wrong, then the config nodes it points at that
+	// are not in it, so the editor says so on load instead of at the first
+	// message.
+	warnings := append(append([]string(nil), flows.Warnings...), runtime.ConfigRefWarnings(s.deps.Registry, flows)...)
+	if len(warnings) > 0 {
+		wb, _ := json.Marshal(warnings)
 		fmt.Fprintf(w, `,"warnings":%s`, wb)
 	}
 	fmt.Fprint(w, "}")

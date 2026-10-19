@@ -357,6 +357,15 @@ func (s *Spool) commit(batch []spoolReq) (stop bool) {
 	}()
 	if err == nil && writes {
 		s.commits.Add(1)
+		// The rows are in the file now, so this is the moment they count as
+		// queued. It happens before any sender is told, so a sender that has
+		// been answered sees its own message in Depth().
+		for _, r := range batch {
+			if r.kind == reqAppend {
+				r.wire.depth.Add(1)
+				r.wire.bytes.Add(int64(len(r.body)) + RowOverhead)
+			}
+		}
 	}
 
 	if err != nil {
@@ -518,12 +527,13 @@ func (q *WireQueue) append(seq uint64, body []byte, over bool) (uint64, error) {
 		s.total.Add(-size)
 		return 0, ErrQuota
 	}
-	q.depth.Add(1)
-	q.bytes.Add(size)
+	// depth and bytes are counted by the writer once the row is committed, not
+	// here. Counting a message before it is on disk made Depth() say a wire had
+	// 100 messages queued while the hundredth was still waiting its turn, and a
+	// file copied on that word was missing it. Only the quota is held up front,
+	// so concurrent senders can't all squeeze in past the limit together.
 	if _, err := s.submit(spoolReq{kind: reqAppend, wire: q, seq: seq, body: body}); err != nil {
 		s.total.Add(-size)
-		q.depth.Add(-1)
-		q.bytes.Add(-size)
 		return 0, err
 	}
 	q.appended.Add(1)

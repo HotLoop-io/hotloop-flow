@@ -343,3 +343,52 @@ func TestCodecNamesWhatItCannotStore(t *testing.T) {
 		t.Errorf("error %q does not name the path %s", err, want)
 	}
 }
+
+// Depth is how many messages are on disk. It used to go up when an append was
+// handed to the writer, so a reader that saw 100 could still be a commit short
+// of 100 rows, and a file copied on its word lost the last one. This watches
+// Depth while appends race and checks the file always holds at least what Depth
+// claims.
+func TestSpoolDepthNeverCountsAMessageThatIsNotOnDisk(t *testing.T) {
+	db, sp := openSpool(t, filepath.Join(t.TempDir(), "state.db"), 0)
+	defer db.Close()
+	defer sp.Close()
+	q := sp.Wire("a:0>b")
+
+	const writers, each = 8, 40
+	var wg sync.WaitGroup
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < each; i++ {
+				if _, err := q.Append(body(w*each + i)); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}(w)
+	}
+	defer wg.Wait()
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+
+	for {
+		claimed := q.Depth()
+		var rows int64
+		if err := db.db.QueryRow(`SELECT COUNT(*) FROM wire_queue WHERE wire = ?`, "a:0>b").Scan(&rows); err != nil {
+			t.Fatal(err)
+		}
+		if rows < claimed {
+			t.Fatalf("Depth said %d messages were queued and the file held %d", claimed, rows)
+		}
+		select {
+		case <-done:
+			if got := q.Depth(); got != writers*each {
+				t.Fatalf("Depth is %d after %d appends returned", got, writers*each)
+			}
+			return
+		default:
+		}
+	}
+}

@@ -253,6 +253,15 @@ but plenty of people drop one that doesn't.
       the config, selection to subflow takes the flow's own configuration nodes
       and the environment variables its nodes read, and deleting a flow or a node
       takes its id out of the Catch, Status and Complete scopes that named it
+- [x] A node pointing at a config node that isn't in the file (a flow deleted
+      with its own broker while a subflow, a hand edit or an import still names
+      it) is reported by `hotloop-flow import`, in the editor on load and on
+      deploy, and in the deploy answer, and the node is a start failure instead
+      of a node that quietly never works
+- [x] The durable wire kill test passed locally and failed on a slower runner.
+      The queue counted a message as waiting before it was on disk, so a copy
+      taken the moment the count hit 100 could be one short. It counts after the
+      commit now
 - [x] Secrets by reference: a node reads a password from a mounted Kubernetes
       Secret or file, so it never lives in the flow file at all
 - [ ] Bring your flows: `hotloop-flow import` keeps reporting exactly what will
