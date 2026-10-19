@@ -1,0 +1,70 @@
+{
+  "server": {
+    "listenerAddress": "0.0.0.0",
+    "listenerPort": 5020,
+    "protocol": "TCP",
+    "tlsParams": {
+      "privateKey": null,
+      "certificate": null
+    },
+    "logging": {
+      "format": "%(asctime)-15s %(threadName)-15s  %(levelname)-8s %(module)-15s:%(lineno)-8s %(message)s",
+      "logLevel": "INFO"
+    }
+  },
+  "persistence": {
+    "enabled": false,
+    "file": "/data/modbus_registers.json",
+    "saveInterval": 30
+  },
+  "metrics": {
+    "enabled": false,
+    "address": "0.0.0.0",
+    "port": 9090,
+    "path": "/metrics"
+  },
+  "registers": {
+    "initializeUndefinedRegisters": false,
+    "discreteInput": {
+      "1": true,
+      "2": false,
+      "3": true
+    },
+    "coils": {
+      "1": true,
+      "2": false,
+      "3": false,
+      "4": false,
+      "5": false,
+      "6": false,
+      "7": false,
+      "8": false
+    },
+    "holdingRegister": {
+      "1": 1234,
+      "2": 65535,
+      "11": "0x4060",
+      "12": "0x0000",
+      "21": "0x1234",
+      "22": "0x5678",
+      "31": 0,
+      "32": 0,
+      "33": 0,
+      "34": 0,
+      "35": 0,
+      "36": 0,
+      "37": 0,
+      "38": 0,
+      "41": 0,
+      "42": 0,
+      "43": 0,
+      "44": 0
+    },
+    "inputRegister": {
+      "1": 777,
+      "2": 778,
+      "3": 779
+    },
+    "description": "Keys are one more than the address on the wire. The simulator is pymodbus, whose data store is one based, so key 1 is what a client reads as address 0."
+  }
+}

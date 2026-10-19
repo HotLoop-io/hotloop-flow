@@ -100,6 +100,30 @@ jobs:
           for _ in $(seq 1 30); do grep -q "Everything is ready" "$RUNNER_TEMP/otel.log" && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/otel.log"; exit 1
 
+      - name: Start a real Modbus TCP server and a real OPC UA server
+        # The Modbus and OPC UA tests talk to real servers or they skip, and a
+        # skip reads as a pass. Modbus is oitc/modbus-server (pymodbus) with the
+        # registers in testdata/plant/modbus_server.json. OPC UA is Microsoft's
+        # OPC PLC with the tags in testdata/plant/opcplc_nodes.json and a login
+        # of flowuser/flowpass. Both versions are pinned: a simulator that
+        # changes under the tests is a failure nobody can read.
+        run: |
+          docker run -d --name modbus -p 5020:5020 \
+            -v "$PWD/testdata/plant/modbus_server.json:/app/modbus_server.json:ro" \
+            docker.io/oitc/modbus-server:2.3.0
+          docker run -d --name opcplc -p 50000:50000 \
+            -v "$PWD/testdata/plant/opcplc_nodes.json:/cfg/nodes.json:ro" \
+            mcr.microsoft.com/iotedge/opc-plc:2.15.11 \
+            --pn=50000 --autoaccept --unsecuretransport \
+            --defaultuser=flowuser --defaultpassword=flowpass \
+            --heartbeats --nodesfile=/cfg/nodes.json \
+            --fastnodes=1 --fastrate=1 --fasttype=UInt --slownodes=1 --slowrate=1 --slowtype=UInt
+          for p in 5020 50000; do
+            for i in $(seq 1 60); do nc -z localhost $p && break; sleep 1; done
+            nc -z localhost $p || { docker logs modbus; docker logs opcplc; echo "::error::nothing on $p"; exit 1; }
+          done
+          sleep 5
+
       - name: Test with race detector
         # The race detector needs cgo. This is the test build only — the shipped
         # binary is built CGO_ENABLED=0 in the Dockerfile so it stays static and
@@ -112,6 +136,8 @@ jobs:
           HOTLOOP_FLOW_TEST_MQTT_PASSWORD: ci-broker-pass
           HOTLOOP_FLOW_TEST_OTLP: localhost:4318
           HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
+          HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
+          HOTLOOP_FLOW_TEST_OPCUA: localhost:50000
         run: go test -race -count=1 -coverprofile=coverage.out ./...
 
       - name: The broker tests actually ran
@@ -168,6 +194,33 @@ jobs:
             TestMQTTv5SessionExpiryKeepsMessagesAcrossADrop TestMQTTTwoNodesOnOneTopic \
             TestMQTTv5OverlappingSubscriptionsDeliverOnce TestMQTTv311StillRoundTrips \
             TestMQTTOverTLSWithATLSConfig; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
+
+      - name: The Modbus and OPC UA tests actually ran
+        # Same reasoning as the MQTT check: a simulator that failed to come up
+        # turns every one of these into a skip, and a skip reads as a pass.
+        env:
+          HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
+          HOTLOOP_FLOW_TEST_OPCUA: localhost:50000
+        run: |
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'Modbus|OPCUA' 2>&1)
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::a Modbus or OPC UA test skipped; the simulator is not reachable"
+            exit 1
+          fi
+          for t in TestModbusReadsWhatTheRealServerHolds \
+            TestModbusWriteIsReadBackFromTheRealServer \
+            TestModbusServerSaysNoAndTheErrorSaysWhatToDo \
+            TestModbusDeviceGoesSilentThenComesBack \
+            TestOPCUAWriteIsReadBackFromTheRealServer \
+            TestOPCUAServerSaysNoAndTheErrorSaysWhatToDo \
+            TestOPCUASecurityModesPoliciesAndLogins \
+            TestOPCUAClientCertificateFromATLSConfig \
+            TestOPCUASubscribeDeliversTheServersChanges \
+            TestOPCUASubscriptionSurvivesTheServerGoingSilentAndDownAndComingBack \
+            TestOPCUAReadDuringSilenceTimesOutAndRecovers; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 
