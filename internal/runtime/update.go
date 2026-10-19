@@ -349,8 +349,9 @@ func (rt *Runtime) plan(old, next *graph, opts UpdateOptions) plan {
 // it is wired to. Moving a node is not a reason to restart it, and wires are
 // applied to a running node without one. The first three are the keys Node-RED
 // leaves out when it decides what a deploy changed; ew_durable says which of
-// the wires are durable, so it is wiring too.
-var layoutKeys = map[string]bool{"x": true, "y": true, "wires": true, durableKeyProp: true}
+// the wires are durable, and ew_durable_attempts how long each keeps trying a
+// message, so both are wiring too.
+var layoutKeys = map[string]bool{"x": true, "y": true, "wires": true, durableKeyProp: true, durableAttemptsProp: true}
 
 // sameNode reports whether a node would run identically in both graphs, so it
 // can be left running across the deploy.

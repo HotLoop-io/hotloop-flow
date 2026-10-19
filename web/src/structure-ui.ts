@@ -225,3 +225,101 @@ export function groupDialog(graph: Graph, group: FlowEntry): Promise<boolean> {
     name.focus();
   });
 }
+
+/**
+ * A wire's settings: whether it is durable, and when it stops trying a message
+ * its target refuses. The file keeps both per pair of nodes, so they hold for
+ * every wire between the two.
+ */
+export function wireDialog(graph: Graph, from: FlowEntry, port: number, to: FlowEntry): Promise<boolean> {
+  return new Promise((resolve) => {
+    let saved = false;
+    const dlg = shell('Wire', () => resolve(saved));
+    const now = graph.wireSettings(from.id, to.id);
+
+    dlg.body.append(el('div', { class: 'field-help', 'data-test': 'wire-ends' },
+      `${graph.label(from)} (output ${port + 1}) to ${graph.label(to)}`));
+
+    const durable = el('input', { type: 'checkbox', 'data-test': 'wire-durable' });
+    durable.checked = now.durable;
+    dlg.body.append(el('div', { class: 'field field-inline' }, el('label', {}, durable, ' Durable')));
+    dlg.body.append(el('div', { class: 'field-help' },
+      'While the target keeps up, nothing is written. When it stops taking messages, this wire holds them on disk in order, ' +
+      'and delivers them when it comes back, even across a restart.'));
+
+    const attempts = el('input', { type: 'number', min: '1', step: '1', placeholder: 'never', 'data-test': 'wire-attempts' });
+    attempts.value = now.attempts === null ? '' : String(now.attempts);
+    const limit = field('Give up on a message after this many tries', attempts,
+      'Blank keeps trying one message for as long as the target refuses it, and nothing behind it is delivered. ' +
+      'With a number, a message refused that many times goes to a Catch node as an error with the message attached, and the wire moves on.');
+    dlg.body.append(limit);
+    const sync = () => { attempts.disabled = !durable.checked; limit.style.opacity = durable.checked ? '1' : '0.5'; };
+    durable.onchange = sync;
+    sync();
+
+    const err = el('div', { class: 'dialog-error', 'data-test': 'wire-error' });
+    dlg.body.append(err);
+    dlg.foot.append(
+      footButton('Cancel', 'wire-cancel', () => dlg.close(), true),
+      footButton('Done', 'wire-done', () => {
+        let tries: number | null = null;
+        if (durable.checked && attempts.value.trim() !== '') {
+          tries = Number(attempts.value);
+          if (!Number.isInteger(tries) || tries < 1) { err.textContent = 'Tries has to be a whole number of 1 or more, or blank.'; return; }
+        }
+        graph.setWireSettings(from.id, to.id, { durable: durable.checked, attempts: tries });
+        saved = true;
+        dlg.close();
+      }),
+    );
+    durable.focus();
+  });
+}
+
+export type FlowOutcome = 'saved' | 'deleted' | null;
+
+/** A flow's name, and taking the flow away. */
+export function flowDialog(graph: Graph, tab: FlowEntry): Promise<FlowOutcome> {
+  return new Promise((resolve) => {
+    let outcome: FlowOutcome = null;
+    const dlg = shell('Flow', () => resolve(outcome));
+
+    const name = el('input', { type: 'text', 'data-test': 'flow-name' });
+    name.value = String(tab.label ?? '');
+    const err = el('div', { class: 'dialog-error', 'data-test': 'flow-error' });
+    dlg.body.append(field('Name', name), err);
+
+    const save = footButton('Done', 'flow-done', () => {
+      if (name.value.trim() === '') { err.textContent = 'A flow needs a name.'; return; }
+      graph.renameTab(tab.id, name.value.trim());
+      outcome = 'saved';
+      dlg.close();
+    });
+    const del = footButton('Delete flow', 'flow-delete', () => {
+      const n = graph.countOn(tab.id);
+      if (graph.tabs().length <= 1) { err.textContent = 'This is the only flow. Add another before deleting it.'; return; }
+      err.textContent = '';
+      confirmBar.hidden = false;
+      confirmText.textContent = n === 0
+        ? 'Delete this empty flow?'
+        : `Delete this flow and its ${n} node${n === 1 ? '' : 's'}? Undo brings them back until you deploy.`;
+      del.hidden = true;
+    }, true);
+
+    const confirmText = el('span', { 'data-test': 'flow-confirm-text' });
+    const confirmBar = el('div', { class: 'field-help', hidden: '' }, confirmText, ' ',
+      footButton('Yes, delete it', 'flow-delete-confirm', () => {
+        const problem = graph.deleteTab(tab.id);
+        if (problem) { err.textContent = problem; return; }
+        outcome = 'deleted';
+        dlg.close();
+      }, true),
+      footButton('Keep it', 'flow-delete-cancel', () => { confirmBar.hidden = true; del.hidden = false; }, true));
+    dlg.body.append(confirmBar);
+
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') save.click(); });
+    dlg.foot.append(del, footButton('Cancel', 'flow-cancel', () => dlg.close(), true), save);
+    name.focus();
+    name.select();
+  });
+}

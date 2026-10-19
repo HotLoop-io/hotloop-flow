@@ -201,6 +201,9 @@ find out.
 { "id": "count", "type": "function", "ew_durable": ["influx"], "wires": [["influx", "reply"]] }
 ```
 
+You don't have to write the key by hand. Double-click the wire in the editor and
+tick *Durable*.
+
 It survives a restart, keeps order, honors a disk quota (256 MiB by default, and
 the overflow policy of the node on the other end decides what gives when it's
 full), and shows its depth as `hotloop_flow_durable_wire_depth`. It's
@@ -215,6 +218,32 @@ accepted, 15,982 rows stored, none missing, none doubled. A healthy durable wire
 writes nothing of its own, and with context flushed every thirty seconds the
 whole process wrote 1.7 MiB an hour at twenty messages a second (0.04 GB a day).
 The tables and the commands are in [docs/durable](docs/durable/README.md).
+
+### A message the target refuses forever
+
+By default a wire keeps retrying a message its target fails, with a pause that
+grows to five seconds, and nothing behind that message moves. For a historian
+that's down that's exactly right. For one malformed reading the historian will
+never accept it's a wire stuck for good, so there's a way out, and it's off
+until you ask for it.
+
+```json
+{ "id": "count", "type": "function", "ew_durable": ["influx"], "ew_durable_attempts": { "influx": 20 }, "wires": [["influx", "reply"]] }
+```
+
+Give the wire a number of attempts, in the editor's wire dialog or as above, and
+after the target has refused one message that many times from the queue the wire
+raises it to the flow as an error from the node that refused it, with the message
+attached the way any node error carries it, and moves on to the next. A Catch
+node on that flow gets it and can park it, alert on it or write it somewhere.
+With no Catch the error still shows in the debug sidebar and the message is gone,
+so wire one. The first refusal, in memory, reaches the Catch as it always did, so
+a Catch sees the same message twice: once when it first failed and once when the
+wire gave up. The count is per message and in memory, so a restart starts it
+over. `hotloop_flow_durable_wire_given_up_total` counts them, beside the depth.
+A limit that isn't a whole number of 1 or more is reported and the wire carries
+on retrying, because ignoring it quietly would leave a wire stuck that somebody
+had told to stop.
 
 ---
 
@@ -383,6 +412,32 @@ Double-click an instance to give it its own name and its own value for each
 property. A subflow can't be placed inside itself or inside one that holds it,
 and one still in use can't be deleted. The editor says so rather than letting the
 next deploy find out.
+
+**Selection to subflow.** Select nodes and press *Selection to subflow*. They move
+into a subflow of their own and an instance takes their place. Every wire that
+crossed the edge of the selection becomes a port: the one way in is the
+subflow's input, and each output of a selected node that went somewhere else is
+an output of the subflow, so the flow does what it did. A subflow has one input,
+so if the selection is wired into two different nodes it says so and changes
+nothing, because feeding both from both would be a different flow. Select a
+group and it comes along with everything in it. Ctrl+Z undoes the lot.
+
+**Flows.** Double-click a tab, or press *Flow properties*, to rename it or delete
+it. Deleting asks, takes every node on the flow with it, and cuts the wires and
+links other flows had into it so the file isn't left pointing at nothing. Ctrl+Z
+brings it back until you deploy. The last flow can't be deleted, because a
+runtime with no flow has nowhere to put a node.
+
+**Configuration nodes** are in the palette under *configuration*. They sit on no
+canvas, so you double-click the type, fill in the dialog, and it's added to the
+list under *configuration in use*, where a double-click edits it and the cross
+deletes it. One a node still uses won't delete, and says how many do. That's
+where "Add one from the palette first" in a node's dialog sends you.
+
+**Durable wires.** Double-click a wire. Tick *Durable* and it's drawn heavier and
+blue, and the node it leaves gets `ew_durable` in the file. The mark is on the
+pair of nodes, so it holds for every wire between them. It's wiring to the
+runtime, so marking one never restarts the node.
 
 **Groups.** Ctrl+G wraps the selection, Ctrl+Shift+G takes it apart. Double-click
 the title bar to name and colour it. Drag a group and everything in it goes with
@@ -1495,6 +1550,7 @@ Secret.
 | `HOTLOOP_FLOW_INBOX_CAPACITY`, `HOTLOOP_FLOW_OVERFLOW` | Scheduler defaults. |
 | `HOTLOOP_FLOW_STORE_PATH`, `HOTLOOP_FLOW_STORE_SYNCHRONOUS` | The state database: where it is, and whether every commit is fsynced. |
 | `HOTLOOP_FLOW_CONTEXT_PERSIST`, `HOTLOOP_FLOW_CONTEXT_FLUSH_INTERVAL` | Persistent context. `false` turns it off; the interval is a duration such as `30s`. |
+| `HOTLOOP_FLOW_TRACE_OTLP_HEADERS` | Headers for the collector, `Name=value` pairs separated by commas, added to any in the file. For an API key that has no business in a ConfigMap. |
 | `HOTLOOP_FLOW_DURABLE_MAX_BYTES`, `HOTLOOP_FLOW_DURABLE_ACK_FLUSH` | The disk quota for durable wires, and how long a delivered message waits to be marked done. |
 | `HOTLOOP_FLOW_TESTS_GATE` | `true` turns on the [deploy gate](#the-deploy-gate). |
 | `HOTLOOP_FLOW_LOG_LEVEL`, `HOTLOOP_FLOW_LOG_FORMAT` | Logging. |
@@ -1629,6 +1685,7 @@ you should not need a second container to find out that your inbox is full.
 | `hotloop_flow_durable_wire_bytes` | gauge | Quota charged to that wire's waiting messages. |
 | `hotloop_flow_durable_wire_delivered_total` | counter | Messages the wire handed over and the target took. |
 | `hotloop_flow_durable_wire_retries_total` | counter | Times the wire sent a message again because its target failed it. A target that is down climbs this. |
+| `hotloop_flow_durable_wire_given_up_total` | counter | Messages the wire stopped retrying because the node's `ew_durable_attempts` ran out. Each went to the flow as an error with the message attached. |
 | `hotloop_flow_durable_wire_dropped_total` | counter | Messages the quota policy refused or evicted, and queues purged when a wire stopped being durable. |
 | `hotloop_flow_durable_bytes`, `hotloop_flow_durable_max_bytes` | gauge | Quota used by every durable wire together, and the quota. |
 | `hotloop_flow_context_flushes_total`, `hotloop_flow_context_rows_written_total` | counter | Transactions that wrote context, and rows they actually changed. |
@@ -1849,10 +1906,6 @@ the point. A flow that leans on one breaks the day it stops being there.
 - **No S7, Sparkplug B or EtherNet/IP nodes yet.** Modbus TCP and OPC UA are
   in. `scan` finds an EtherNet/IP device and nothing in the palette can talk to
   it. Phase 5.
-- **No dead-letter queue on a durable wire.** A message its target fails forever
-  holds the wire, with the ones behind it. Fine for a historian that's down, wrong
-  for a message that's malformed. The retry counter shows it, nothing sets it
-  aside yet.
 - **Durable wires have never been on a Pi.** Store and forward and the disk
   writes were measured on an x86 box under WSL. The Pi 4 and Zero 2 W numbers
   are still to do, and I won't print a card figure I didn't measure on a card.

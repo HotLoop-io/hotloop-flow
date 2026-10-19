@@ -12,6 +12,16 @@ export const PORT_IN = '@subflow-in';
 export const PORT_OUT = '@subflow-out';
 export const SUBFLOW_PREFIX = 'subflow:';
 
+/**
+ * The two flow-file keys behind a durable wire, on the node the wire leaves.
+ * ew_durable lists the ids of the nodes its durable wires go to; the runtime
+ * reads it as wiring, so changing it never restarts the node.
+ * ew_durable_attempts maps one of those ids to how many times the target may
+ * refuse a message before the wire gives up on it.
+ */
+export const DURABLE_KEY = 'ew_durable';
+export const DURABLE_ATTEMPTS_KEY = 'ew_durable_attempts';
+
 const PORT_ID = /^@(in|out):(.+):([0-9]+)$/;
 
 /** The id the editor gives a template's port, which exists nowhere in the file. */
@@ -449,6 +459,23 @@ export class Graph {
           }
         }
       }
+      // Link nodes name each other across flows, and a durable wire names the
+      // node it goes to. Both are lists of ids that outlive what they name.
+      if (Array.isArray(e.links)) e.links = (e.links as string[]).filter((id) => !doomed.has(id));
+      this.forgetDurable(e, (id) => doomed.has(id));
+    }
+  }
+
+  /** Takes the durable marks off the wires that go to nodes `gone` says are gone. */
+  private forgetDurable(e: FlowEntry, gone: (id: string) => boolean): void {
+    if (Array.isArray(e[DURABLE_KEY])) {
+      const kept = (e[DURABLE_KEY] as string[]).filter((id) => !gone(id));
+      if (kept.length > 0) e[DURABLE_KEY] = kept; else delete e[DURABLE_KEY];
+    }
+    const limits = e[DURABLE_ATTEMPTS_KEY];
+    if (limits && typeof limits === 'object') {
+      const kept = Object.fromEntries(Object.entries(limits as Record<string, unknown>).filter(([id]) => !gone(id)));
+      if (Object.keys(kept).length > 0) e[DURABLE_ATTEMPTS_KEY] = kept; else delete e[DURABLE_ATTEMPTS_KEY];
     }
   }
 
@@ -566,6 +593,9 @@ export class Graph {
     if (!from?.wires?.[port]) return;
     this.checkpoint('disconnect');
     from.wires[port] = from.wires[port]!.filter((id) => id !== toId);
+    // The durable mark is on the pair of nodes, so it goes with the last wire
+    // between them and not before.
+    if (!from.wires.some((targets) => targets.includes(toId))) this.forgetDurable(from, (id) => id === toId);
     this.touch();
   }
 
@@ -575,6 +605,11 @@ export class Graph {
     if (!e) return;
     this.checkpoint('edit node');
     Object.assign(e, props);
+
+    // A configuration node has no wires, and giving it an empty list would
+    // make the runtime read it as a node. Only a node that is wired keeps its
+    // wires in step.
+    if (this.isConfig(e)) { this.touch(); return; }
 
     // Keep the wires array in step with a changed output count, or the node
     // renders ports it cannot send on.
@@ -593,6 +628,256 @@ export class Graph {
     this.activeTab = tab.id;
     this.touch();
     return tab;
+  }
+
+  // ── Configuration nodes ────────────────────────────────────────────────────
+
+  /**
+   * Every configuration node, in file order. They have no place on a canvas, so
+   * this is the only list of them there is.
+   */
+  configNodes(): FlowEntry[] {
+    return this.entries.filter((e) => e.type !== 'tab' && e.type !== 'subflow' && e.type !== 'group'
+      && !e.type.startsWith(SUBFLOW_PREFIX) && this.isConfig(e));
+  }
+
+  /**
+   * Adds a configuration node: shared by id, wired to nothing, on no flow. It
+   * carries no x, y or wires, which is how the runtime tells it from a node.
+   */
+  addConfig(type: string, props: Record<string, unknown>): FlowEntry {
+    this.checkpoint('add configuration node');
+    const entry: FlowEntry = { ...structuredClone(props), id: generateId(), type };
+    delete entry.x;
+    delete entry.y;
+    delete entry.wires;
+    delete entry.z;
+    this.entries.push(entry);
+    this.touch();
+    return entry;
+  }
+
+  /** The nodes that name a configuration node by id. */
+  usersOfConfig(id: string): FlowEntry[] {
+    return this.entries.filter((e) => e.id !== id && Object.entries(e).some(([k, v]) => k !== 'id' && k !== 'z' && k !== 'g' && v === id));
+  }
+
+  /** Removes a configuration node, unless something still uses it. */
+  deleteConfig(id: string): string | null {
+    const cfg = this.configNodes().find((e) => e.id === id);
+    if (!cfg) return 'There is no such configuration node.';
+    const users = this.usersOfConfig(id);
+    if (users.length > 0) {
+      return `${users.length} node${users.length === 1 ? ' uses' : 's use'} it. Point ${users.length === 1 ? 'it' : 'them'} at another one first.`;
+    }
+    this.checkpoint('delete configuration node');
+    this.entries = this.entries.filter((e) => e.id !== id);
+    this.touch();
+    return null;
+  }
+
+  // ── Flows ──────────────────────────────────────────────────────────────────
+
+  renameTab(id: string, label: string): void {
+    const tab = this.entries.find((e) => e.id === id && e.type === 'tab');
+    if (!tab || tab.label === label) return;
+    this.checkpoint('rename flow');
+    tab.label = label;
+    this.touch();
+  }
+
+  /**
+   * Deletes a flow and everything on it: its nodes, its groups, and every wire
+   * and link that led to them. A runtime with no flow has nowhere to put a
+   * node, so the last one stays.
+   */
+  deleteTab(id: string): string | null {
+    const tab = this.entries.find((e) => e.id === id && e.type === 'tab');
+    if (!tab) return 'There is no such flow.';
+    if (this.tabs().length <= 1) return 'This is the only flow. Add another before deleting it.';
+    this.checkpoint('delete flow');
+    const doomed = new Set(this.entries.filter((e) => e.z === id).map((e) => e.id));
+    doomed.add(id);
+    this.entries = this.entries.filter((e) => !doomed.has(e.id));
+    this.dropDeadReferences(doomed);
+    this.selection.clear();
+    if (this.activeTab === id) this.activeTab = this.tabs()[0]!.id;
+    this.touch();
+    return null;
+  }
+
+  /** What is on a flow, for the question "are you sure". */
+  countOn(tabId: string): number {
+    return this.entries.filter((e) => e.z === tabId && e.type !== 'group' && !this.isConfig(e)).length;
+  }
+
+  // ── Selection to subflow ───────────────────────────────────────────────────
+
+  /**
+   * Moves the selected nodes into a subflow of their own and puts an instance
+   * of it where they were. The wires that crossed the edge of the selection
+   * become the subflow's ports, so the flow behaves as it did.
+   *
+   * A subflow has one input, so everything wired into the selection has to
+   * arrive at a single node; an input that fed two different nodes from two
+   * different places would have to feed both from both, and that is a
+   * different flow. Every distinct output of a selected node that left the
+   * selection becomes an output of the subflow.
+   */
+  selectionToSubflow(name: string): FlowEntry | string {
+    const scope = this.activeTab;
+    const ids = [...this.selection].filter((id) => !parsePortId(id));
+    if (ids.length === 0) return 'Select the nodes to turn into a subflow first.';
+    const picked = this.withGroupMembers(ids);
+    const members = [...picked].map((id) => this.entries.find((e) => e.id === id)).filter((e): e is FlowEntry => e !== undefined);
+    if (members.some((e) => e.z !== scope)) return 'Everything selected has to be on the flow you are looking at.';
+    const nodes = members.filter((e) => e.type !== 'group');
+    if (nodes.length === 0) return 'A group with nothing in it is not a subflow.';
+    const inside = new Set(nodes.map((n) => n.id));
+
+    // What crosses the edge, before anything is changed.
+    const scopeTpl = this.entries.find((e) => e.id === scope && e.type === 'subflow');
+    const outsiders = this.entries.filter((e) => e.z === scope && !inside.has(e.id) && e.wires && !this.isConfig(e));
+    const entering = new Set<string>();
+    for (const src of outsiders) {
+      for (const port of src.wires!) for (const t of port) if (inside.has(t)) entering.add(t);
+    }
+    const tplIn = (scopeTpl?.in as SubflowPortDef[] | undefined) ?? [];
+    for (const p of tplIn) for (const w of p.wires ?? []) if (inside.has(w.id)) entering.add(w.id);
+    if (entering.size > 1) {
+      return 'A subflow has one input, and this selection is wired into more than one node. Select so that everything arrives at a single node.';
+    }
+
+    type Leave = { key: string; node: FlowEntry; port: number };
+    const leaves: Leave[] = [];
+    const leaveKey = (n: FlowEntry, p: number) => `${n.id}:${p}`;
+    const seenLeave = new Set<string>();
+    for (const n of nodes) {
+      (n.wires ?? []).forEach((targets, port) => {
+        if (targets.some((t) => !inside.has(t)) && !seenLeave.has(leaveKey(n, port))) {
+          seenLeave.add(leaveKey(n, port));
+          leaves.push({ key: leaveKey(n, port), node: n, port });
+        }
+      });
+    }
+    const tplOut = (scopeTpl?.out as SubflowPortDef[] | undefined) ?? [];
+    for (const p of tplOut) {
+      for (const w of p.wires ?? []) {
+        const n = nodes.find((x) => x.id === w.id);
+        if (n && !seenLeave.has(leaveKey(n, w.port ?? 0))) {
+          seenLeave.add(leaveKey(n, w.port ?? 0));
+          leaves.push({ key: leaveKey(n, w.port ?? 0), node: n, port: w.port ?? 0 });
+        }
+      }
+    }
+
+    this.checkpoint('selection to subflow');
+
+    // Where the nodes go inside the template, and the instance in the flow.
+    const xs = nodes.map((n) => n.x ?? 0), ys = nodes.map((n) => n.y ?? 0);
+    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+    const dx = 220 - minX, dy = 80 - minY;
+    const at = { x: snap((minX + maxX) / 2), y: snap((minY + maxY) / 2) };
+
+    const tplId = generateId();
+    const instanceId = generateId();
+    const tpl: FlowEntry = {
+      id: tplId, type: 'subflow', name, info: '', category: '', env: [], color: '#DDAA99',
+      in: entering.size === 1
+        ? [{ x: 60, y: snap([...entering].map((id) => (nodes.find((n) => n.id === id)!.y ?? 0) + dy)[0]!), wires: [{ id: [...entering][0]! }] }]
+        : [],
+      out: leaves.map((l) => ({ x: snap(maxX + dx + 220), y: snap((l.node.y ?? 0) + dy), wires: [{ id: l.node.id, port: l.port }] })),
+    };
+
+    const instance: FlowEntry = {
+      id: instanceId, type: SUBFLOW_PREFIX + tplId, z: scope, name: '', x: at.x, y: at.y, env: [],
+      wires: leaves.map(() => []),
+    };
+
+    // The wires into the selection now go to the instance.
+    if (entering.size === 1) {
+      for (const src of outsiders) {
+        src.wires = src.wires!.map((port) => {
+          if (!port.some((t) => inside.has(t))) return port;
+          return [...new Set(port.map((t) => (inside.has(t) ? instanceId : t)))];
+        });
+      }
+      for (const p of tplIn) {
+        if (!(p.wires ?? []).some((w) => inside.has(w.id))) continue;
+        const next: { id: string }[] = [];
+        for (const w of p.wires!) {
+          const mapped = inside.has(w.id) ? instanceId : w.id;
+          if (!next.some((x) => x.id === mapped)) next.push({ ...w, id: mapped });
+        }
+        p.wires = next;
+      }
+    }
+
+    // The wires out of the selection now leave from the instance's outputs.
+    leaves.forEach((l, i) => {
+      const external = (l.node.wires?.[l.port] ?? []).filter((t) => !inside.has(t));
+      instance.wires![i] = [...external];
+      if (l.node.wires?.[l.port]) l.node.wires[l.port] = l.node.wires[l.port]!.filter((t) => inside.has(t));
+      for (const p of tplOut) {
+        p.wires = (p.wires ?? []).map((w) => (w.id === l.node.id && (w.port ?? 0) === l.port ? { id: instanceId, port: i } : w));
+      }
+    });
+
+    // Move everything in. Wires that stayed inside are kept; the nodes keep
+    // their groups when the group came along, and are taken out of it when not.
+    const topParents = new Set(members.filter((e) => !e.g || !picked.has(e.g)).map((e) => e.g ?? ''));
+    for (const e of members) {
+      if (e.g && !picked.has(e.g)) delete e.g;
+      e.z = tplId;
+      if (e.x !== undefined) e.x = snap(e.x + dx);
+      if (e.y !== undefined) e.y = snap(e.y + dy);
+      if (e.wires) e.wires = e.wires.map((port) => port.filter((t) => inside.has(t)));
+    }
+
+    // The instance sits in the group the selection came out of, when all of it
+    // came out of the one group.
+    if (topParents.size === 1 && [...topParents][0]) instance.g = [...topParents][0]!;
+
+    this.entries.push(tpl, instance);
+    this.refreshGroups([scope, tplId]);
+    this.selection = new Set([instanceId]);
+    this.touch();
+    return instance;
+  }
+
+  // ── Durable wires ──────────────────────────────────────────────────────────
+
+  /**
+   * How a wire is marked: durable or not, and how many times its target may
+   * refuse one message before the wire gives up on it (null for never). The
+   * file keeps this per pair of nodes, so it holds for every wire between them.
+   */
+  wireSettings(fromId: string, toId: string): { durable: boolean; attempts: number | null } {
+    const from = this.entries.find((e) => e.id === fromId);
+    const durable = Array.isArray(from?.[DURABLE_KEY]) && (from![DURABLE_KEY] as string[]).includes(toId);
+    const limits = from?.[DURABLE_ATTEMPTS_KEY] as Record<string, unknown> | undefined;
+    const n = limits?.[toId];
+    return { durable, attempts: durable && typeof n === 'number' ? n : null };
+  }
+
+  setWireSettings(fromId: string, toId: string, settings: { durable: boolean; attempts: number | null }): void {
+    const from = this.entries.find((e) => e.id === fromId);
+    if (!from) return;
+    const was = this.wireSettings(fromId, toId);
+    if (was.durable === settings.durable && was.attempts === settings.attempts) return;
+    this.checkpoint('edit wire');
+    const ids = new Set(Array.isArray(from[DURABLE_KEY]) ? (from[DURABLE_KEY] as string[]) : []);
+    const limits: Record<string, unknown> = { ...((from[DURABLE_ATTEMPTS_KEY] as Record<string, unknown> | undefined) ?? {}) };
+    if (settings.durable) {
+      ids.add(toId);
+      if (settings.attempts !== null) limits[toId] = settings.attempts; else delete limits[toId];
+    } else {
+      ids.delete(toId);
+      delete limits[toId];
+    }
+    if (ids.size > 0) from[DURABLE_KEY] = [...ids]; else delete from[DURABLE_KEY];
+    if (Object.keys(limits).length > 0) from[DURABLE_ATTEMPTS_KEY] = limits; else delete from[DURABLE_ATTEMPTS_KEY];
+    this.touch();
   }
 
   /** Every wire on a tab, as drawable segments. */

@@ -127,12 +127,22 @@ finishes the handshake instead of leaving half-open connections on a PLC.
 | `store.context.persist`, `store.context.flushInterval` | on, `30s` | Context across restarts, and how long a changed value waits before it's written. A kill -9 loses that much. |
 | `store.durable.maxBytes`, `store.durable.ackFlush` | 256 MiB, `100ms` | The disk quota for durable wires, and how long a delivered message waits to be marked done. |
 | `store.synchronous` | `normal` | `full` fsyncs every commit. Stronger against a power cut, harder on the card. |
+| `trace.enabled`, `trace.perSecond` | on, `1000` | Message tracing, the thing behind clicking a debug message to see where it went. `perSecond` caps new traces a second so a fast line isn't taxed for it; `0` traces every message. |
+| `trace.traces`, `trace.maxHops`, `trace.maxMessageBytes`, `trace.maxBytes` | `256`, `512`, `16384`, `16777216` | How much tracing keeps, in memory, and never more. A restart starts the list over. |
+| `trace.otlp.endpoint` | empty | An OpenTelemetry collector's OTLP/HTTP address, like `http://collector:4318`. Empty means no export. `trace.otlp.serviceName` and `trace.otlp.interval` go with it. |
+| `trace.otlp.headersSecret.name`, `.key` | empty, `headers` | A Secret holding the collector's headers as `Name=value` pairs separated by commas, for a hosted collector's API key. It reaches the pod as an environment variable and never touches the ConfigMap. |
 | `discovery.enabled`, `discovery.allowedCIDRs` | off, empty | The scan nodes. Enabled with an empty list refuses to start. |
 | `exec.enabled`, `exec.allowedCommands` | off, empty | The exec node. Same rule. |
 | `files.allowedPaths` | empty | Extra trees the file nodes may reach beyond `/data`. |
 | `secrets.mounts` | empty | Secrets to mount read-only, each `{secretName, mountPath}`, for a tls-config's files and `ew_credentialFiles`. Each path joins the secret scope and never the file nodes'. |
 | `metrics.serviceMonitor.enabled` | off | Prometheus Operator scraping. |
 | `ingress.enabled` | off | If you want it reachable from outside the cluster. |
+
+Every `trace.*` and `store.*` value has to land in the field of the same name in
+`config.yaml`, and CI proves it: it renders the chart, takes the config out of the
+ConfigMap and loads it with the binary's own loader, which refuses keys it doesn't
+know. A default render has to equal the binary's own defaults too. I got tired of
+settings that say one thing in `values.yaml` and do another in the process.
 
 The Service listens on 8080 and forwards to the binary's 1880. Everything else is
 documented next to the value in

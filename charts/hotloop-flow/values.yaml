@@ -228,6 +228,42 @@ store:
     # per message.
     ackFlush: 100ms
 
+# ── Tracing ──────────────────────────────────────────────────────────────────
+# Where each message went, how long every node had it, and what it looked like
+# there. The editor reads it: click a debug message to see the path, replay it
+# into a draft, or turn it into a test. It is on by default and bounded every
+# way, so none of these can make it grow without limit. Memory only: a restart
+# starts the list over.
+trace:
+  enabled: true
+  # How many journeys are kept, newest first. One journey is one message
+  # entering the flow and everything that came of it.
+  traces: 256
+  # The most hops one journey keeps. This is what stops a loop in a flow from
+  # writing itself down forever.
+  maxHops: 512
+  # The biggest message a hop keeps a copy of. A bigger one keeps its timing
+  # and is marked too big to show.
+  maxMessageBytes: 16384
+  # The most every journey may hold together, roughly counted. Oldest go first.
+  maxBytes: 16777216
+  # The most new journeys started in a second. A busier source has the rest of
+  # that second go untraced, so tracing cannot cost a fast line what it cannot
+  # spare. 0 traces every message.
+  perSecond: 1000
+  # Send the hops to an OpenTelemetry collector as spans. No endpoint, no
+  # export.
+  otlp:
+    endpoint: ""          # the collector's OTLP/HTTP address, like http://collector:4318
+    serviceName: hotloop-flow
+    interval: 2s          # the longest a finished hop waits before it is sent
+    # Headers for a hosted collector, which are usually an API key and so do
+    # not go in the ConfigMap. Name a Secret whose key holds them as
+    # Name=value pairs separated by commas, like x-api-key=abc,x-tenant=line3.
+    headersSecret:
+      name: ""
+      key: headers
+
 # ── Authentication ───────────────────────────────────────────────────────────
 # HotLoop Flow refuses to start without this. Leave passwordHash empty and the
 # chart generates a password on first install and keeps it across upgrades.
