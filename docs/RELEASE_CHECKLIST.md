@@ -236,7 +236,7 @@ hand, or start `ci.yml` on the PR and read it.
 ```bash
 podman build -t hotloop-flow:check .
 id=$(podman create hotloop-flow:check) && podman cp "$id:/usr/share/doc/hotloop-flow" check-doc && podman rm "$id"
-for f in LICENSE NOTICE THIRD_PARTY_LICENSES; do test -s "check-doc/$f" && echo "$f ok"; done
+for f in LICENSE LICENSES/Apache-2.0.txt NOTICE THIRD_PARTY_LICENSES; do test -s "check-doc/$f" && echo "$f ok"; done
 ```
 
 The build fails on a GPL, AGPL or LGPL module or one with no identifiable
@@ -376,7 +376,7 @@ notice goes wherever the binary goes:
 ```bash
 id=$(podman create ghcr.io/hotloop-io/hotloop-flow:X.Y.Z)
 podman cp "$id:/usr/share/doc/hotloop-flow" pulled-doc && podman rm "$id"
-ls -l pulled-doc                       # LICENSE, NOTICE, THIRD_PARTY_LICENSES, all non-empty
+ls -l pulled-doc                       # LICENSE, LICENSES/, NOTICE, THIRD_PARTY_LICENSES, all non-empty
 ```
 
 ### The chart is in the index, and nothing else is

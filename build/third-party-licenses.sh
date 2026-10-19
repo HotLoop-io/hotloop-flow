@@ -44,7 +44,9 @@ set -euo pipefail
 # use it for anything, keep the notice, don't use Lucent's name. It stopped
 # the first Cascade build until somebody read it and added it here.
 # Never: GPL, AGPL, LGPL (the binary is static, so LGPL's relink clause can't be
-# met), SSPL, BUSL, Commons Clause, or anything nobody can identify.
+# met), SSPL, BUSL, Commons Clause, or anything nobody can identify. That is
+# the rule for what we depend on. Our own packages are skipped below with
+# --ignore, and they are BUSL-1.1.
 ALLOWED=(
   MIT MIT-0 ISC 0BSD BSD-2-Clause BSD-3-Clause Apache-2.0 Zlib BSL-1.0
   Unlicense CC0-1.0 LicenseRef-MIT-Lucent

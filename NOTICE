@@ -3,6 +3,17 @@ Copyright 2026 HotLoop
 
 This product includes software developed by HotLoop (https://hotloop.io).
 
+HotLoop Flow is licensed under the Business Source License 1.1 (BUSL-1.1),
+filled in for HotLoop. The LICENSE file in this repository is a byte-for-byte
+copy of the canonical text in HotLoop-io/HotLoop-io (LICENSE.md). Where they
+ever disagree, the canonical copy wins. Releases from before the move to the
+Business Source License were published under their own earlier terms, and those
+terms stay with those copies.
+
+The Business Source License covers HotLoop's own code. It does not relicense
+anyone else's. Everything below keeps the license it came under, and the ported
+files keep their upstream copyright and license headers.
+
 Parts of it are ported from other people's open source code. Each one is listed
 below with where it came from, who holds the copyright and the license it came
 under. Every ported file opens with a comment saying the same thing, and every
@@ -33,7 +44,7 @@ code was ported instead, and the files below are derivative works of Node-RED:
 
     Node-RED - https://github.com/node-red/node-red
     Copyright OpenJS Foundation and other contributors, https://openjsf.org/
-    Licensed under the Apache License, Version 2.0 (LICENSE in this repository)
+    Licensed under the Apache License, Version 2.0 (LICENSES/Apache-2.0.txt in this repository)
 
 The upstream source files carry the line "Copyright JS Foundation and other
 contributors, http://js.foundation", and the files ported from them carry it too.
