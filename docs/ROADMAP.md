@@ -275,9 +275,10 @@ but plenty of people drop one that doesn't.
       take the change
 - [x] The durable wire purge test could count one more dropped than it had
       sampled as queued. The test was wrong, not the queue: it waited for 28 of
-      30 messages on disk and then compared the purge to whatever it had seen,
-      while the spool's writer was still counting the last ones. It waits for
-      all 30 now
+      30 messages on disk and then held the purge to exactly what it had seen,
+      while the spool was still counting the last ones. How many of the 30 are
+      on disk when the wire goes depends on timing, so it holds the purge to
+      what it saw as a floor and to the 30 sent as a ceiling now
 - [x] The durable wire kill test passed locally and failed on a slower runner.
       The queue counted a message as waiting before it was on disk, so a copy
       taken the moment the count hit 100 could be one short. It counts after the
