@@ -19,6 +19,12 @@ import (
 // cluster.
 func helmConfig(t *testing.T, args ...string) string {
 	t.Helper()
+	return configFromRender(t, helmRender(t, args...))
+}
+
+// helmRender is what `helm template` prints for the chart with those arguments.
+func helmRender(t *testing.T, args ...string) []byte {
+	t.Helper()
 	helm, err := exec.LookPath("helm")
 	if err != nil {
 		if os.Getenv("HOTLOOP_FLOW_TEST_HELM") != "" {
@@ -37,6 +43,12 @@ func helmConfig(t *testing.T, args ...string) string {
 	if err != nil {
 		t.Fatalf("helm template: %v\n%s", err, stderr.String())
 	}
+	return out
+}
+
+// configFromRender picks the config.yaml out of a render.
+func configFromRender(t *testing.T, out []byte) string {
+	t.Helper()
 	dec := yaml.NewDecoder(bytes.NewReader(out))
 	for {
 		var doc struct {
@@ -77,6 +89,15 @@ func TestChartDefaultsAreTheConfigDefaults(t *testing.T) {
 	if !reflect.DeepEqual(got.Trace, want.Trace) {
 		t.Errorf("the chart renders trace %+v, the binary defaults to %+v", got.Trace, want.Trace)
 	}
+	if !reflect.DeepEqual(got.History, want.History) {
+		t.Errorf("the chart renders history %+v, the binary defaults to %+v", got.History, want.History)
+	}
+	if !reflect.DeepEqual(got.Audit, want.Audit) {
+		t.Errorf("the chart renders audit %+v, the binary defaults to %+v", got.Audit, want.Audit)
+	}
+	if !reflect.DeepEqual(got.Tests, want.Tests) {
+		t.Errorf("the chart renders tests %+v, the binary defaults to %+v", got.Tests, want.Tests)
+	}
 	if !reflect.DeepEqual(got.Store, want.Store) {
 		t.Errorf("the chart renders store %+v, the binary defaults to %+v", got.Store, want.Store)
 	}
@@ -114,5 +135,48 @@ func TestChartTraceAndStoreValuesReachTheConfig(t *testing.T) {
 	}
 	if st.Durable.MaxBytes != 134217728 || st.Durable.AckFlush != 0 {
 		t.Errorf("store.durable = %+v", st.Durable)
+	}
+}
+
+// Every history.*, audit.* and tests.* value reaches the field of the same
+// name, and the git token reaches the pod as the variable the binary reads,
+// from a Secret, never the ConfigMap.
+func TestChartHistoryAuditAndTestsValuesReachTheConfig(t *testing.T) {
+	args := []string{
+		"--set", "history.retain=7",
+		"--set", "history.git.url=https://git.plant.example/line3/flows.git",
+		"--set", "history.git.branch=deploys",
+		"--set", "history.git.path=line3/flows.json",
+		"--set", "history.git.emailDomain=plant.example",
+		"--set", "history.git.username=flowbot",
+		"--set", "history.git.passwordSecret.name=flow-git",
+		"--set", "audit.maxBytes=1048576",
+		"--set", "audit.keep=9",
+		"--set", "tests.gate=true",
+		"--set", "tests.timeout=45s",
+	}
+	render := helmRender(t, args...)
+	got := loadRendered(t, configFromRender(t, render))
+	if got.History.Retain != 7 {
+		t.Errorf("history.retain = %d", got.History.Retain)
+	}
+	g := got.History.Git
+	if g.URL != "https://git.plant.example/line3/flows.git" || g.Branch != "deploys" || g.Path != "line3/flows.json" || g.EmailDomain != "plant.example" || g.Username != "flowbot" {
+		t.Errorf("history.git = %+v", g)
+	}
+	if g.Password != "" {
+		t.Errorf("the token is in the ConfigMap: %q", g.Password)
+	}
+	if got.Audit.MaxBytes != 1048576 || got.Audit.Keep != 9 {
+		t.Errorf("audit = %+v", got.Audit)
+	}
+	if !got.Tests.Gate || got.Tests.Timeout != 45*time.Second {
+		t.Errorf("tests = %+v", got.Tests)
+	}
+	if !bytes.Contains(render, []byte("name: HOTLOOP_FLOW_GIT_PASSWORD")) || !bytes.Contains(render, []byte("name: flow-git")) {
+		t.Errorf("the deployment does not take HOTLOOP_FLOW_GIT_PASSWORD from the flow-git Secret")
+	}
+	if bytes.Contains(helmRender(t), []byte("HOTLOOP_FLOW_GIT_PASSWORD")) {
+		t.Errorf("a default render sets HOTLOOP_FLOW_GIT_PASSWORD")
 	}
 }

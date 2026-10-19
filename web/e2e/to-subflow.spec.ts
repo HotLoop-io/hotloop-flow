@@ -132,3 +132,66 @@ test('a group in the selection goes into the subflow with its nodes', async ({ p
   expect(got.find((e) => e.id === 'c1')).toEqual(expect.objectContaining({ z: tpl.id, g: 'g1' }));
   expect(got.find((e) => e.id === 'c2')).toEqual(expect.objectContaining({ z: tpl.id, g: 'g1' }));
 });
+
+/**
+ * i1 feeds c1, which reads GREETING from the flow's environment, and m1, which
+ * publishes through a broker that belongs to the flow and a tls-config that
+ * belongs to the broker. c1 feeds m1 and d1.
+ */
+function withConfig(shared: boolean): Entry[] {
+  return [
+    { id: 't1', type: 'tab', label: 'Line 3', env: [{ name: 'GREETING', type: 'str', value: 'hello' }, { name: 'SITE', type: 'str', value: 'line3' }, { name: 'UNUSED', type: 'str', value: 'x' }] },
+    { id: 'tl1', type: 'tls-config', z: 't1', name: 'plant ca' },
+    { id: 'b1', type: 'mqtt-broker', z: 't1', name: 'local', broker: '127.0.0.1', port: 1883, tls: 'tl1' },
+    { id: 'i1', type: 'inject', z: 't1', name: 'reading', props: [{ p: 'payload', v: '50', vt: 'num' }], x: 120, y: 120, wires: [shared ? ['c1', 'm2'] : ['c1']] },
+    {
+      id: 'c1', type: 'change', z: 't1', name: 'greet',
+      rules: [{ t: 'set', p: 'payload', pt: 'msg', to: 'GREETING', tot: 'env' }, { t: 'set', p: 'topic', pt: 'msg', to: '$(SITE)-out', tot: 'str' }],
+      x: 340, y: 120, wires: [['m1', 'd1']],
+    },
+    { id: 'm1', type: 'mqtt out', z: 't1', name: 'publish', broker: 'b1', topic: 'line3/out', x: 560, y: 120, wires: [] },
+    { id: 'd1', type: 'debug', z: 't1', name: 'out', complete: 'payload', x: 560, y: 260, wires: [] },
+    ...(shared ? [{ id: 'm2', type: 'mqtt out', z: 't1', name: 'also', broker: 'b1', topic: 'line3/also', x: 340, y: 380, wires: [] } as Entry] : []),
+  ];
+}
+
+async function makeSubflow(page: import('@playwright/test').Page): Promise<void> {
+  await select(page, 'c1', 'm1');
+  await toSubflow(page).click();
+  await page.locator('[data-test="selection-subflow-input"]').fill('Greeter');
+  await page.locator('[data-test="selection-subflow-ok"]').click();
+  await expect(dialog(page)).toHaveCount(0);
+  await deploy(page);
+}
+
+test('a configuration node only the selection uses goes into the subflow with it, and the flow environment still reaches it', async ({ page, request }) => {
+  await seed(request, withConfig(false));
+  await signIn(page);
+  await makeSubflow(page);
+
+  const flows = await deployed(request);
+  const tpl = flows.find((e) => e.type === 'subflow')!;
+  // The broker and the tls-config it names are the subflow's now, not the flow's.
+  expect(flows.find((e) => e.id === 'b1')).toEqual(expect.objectContaining({ z: tpl.id }));
+  expect(flows.find((e) => e.id === 'tl1')).toEqual(expect.objectContaining({ z: tpl.id }));
+  // The variables the moved nodes read are properties of the subflow, forwarding to the flow. The one nothing reads is not.
+  expect(tpl.env).toEqual([{ name: 'GREETING', type: 'env', value: 'GREETING' }, { name: 'SITE', type: 'env', value: 'SITE' }]);
+
+  // And it still says hello, from the flow's value.
+  await press(request, 'i1');
+  await expect(page.locator('.log-line', { hasText: 'hello' }).last()).toBeVisible();
+});
+
+test('a configuration node something outside the selection also uses becomes global, so both keep sharing it', async ({ page, request }) => {
+  await seed(request, withConfig(true));
+  await signIn(page);
+  await makeSubflow(page);
+
+  const flows = await deployed(request);
+  const b1 = flows.find((e) => e.id === 'b1')!;
+  const tl1 = flows.find((e) => e.id === 'tl1')!;
+  expect(b1.z).toBeUndefined();
+  expect(tl1.z).toBeUndefined();
+  expect(flows.find((e) => e.id === 'm2')).toEqual(expect.objectContaining({ broker: 'b1', z: 't1' }));
+  expect(flows.find((e) => e.id === 'm1')).toEqual(expect.objectContaining({ broker: 'b1' }));
+});

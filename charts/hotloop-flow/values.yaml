@@ -264,6 +264,45 @@ trace:
       name: ""
       key: headers
 
+# ── Deployment history ───────────────────────────────────────────────────────
+# Every deploy is kept as a record under /data/deployments: the flow file and
+# the encrypted credentials as they were. Roll back from the editor.
+history:
+  # How many records are kept. 0 keeps every one, which is a decision about
+  # disk, since each record is a copy of the flow file.
+  retain: 100
+  # Mirror every deploy to a git repository as a commit from whoever deployed.
+  # Off until a URL is set. http:// and https:// only.
+  git:
+    url: ""
+    # The three below are empty so the binary's own defaults apply: main,
+    # flows.json, and flow.invalid, which can never reach anybody.
+    branch: ""
+    path: ""
+    emailDomain: ""
+    username: ""
+    # The access token. It is a secret, so it never touches the ConfigMap:
+    # name a Secret whose key holds it and it reaches the pod as
+    # HOTLOOP_FLOW_GIT_PASSWORD.
+    passwordSecret:
+      name: ""
+      key: password
+
+# ── Audit trail ──────────────────────────────────────────────────────────────
+# /data/audit.log: who did what in the editor. Rotates, so it cannot fill the
+# volume.
+audit:
+  maxBytes: 16777216    # rotates at this size, 4096 at the least
+  keep: 4               # rotated files kept beside the live one
+
+# ── Flow tests ───────────────────────────────────────────────────────────────
+tests:
+  # true refuses a deploy whose flows fail /data/flows.test.yaml. Off by
+  # default: a gate nobody asked for fails a deploy at 3 AM for a reason
+  # nobody on shift has heard of.
+  gate: false
+  timeout: 2m           # wall clock for one run of the suite
+
 # ── Authentication ───────────────────────────────────────────────────────────
 # HotLoop Flow refuses to start without this. Leave passwordHash empty and the
 # chart generates a password on first install and keeps it across upgrades.

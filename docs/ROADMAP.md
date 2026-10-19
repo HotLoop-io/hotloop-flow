@@ -247,6 +247,12 @@ but plenty of people drop one that doesn't.
 - [x] Helm values for `trace.*`, checked in CI by loading the rendered config
       with the binary's own loader. `store.*` was already there from the
       durable work and now has the same check
+- [x] The gaps those left, filled: Alt-click deletes a wire (the click never
+      reached it because the canvas holds the pointer, same as dragging one did),
+      the chart has `history.*`, `audit.*` and `tests.*` and CI proves they reach
+      the config, selection to subflow takes the flow's own configuration nodes
+      and the environment variables its nodes read, and deleting a flow or a node
+      takes its id out of the Catch, Status and Complete scopes that named it
 - [x] Secrets by reference: a node reads a password from a mounted Kubernetes
       Secret or file, so it never lives in the flow file at all
 - [ ] Bring your flows: `hotloop-flow import` keeps reporting exactly what will

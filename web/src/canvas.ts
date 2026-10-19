@@ -174,6 +174,14 @@ export class Canvas {
     // A wire: two presses on it open its settings. A single press is still a
     // press on empty canvas, so a marquee can start over a wire.
     const wireEl = this.readOnly ? null : target.closest('path.wire[data-from][data-to]');
+    // Alt-press on a wire deletes it. It has to be the press: the canvas takes
+    // pointer capture on a press, so the wire never sees the click that follows
+    // and a click handler on the wire does nothing. Alt rather than a plain
+    // press, so brushing past one while selecting does not silently break a flow.
+    if (wireEl && e.altKey) {
+      this.graph.disconnect(wireEl.getAttribute('data-from')!, Number(wireEl.getAttribute('data-port')), wireEl.getAttribute('data-to')!);
+      return;
+    }
     if (wireEl && wireEl.hasAttribute('data-port')) {
       const key = `wire:${wireEl.getAttribute('data-from')}:${wireEl.getAttribute('data-port')}:${wireEl.getAttribute('data-to')}`;
       const now = performance.now();
@@ -643,13 +651,6 @@ export class Canvas {
       path.setAttribute('data-port', String(port));
       path.setAttribute('data-to', to.id);
 
-      // Clicking a wire deletes it. Alt-click rather than plain click, so
-      // brushing past one while selecting does not silently break a flow.
-      path.addEventListener('click', (e) => {
-        if (!e.altKey || this.readOnly) return;
-        e.stopPropagation();
-        this.graph.disconnect(from.id, port, to.id);
-      });
       frag.append(path);
     }
 

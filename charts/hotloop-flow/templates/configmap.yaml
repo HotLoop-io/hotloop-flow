@@ -57,6 +57,23 @@ data:
         serviceName: {{ .Values.trace.otlp.serviceName | quote }}
         interval: {{ .Values.trace.otlp.interval }}
 
+    history:
+      retain: {{ .Values.history.retain | int }}
+      git:
+        url: {{ .Values.history.git.url | quote }}
+        branch: {{ .Values.history.git.branch | quote }}
+        path: {{ .Values.history.git.path | quote }}
+        emailDomain: {{ .Values.history.git.emailDomain | quote }}
+        username: {{ .Values.history.git.username | quote }}
+
+    audit:
+      maxBytes: {{ .Values.audit.maxBytes | int64 }}
+      keep: {{ .Values.audit.keep | int }}
+
+    tests:
+      gate: {{ .Values.tests.gate }}
+      timeout: {{ .Values.tests.timeout }}
+
     discovery:
       enabled: {{ .Values.discovery.enabled }}
       allowedCIDRs:

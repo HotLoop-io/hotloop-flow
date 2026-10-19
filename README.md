@@ -413,26 +413,41 @@ property. A subflow can't be placed inside itself or inside one that holds it,
 and one still in use can't be deleted. The editor says so rather than letting the
 next deploy find out.
 
-**Selection to subflow.** Select nodes and press *Selection to subflow*. They move
-into a subflow of their own and an instance takes their place. Every wire that
-crossed the edge of the selection becomes a port: the one way in is the
+**Selection to subflow.** Select nodes and press *Selection to subflow*. They
+move into a subflow of their own and an instance takes their place. Every wire
+that crossed the edge of the selection becomes a port: the one way in is the
 subflow's input, and each output of a selected node that went somewhere else is
 an output of the subflow, so the flow does what it did. A subflow has one input,
 so if the selection is wired into two different nodes it says so and changes
 nothing, because feeding both from both would be a different flow. Select a
-group and it comes along with everything in it. Ctrl+Z undoes the lot.
+group and it comes along with everything in it. A configuration node that
+belongs to the flow and that only the selection uses goes into the subflow with
+it, along with whatever it points at. One that something left behind also uses
+goes global instead, so the two ends keep sharing the one connection, because a
+second broker connection on a box that counts them is the kind of surprise I do
+not ship. Environment variables the moved nodes read (typed as env, as `${NAME}`
+or `$(NAME)` in a string, or `env.get`) and that the flow declares become
+properties of the subflow that forward to the flow, so the value still comes
+from where it did and the instance can override it. Ctrl+Z undoes the lot.
 
-**Flows.** Double-click a tab, or press *Flow properties*, to rename it or delete
-it. Deleting asks, takes every node on the flow with it, and cuts the wires and
-links other flows had into it so the file isn't left pointing at nothing. Ctrl+Z
-brings it back until you deploy. The last flow can't be deleted, because a
-runtime with no flow has nowhere to put a node.
+**Flows.** Double-click a tab, or press *Flow properties*, to rename it or
+delete it. Deleting asks, takes every node on the flow with it, and cuts the
+wires and links other flows had into it so the file isn't left pointing at
+nothing. It takes the deleted nodes out of any Catch, Status or Complete scope
+that named them, too. A Catch or Status whose whole list was deleted keeps its
+last id, since an empty list means the whole flow and I won't flip a node from
+watching one thing to watching everything behind your back. Ctrl+Z brings it
+back until you deploy. The last flow can't be deleted, because a runtime with no
+flow has nowhere to put a node.
 
 **Configuration nodes** are in the palette under *configuration*. They sit on no
 canvas, so you double-click the type, fill in the dialog, and it's added to the
 list under *configuration in use*, where a double-click edits it and the cross
 deletes it. One a node still uses won't delete, and says how many do. That's
 where "Add one from the palette first" in a node's dialog sends you.
+
+**Deleting a wire.** Alt-click it. A plain click does nothing, so brushing past
+a wire while you select can't break a flow. Ctrl+Z puts it back.
 
 **Durable wires.** Double-click a wire. Tick *Durable* and it's drawn heavier and
 blue, and the node it leaves gets `ew_durable` in the file. The mark is on the
