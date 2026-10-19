@@ -43,14 +43,14 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 ## Summary
 
-60 node types registered.
+64 node types registered.
 
 | Level | Count |
 |---|---|
 | full | 12 |
 | partial | 21 |
 | divergent | 14 |
-| hotloop-flow-only | 13 |
+| hotloop-flow-only | 17 |
 
 ## Common
 
@@ -75,6 +75,7 @@ stopped with D1012 instead of stalling the node's whole queue.
 | `hotloop-flow-modbus` | hotloop-flow-only | HotLoop Flow's own Modbus TCP connection. It connects on the first request, drops the connection on any failure that makes it untrustworthy, and reconnects on the next one. |
 | `hotloop-flow-opcua` | hotloop-flow-only | HotLoop Flow's own OPC UA connection. It connects on first use, notices when the server goes away, and opens a new session on the next request or, for a subscription, by itself with a growing wait between tries. |
 | `hotloop-flow-postgres` | hotloop-flow-only | HotLoop Flow's own PostgreSQL connection. Targets the App Store's postgresql-app and timescale-db-pod, which share a wire protocol. |
+| `hotloop-flow-sparkplug` | hotloop-flow-only | HotLoop Flow's own Sparkplug B connection, either as an edge node or as a host application, on MQTT 3.1.1. It does not wait for a primary host application before it is born, it does not move to a second broker, and it does not carry DataSet, Template or PropertySet values. |
 | `mqtt-broker` | partial | MQTT 3.1, 3.1.1 and 5. Connection, credentials, TLS, clean session, keepalive, and birth, close and will messages with their QoS, retain flag and, on version 5, their properties and the will delay. On version 5 also the session expiry interval and connect user properties. The receive maximum, maximum packet size and topic alias maximum settings are not implemented, and the broker's defaults apply. TLS is Node-RED's usetls with a tls-config for the CA, client certificate and server name; a broker saved by an earlier HotLoop Flow with tls: true still connects over TLS with the system roots. Ignored properties: `receiveMaximum`, `maximumPacketSize`, `topicAliasMaximum`. |
 | `tls-config` | divergent | Certificate, key and CA from files, from environment variables, from uploaded PEM text, or from a PKCS#12 bundle, with a passphrase for an encrypted key or bundle, server name, ALPN protocol and the verify switch. Two differences. A path is read through the secret scope, the data directory plus secrets.allowedPaths, because a TLS config that can read any path is a way to probe the filesystem from the editor. And a config that is broken, a certificate without its key or a file that is not there, fails to deploy. Node-RED logs it and carries on, so the connection quietly goes out without the client certificate you configured. |
 | `websocket-client` | partial | Connects out and reconnects on its own when the connection drops, in payload mode or whole-message mode. A wss:// URL checks the server against the system roots, or against a tls-config's CA, with its client certificate and server name, as in Node-RED. |
@@ -115,6 +116,9 @@ stopped with D1012 instead of stalling the node's whole queue.
 | `opcua read` | hotloop-flow-only | HotLoop Flow's own OPC UA read. Not the same configuration as the community node-red-contrib-opcua, which does not run here. |
 | `opcua subscribe` | hotloop-flow-only | HotLoop Flow's own OPC UA subscription. Not the same configuration as the community node-red-contrib-opcua, which does not run here. |
 | `opcua write` | hotloop-flow-only | HotLoop Flow's own OPC UA write. Not the same configuration as the community node-red-contrib-opcua, which does not run here. |
+| `sparkplug command` | hotloop-flow-only | HotLoop Flow's own Sparkplug B command sender, as a host application. |
+| `sparkplug in` | hotloop-flow-only | HotLoop Flow's own Sparkplug B listener. On a host connection it follows every edge node it can see. On an edge connection it hands over the commands sent to it. |
+| `sparkplug out` | hotloop-flow-only | HotLoop Flow's own Sparkplug B publisher, for an edge node or one of its devices. |
 | `tcp in` | divergent | Listens or connects out, in stream mode with a delimiter or single mode collecting until the peer closes, with buffer, string or base64 payloads. Every message carries msg._session so a TCP Out node can reply on the same connection. Three bounds Node-RED does not have: the number of accepted connections, the size of one delimited message, and the total of a single-mode read. A peer that opens connections and never closes them, or sends without ever sending the delimiter, grows the heap until the pod dies otherwise. TLS through a tls-config works both ways: a listener presents the config's certificate, a client checks the server's. |
 | `tcp out` | partial | Connects to a host and sends, or replies on the connection a TCP In node accepted, found through msg._session. Listening for inbound connections purely to write to them, which Node-RED's third mode does, is not implemented — use a TCP In node for the listening half and this node in reply mode. TLS through a tls-config applies to client mode; a reply goes back down whatever the TCP In node accepted, TLS or not. |
 | `tcp request` | partial | Connects, sends the payload and waits for the reply, in any of Node-RED's four wait modes: a fixed time, a delimiter, a byte count, or until the peer closes. msg.host and msg.port override the node. Every request opens its own connection — Node-RED's connection-reuse mode is not implemented, and reusing one would change the semantics of the wait modes, which all end at a connection boundary. With a tls-config the server's certificate is checked unless the config says not to. Node-RED's TCP Request never checks it, whatever the config says, which makes its TLS a padlock painted on the door. |

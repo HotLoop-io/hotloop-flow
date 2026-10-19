@@ -3,6 +3,7 @@ module github.com/HotLoop-io/hotloop-flow
 go 1.26.4
 
 require (
+	github.com/bufbuild/protocompile v0.14.1
 	github.com/coder/websocket v1.8.15
 	github.com/dop251/goja v0.0.0-20260806115107-493f22071ef6
 	github.com/eclipse/paho.golang v0.23.0
@@ -16,6 +17,7 @@ require (
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.56.0
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
 	rsc.io/qr v0.2.0

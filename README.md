@@ -42,7 +42,7 @@ because it's a feature, not the point.
 Current release is `2.1.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.1.0`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-36,000 lines of Go, more than a third of it tests, 60 node types, and the race
+36,000 lines of Go, more than a third of it tests, 64 node types, and the race
 detector comes back clean on every package. Apache 2.0, the same terms for a
 business as for anyone, and nothing to sign up for.
 
@@ -1126,24 +1126,24 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**60 node types.**
+**64 node types.**
 
 | Category | Nodes |
 |---|---|
 | Common | inject, debug, complete, catch, status, link in, link out, comment, junction |
 | Function | function, switch, change, range, template, delay, trigger, exec, rbe |
-| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, opcua read/write/subscribe |
+| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, opcua read/write/subscribe, sparkplug in/out/command |
 | Sequence | split, join, sort, batch |
 | Parser | csv, html, json, xml, yaml |
 | Storage | file, file in, watch, influxdb out, postgres |
 | Discover | scan, netinfo, for inventorying an OT segment |
-| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, opcua |
+| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, opcua, sparkplug |
 
 `scan` sweeps a CIDR range and identifies Modbus and EtherNet/IP endpoints, and
 `netinfo` reports the interfaces the runtime can actually see, which in macvlan
-mode is how a flow discovers its own address on the OT VLAN. Modbus TCP and
-OPC UA nodes can talk to what `scan` finds now, and they're the next section. S7,
-Sparkplug B and EtherNet/IP are still Phase 5 of the [roadmap](docs/ROADMAP.md).
+mode is how a flow discovers its own address on the OT VLAN. Modbus TCP,
+OPC UA and Sparkplug B nodes can talk to what `scan` finds now, and they're the next
+section. S7 and EtherNet/IP are still Phase 5 of the [roadmap](docs/ROADMAP.md).
 
 One Go descriptor per node type declares its properties, ports, defaults and
 help text, and the editor renders the dialog from it, so a node can't ship with
@@ -1154,7 +1154,8 @@ a dialog that disagrees with its runtime.
 ## The plant floor
 
 `scan` could find a PLC and nothing in the palette could talk to it, which is a
-funny thing to ship in a product for plants. Modbus TCP and OPC UA are in now.
+funny thing to ship in a product for plants. Modbus TCP, OPC UA and Sparkplug B
+are in now.
 Each one is a config node that holds the connection to the device and action
 nodes that point at it, same shape as the InfluxDB node, and the editor builds
 every dialog from the descriptor like everything else.
@@ -1182,6 +1183,33 @@ the server then has to be told to trust a new one every time. If you set a
 server thumbprint the node refuses any other certificate. If you don't, it
 accepts whatever the server shows, which encrypts the conversation and proves
 nothing about who you're talking to. Pin it.
+
+**Sparkplug B** is `sparkplug out`, `sparkplug in` and `sparkplug command` on a
+`hotloop-flow-sparkplug` connection, which is either an edge node or a host
+application, because each has a will message and an MQTT connection has one. As
+an edge node, the connection is born when it connects, publishes each
+`sparkplug out` node as the edge node's own metrics or as one device's, dies
+with its will if it's cut off (with a new bdSeq in the next birth, so a host can
+tell the sessions apart), says NDEATH before a clean disconnect, and answers a
+rebirth request. Every metric has to be declared on the node, because a birth
+lists everything before any data is sent. `sparkplug in` on an edge node is how a
+flow acts on a command. As a host application it publishes STATE the way the
+spec asks, with the will, the retain flag and the timestamp that has to match,
+then follows every edge node it can see: names and aliases from the births,
+datatypes from the births, sequence numbers checked, a death marking what the
+birth listed as stale, and a rebirth request when a gap isn't filled inside the
+reorder timeout or data shows up from a node it never saw born. `sparkplug
+command` sends an NCMD or a DCMD, typed from the birth and by alias when the
+birth gave one. MQTT 3.1.1 through paho.mqtt.golang. The wire format is written
+by hand from the Eclipse schema and the 3.0 specification, and tested against
+that schema compiled with Google's protobuf, which is a different implementation
+from mine. The schema is EPL-2.0, so it isn't in this repository: CI fetches it
+pinned to a commit and a hash. It was also run against a real Mosquitto, and by
+hand against pysparkplug, in both directions, edge node and host. Not done: no
+primary host application wait (an edge node is born without waiting for a host),
+no second broker, no DataSet, Template or PropertySet values (the metric arrives
+named and marked unsupported), no metric metadata, and an edge node doesn't
+publish arrays.
 
 **When the device goes quiet.** This is what a plant floor does all day, so it
 is tested the ugly way, against the real simulators with a line in between that
@@ -1767,8 +1795,8 @@ file, so an instance never gets reported as "supported" while staying silent
 about what is inside it. That is the difference between finding out at your desk
 and finding out when a line stops.
 
-By compatibility level the 60 node types are 12 full, 21 partial, 14 deliberately
-divergent, and 13 of Flow's own. Every node declares how it relates to
+By compatibility level the 64 node types are 12 full, 21 partial, 14 deliberately
+divergent, and 17 of Flow's own. Every node declares how it relates to
 Node-RED's node of the same name, and **a test fails the build if a node claims
 partial compatibility without stating in writing what is missing.** A node
 that is 90% compatible and silent about the other 10% is more dangerous than one
@@ -1846,7 +1874,7 @@ the point. A flow that leans on one breaks the day it stops being there.
 
 **Not done yet**, roughly in the order it bothers me:
 
-- **No S7, Sparkplug B or EtherNet/IP nodes yet.** Modbus TCP and OPC UA are
+- **No S7 or EtherNet/IP nodes yet.** Modbus TCP, OPC UA and Sparkplug B are
   in. `scan` finds an EtherNet/IP device and nothing in the palette can talk to
   it. Phase 5.
 - **No dead-letter queue on a durable wire.** A message its target fails forever
