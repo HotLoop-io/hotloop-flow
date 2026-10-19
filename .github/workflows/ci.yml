@@ -124,6 +124,17 @@ jobs:
           done
           sleep 5
 
+      - name: Fetch the Sparkplug B schema
+        # The Sparkplug tests compile Eclipse's own schema and read and write the
+        # wire with Google's protobuf, which is how a hand-written encoder gets
+        # checked by something that isn't itself. The file is EPL-2.0, so it is
+        # fetched at a commit and checked against a hash instead of sitting in
+        # this repository, the same way the JSONata suite is.
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/eclipse/tahu/46f25e79f34234e6145d11108660dfd9133ae50d/sparkplug_b/sparkplug_b.proto" -o "$RUNNER_TEMP/sparkplug_b.proto"
+          echo "4432c5c483b7fb9732d0594c98a2e97dca5e517e39c5374a8b918d837f0b4a19  $RUNNER_TEMP/sparkplug_b.proto" | sha256sum -c -
+          echo "HOTLOOP_FLOW_SPARKPLUG_PROTO=$RUNNER_TEMP/sparkplug_b.proto" >> "$GITHUB_ENV"
+
       - name: Test with race detector
         # The race detector needs cgo. This is the test build only — the shipped
         # binary is built CGO_ENABLED=0 in the Dockerfile so it stays static and
@@ -221,6 +232,30 @@ jobs:
             TestOPCUASubscribeDeliversTheServersChanges \
             TestOPCUASubscriptionSurvivesTheServerGoingSilentAndDownAndComingBack \
             TestOPCUAReadDuringSilenceTimesOutAndRecovers; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
+
+      - name: The Sparkplug tests actually ran
+        # Same reasoning as the MQTT check: a broker that is not there, or a
+        # schema that did not download, turns every one of these into a skip.
+        env:
+          HOTLOOP_FLOW_TEST_MQTT: localhost:1883
+        run: |
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run Sparkplug 2>&1)
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::a Sparkplug test skipped; the broker or the schema is missing"
+            exit 1
+          fi
+          for t in TestSparkplugBytesAreWhatTheEclipseSchemaSays \
+            TestSparkplugEdgeNodeAndHostTalkThroughARealBroker \
+            TestSparkplugNDEATHComesFromTheBrokerAndTheNextBirthHasANewBdSeq \
+            TestSparkplugHostAsksForARebirthAndCommandsReachTheEdgeNode \
+            TestSparkplugHostApplicationStateIsRetainedAndItsWillSaysOffline \
+            TestSparkplugHostReadsAnotherImplementationsAliasesGapsAndStrangers \
+            TestSparkplugAGapThatFillsInWithinTheReorderTimeoutCostsNoRebirth \
+            TestSparkplugHostStartedAfterTheEdgeNodeGetsItsBirthByAsking \
+            TestSparkplugAliasesBothWays; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 
