@@ -523,6 +523,10 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Click through review, history, rollback, conflicts and flow tests
+      - name: Click through the editor
+        # Review, history, rollback, conflicts and flow tests, then copy and paste,
+        # import and export, subflows, groups, search, the debug filters, and every
+        # node dialog the runtime offers. The dialog test reads its list of node
+        # types from GET /nodes on the binary it is testing, so it cannot go stale.
         working-directory: web/e2e
         run: npx playwright test
