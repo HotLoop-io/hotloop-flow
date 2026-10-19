@@ -43,7 +43,7 @@ Current release is `2.1.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.1.0`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
 36,000 lines of Go, more than a third of it tests, 64 node types, and the race
-detector comes back clean on every package. Home and lab use is free, schools, nonprofits and government are free, and
+detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
 business use is free through EmberNET, under HotLoop's Business Source License.
 
 ---
