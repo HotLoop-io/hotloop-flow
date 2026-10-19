@@ -429,8 +429,14 @@ that says a version is out while its image still 401s is a lie with a link in it
   matter `product`, `version`, `date`, `published`, `summary`, `highlights`,
   `breaking`, then the body), and the version shown on `src/pages/flow.astro`
   (`softwareVersion` and the "is out" notice).
-- `HotLoop-io/docs`: the Flow install pages that name a version, and the README
-  line that lists which versions the install pages cover.
+- `HotLoop-io/docs`: **sync docs.hotloop.io.** Its `scripts/sync-docs.mjs` reads
+  this repo's `origin/main` and the release you just made from a local clone,
+  rewrites every Flow page from the README and `docs/`, marks whatever is newer
+  than the release as next release, and fills the new version into the install
+  pages. It stops on a hand-written page last read against an older version, so
+  read that page against the release and bump its `reviewed:` line. The docs
+  repo's README has the command. `npm run build`, PR, merge on green, then curl
+  a Flow page on https://docs.hotloop.io.
 
 ```bash
 git grep -n -F 'PREV' -- src README.md        # in each repo; every hit is read
