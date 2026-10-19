@@ -419,6 +419,9 @@ type flakyLine struct {
 	mu       sync.Mutex
 	conns    []net.Conn
 	accepted atomic.Int32
+	// sent is every byte the client sent, so a test can look at the request
+	// itself and not only at what the server did with it.
+	sent []byte
 }
 
 func newFlakyLine(t *testing.T, upstream string) *flakyLine {
@@ -459,6 +462,9 @@ func (f *flakyLine) serve() {
 					up.Close()
 					return
 				}
+				f.mu.Lock()
+				f.sent = append(f.sent, buf[:n]...)
+				f.mu.Unlock()
 				if f.silent.Load() {
 					continue
 				}
@@ -468,6 +474,13 @@ func (f *flakyLine) serve() {
 			}
 		}()
 	}
+}
+
+// requests is a copy of what the client has sent so far.
+func (f *flakyLine) requests() []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]byte(nil), f.sent...)
 }
 
 func (f *flakyLine) dropAll() {

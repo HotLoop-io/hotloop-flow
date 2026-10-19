@@ -124,6 +124,40 @@ jobs:
           done
           sleep 5
 
+      - name: Start a second MQTT broker
+        # The Sparkplug test that moves an edge node from one broker to the
+        # next needs a second broker, with no password, on its own port.
+        run: |
+          docker run -d --name mosquitto2 -p 1885:1883 \
+            eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
+          for i in $(seq 1 30); do nc -z localhost 1885 && exit 0; sleep 1; done
+          docker logs mosquitto2; exit 1
+
+      - name: Start a real S7 server and a real EtherNet/IP server
+        # The S7 and EtherNet/IP tests talk to real servers or they skip, and a
+        # skip reads as a pass. The S7 server is python-snap7 3.2.1 (MIT), a
+        # server for the S7 protocol written in pure Python, built from
+        # testdata/plant/s7. The EtherNet/IP server is ab_server from libplctag
+        # 2.7.2, built from testdata/plant/ethernetip at a pinned commit and
+        # started with the tags the tests use. Both run as separate programs
+        # and nothing from either is linked into Flow. The tags are lower case
+        # because ab_server matches them with their case and the client sends
+        # them lower case.
+        run: |
+          docker build -q -t flow-s7sim testdata/plant/s7
+          docker build -q -t flow-enipsim testdata/plant/ethernetip
+          docker run -d --name s7sim -p 1102:102 flow-s7sim
+          docker run -d --name enipsim -p 44818:44818 flow-enipsim \
+            --plc=ControlLogix --path=1,0 \
+            --tag=testsint:SINT[1] --tag=testint:INT[1] --tag=testdint:DINT[1] --tag=testlint:LINT[1] \
+            --tag=testreal:REAL[1] --tag=testlreal:LREAL[1] --tag=testbool:BOOL[1] --tag=teststring:STRING[1] \
+            --tag=testdintarr:DINT[10] --tag=testrealarr:REAL[5]
+          for p in 1102 44818; do
+            for i in $(seq 1 60); do nc -z localhost $p && break; sleep 1; done
+            nc -z localhost $p || { docker logs s7sim; docker logs enipsim; echo "::error::nothing on $p"; exit 1; }
+          done
+          sleep 3
+
       - name: Fetch the Sparkplug B schema
         # The Sparkplug tests compile Eclipse's own schema and read and write the
         # wire with Google's protobuf, which is how a hand-written encoder gets
@@ -147,8 +181,11 @@ jobs:
           HOTLOOP_FLOW_TEST_MQTT_PASSWORD: ci-broker-pass
           HOTLOOP_FLOW_TEST_OTLP: localhost:4318
           HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
+          HOTLOOP_FLOW_TEST_MQTT2: localhost:1885
           HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
           HOTLOOP_FLOW_TEST_OPCUA: localhost:50000
+          HOTLOOP_FLOW_TEST_S7: localhost:1102
+          HOTLOOP_FLOW_TEST_ENIP: localhost:44818
         run: go test -race -count=1 -coverprofile=coverage.out ./...
 
       - name: The broker tests actually ran
@@ -231,7 +268,10 @@ jobs:
             TestOPCUAClientCertificateFromATLSConfig \
             TestOPCUASubscribeDeliversTheServersChanges \
             TestOPCUASubscriptionSurvivesTheServerGoingSilentAndDownAndComingBack \
-            TestOPCUAReadDuringSilenceTimesOutAndRecovers; do
+            TestOPCUAReadDuringSilenceTimesOutAndRecovers \
+            TestOPCUAHungDiscoveryDoesNotLockOutTheOtherNodes \
+            TestOPCUAConcurrentNodesShareOneSession \
+            TestOPCUAAes256RsaPssWaitsOnGopcua; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 
@@ -240,6 +280,7 @@ jobs:
         # schema that did not download, turns every one of these into a skip.
         env:
           HOTLOOP_FLOW_TEST_MQTT: localhost:1883
+          HOTLOOP_FLOW_TEST_MQTT2: localhost:1885
         run: |
           OUT=$(go test ./internal/nodes/ -count=1 -v -run Sparkplug 2>&1)
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
@@ -255,7 +296,14 @@ jobs:
             TestSparkplugHostReadsAnotherImplementationsAliasesGapsAndStrangers \
             TestSparkplugAGapThatFillsInWithinTheReorderTimeoutCostsNoRebirth \
             TestSparkplugHostStartedAfterTheEdgeNodeGetsItsBirthByAsking \
-            TestSparkplugAliasesBothWays; do
+            TestSparkplugAliasesBothWays \
+            TestSparkplugComplexValuesAreWhatTheEclipseSchemaSays \
+            TestSparkplugEdgeNodePublishesArraysDataSetsTemplatesAndPropertiesToAHost \
+            TestSparkplugTemplateInstanceNeedsItsDefinitionInTheNBirth \
+            TestSparkplugEdgeNodeWaitsForItsPrimaryHostBeforeItIsBorn \
+            TestSparkplugEdgeNodeLeavesWhenItsPrimaryHostGoesOfflineAndIgnoresALateDeath \
+            TestSparkplugEdgeNodeMovesToTheBrokerWhereThePrimaryHostIs \
+            TestSparkplugEdgeNodeGoesToTheNextBrokerWhenTheFirstIsGone; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 
@@ -600,3 +648,31 @@ jobs:
         # types from GET /nodes on the binary it is testing, so it cannot go stale.
         working-directory: web/e2e
         run: npx playwright test
+
+      - name: The S7 and EtherNet/IP tests actually ran
+        # Same reasoning as the Modbus and OPC UA check: a simulator that failed
+        # to come up turns every one of these into a skip, and a skip reads as a
+        # pass.
+        env:
+          HOTLOOP_FLOW_TEST_S7: localhost:1102
+          HOTLOOP_FLOW_TEST_ENIP: localhost:44818
+        run: |
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'S7|EtherNetIP' 2>&1)
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::an S7 or EtherNet/IP test skipped; the simulator is not reachable"
+            exit 1
+          fi
+          for t in TestS7ReadsWhatTheRealServerHolds \
+            TestS7WriteIsReadBackFromTheRealServer \
+            TestS7StringsKeepTheirMaximumLength \
+            TestS7ABitIsWrittenAsABitAndNotAsAByte \
+            TestS7CPUSaysNoAndTheErrorSaysWhatToDo \
+            TestS7DeviceGoesSilentThenComesBack \
+            TestS7NodesShareOneConnectionAndTakeTurns \
+            TestEtherNetIPWriteIsReadBackFromTheRealServer \
+            TestEtherNetIPControllerSaysNoAndTheErrorSaysWhatToDo \
+            TestEtherNetIPDeviceGoesSilentThenComesBack \
+            TestEtherNetIPNodesShareOneConnectionAndTakeTurns; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done

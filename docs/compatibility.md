@@ -43,14 +43,14 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 ## Summary
 
-64 node types registered.
+70 node types registered.
 
 | Level | Count |
 |---|---|
 | full | 12 |
 | partial | 21 |
 | divergent | 14 |
-| hotloop-flow-only | 17 |
+| hotloop-flow-only | 23 |
 
 ## Common
 
@@ -71,11 +71,13 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 | Type | Level | Notes |
 |---|---|---|
+| `hotloop-flow-ethernetip` | hotloop-flow-only | HotLoop Flow's own EtherNet/IP connection, for tag access on ControlLogix, CompactLogix and Micro800 controllers. It connects on the first request, drops the connection on any failure that makes it untrustworthy, and reconnects on the next one. |
 | `hotloop-flow-influxdb` | hotloop-flow-only | HotLoop Flow's own InfluxDB connection, targeting the App Store's influxdb-app. |
 | `hotloop-flow-modbus` | hotloop-flow-only | HotLoop Flow's own Modbus TCP connection. It connects on the first request, drops the connection on any failure that makes it untrustworthy, and reconnects on the next one. |
 | `hotloop-flow-opcua` | hotloop-flow-only | HotLoop Flow's own OPC UA connection. It connects on first use, notices when the server goes away, and opens a new session on the next request or, for a subscription, by itself with a growing wait between tries. |
 | `hotloop-flow-postgres` | hotloop-flow-only | HotLoop Flow's own PostgreSQL connection. Targets the App Store's postgresql-app and timescale-db-pod, which share a wire protocol. |
-| `hotloop-flow-sparkplug` | hotloop-flow-only | HotLoop Flow's own Sparkplug B connection, either as an edge node or as a host application, on MQTT 3.1.1. It does not wait for a primary host application before it is born, it does not move to a second broker, and it does not carry DataSet, Template or PropertySet values. |
+| `hotloop-flow-s7` | hotloop-flow-only | HotLoop Flow's own Siemens S7 connection, over ISO on TCP. It connects on the first request, drops the connection on any failure that makes it untrustworthy, and reconnects on the next one. |
+| `hotloop-flow-sparkplug` | hotloop-flow-only | HotLoop Flow's own Sparkplug B connection, either as an edge node or as a host application, on MQTT 3.1.1. An edge node can wait for a primary host application's STATE before it is born and can move through a list of brokers. A host application connects to one broker. Metrics carry arrays, DataSet, Template and PropertySet values. A metric's MetaData (files and multi-part bytes) is not carried. |
 | `mqtt-broker` | partial | MQTT 3.1, 3.1.1 and 5. Connection, credentials, TLS, clean session, keepalive, and birth, close and will messages with their QoS, retain flag and, on version 5, their properties and the will delay. On version 5 also the session expiry interval and connect user properties. The receive maximum, maximum packet size and topic alias maximum settings are not implemented, and the broker's defaults apply. TLS is Node-RED's usetls with a tls-config for the CA, client certificate and server name; a broker saved by an earlier HotLoop Flow with tls: true still connects over TLS with the system roots. Ignored properties: `receiveMaximum`, `maximumPacketSize`, `topicAliasMaximum`. |
 | `tls-config` | divergent | Certificate, key and CA from files, from environment variables, from uploaded PEM text, or from a PKCS#12 bundle, with a passphrase for an encrypted key or bundle, server name, ALPN protocol and the verify switch. Two differences. A path is read through the secret scope, the data directory plus secrets.allowedPaths, because a TLS config that can read any path is a way to probe the filesystem from the editor. And a config that is broken, a certificate without its key or a file that is not there, fails to deploy. Node-RED logs it and carries on, so the connection quietly goes out without the client certificate you configured. |
 | `websocket-client` | partial | Connects out and reconnects on its own when the connection drops, in payload mode or whole-message mode. A wss:// URL checks the server against the system roots, or against a tls-config's CA, with its client certificate and server name, as in Node-RED. |
@@ -106,6 +108,8 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 | Type | Level | Notes |
 |---|---|---|
+| `ethernetip read` | hotloop-flow-only | HotLoop Flow's own EtherNet/IP tag read. Not the same configuration as the community node-red-contrib-cip-ethernet-ip, which does not run here. |
+| `ethernetip write` | hotloop-flow-only | HotLoop Flow's own EtherNet/IP tag write. Not the same configuration as the community node-red-contrib-cip-ethernet-ip, which does not run here. |
 | `http in` | divergent | Serves a path, with Express-style :params and a trailing *, and builds the same msg.req / msg.res / msg.payload shape Node-RED does, including JSON, form-encoded and raw bodies. Three deliberate differences. A request that no HTTP Response node answers is closed with 504 after a timeout instead of being held open forever, because Node-RED's version leaks a connection per request until the process runs out of sockets and stops answering with nothing in the log. Two nodes claiming the same method and path is refused at deploy time rather than one of them silently never firing. And a path that would shadow the editor or the admin API is refused for the same reason. Uploads parse the way multer does in Node-RED: text fields into msg.payload, files into msg.req.files, a broken upload answered with 500. One bound multer lacks: an array index over 10,000 in a field name, a[99999999], is refused instead of building a sparse array that long. msg.req.cookies is cookie-parser's, j: values included. Ignored properties: `swaggerDoc`. |
 | `http request` | partial | Method, URL, headers, basic authentication, redirects and the three return types, with msg.url, msg.method and msg.headers overriding the node. The response body is size-capped and the call is bounded by a timeout, neither of which Node-RED does. TLS comes from a tls-config, or without one msg.rejectUnauthorized = false skips the certificate check for that one message, as in Node-RED. msg.cookies and a cookie header go out through a cookie jar, cookies a redirect sets follow the redirect, and msg.responseCookies and msg.redirectList come back, all as in Node-RED. A multipart/form-data content type with an object payload sends it as a form. Proxy settings and connection persistence are not implemented in this build. There is no egress allowlist: this node can reach anything the pod can, exactly as Node-RED's can, and the place to bound that is a NetworkPolicy rather than an edit dialog nobody outside the cluster can trust. Ignored properties: `proxy`, `persist`. |
 | `http response` | partial | Status code and headers from the node or from msg.statusCode and msg.headers, with the payload as the body. msg.cookies sets and clears cookies exactly as Express does for Node-RED, options and all; with more than one, they go out in name order rather than the order the object was built in. |
@@ -116,6 +120,8 @@ stopped with D1012 instead of stalling the node's whole queue.
 | `opcua read` | hotloop-flow-only | HotLoop Flow's own OPC UA read. Not the same configuration as the community node-red-contrib-opcua, which does not run here. |
 | `opcua subscribe` | hotloop-flow-only | HotLoop Flow's own OPC UA subscription. Not the same configuration as the community node-red-contrib-opcua, which does not run here. |
 | `opcua write` | hotloop-flow-only | HotLoop Flow's own OPC UA write. Not the same configuration as the community node-red-contrib-opcua, which does not run here. |
+| `s7 read` | hotloop-flow-only | HotLoop Flow's own Siemens S7 read. Not the same configuration as the community node-red-contrib-s7, which does not run here. |
+| `s7 write` | hotloop-flow-only | HotLoop Flow's own Siemens S7 write. Not the same configuration as the community node-red-contrib-s7, which does not run here. |
 | `sparkplug command` | hotloop-flow-only | HotLoop Flow's own Sparkplug B command sender, as a host application. |
 | `sparkplug in` | hotloop-flow-only | HotLoop Flow's own Sparkplug B listener. On a host connection it follows every edge node it can see. On an edge connection it hands over the commands sent to it. |
 | `sparkplug out` | hotloop-flow-only | HotLoop Flow's own Sparkplug B publisher, for an edge node or one of its devices. |
