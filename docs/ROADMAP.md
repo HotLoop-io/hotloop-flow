@@ -178,6 +178,33 @@ biggest hole in a product built for plants.
 - [ ] An MCP client node, so a flow can call tools on other servers, HotLoop's
       included
 
+### Phase 8: the editor, rewritten in Astro
+
+Last, on purpose. Nothing above waits on it and nothing above should be slowed
+down by it.
+
+Every HotLoop project is getting one modern UI, and this editor is the one that
+doesn't match yet. It's hand-built vanilla TypeScript on native SVG, which was the
+right call when the goal was a small static binary with nothing to audit, and it's
+now the thing that looks like it came from a different company. I'd rather fix
+that once, at the end, with every feature already settled, than rewrite a moving
+target and then rewrite it again every time a phase lands.
+
+- [ ] A design pass first, before a line of Astro. What the editor should look
+      and feel like next to the rest of HotLoop, settled on paper and in the
+      shared tokens, so the rewrite is building a thing somebody already decided
+      on instead of deciding as it goes
+- [ ] The editor rebuilt in Astro with the canvas, dialogs, history, review,
+      tests, tracing, search and groups all carried over, and none of them
+      allowed to get worse. The browser tests in `web/e2e` are the bar: they pass
+      against the new editor unchanged, or the rewrite isn't done
+- [ ] Still embedded in the one static binary, still no network needed on an
+      edge box, still inside the binary size budget, and the license gate still
+      covers everything that ships in the bundle
+
+Flow stays its own product through all of this. It shares the look with HotLoop,
+not the code, and it is never embedded in HotLoop.
+
 ---
 
 ## Everyday gaps
