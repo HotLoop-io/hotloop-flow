@@ -1233,7 +1233,8 @@ every dialog from the descriptor like everything else.
 They sit on open source libraries: [simonvetter/modbus](https://github.com/simonvetter/modbus)
 v1.6.4 (MIT), [gopcua/opcua](https://github.com/gopcua/opcua) v0.9.1 (MIT),
 [robinson/gos7](https://github.com/robinson/gos7) (BSD-3-Clause, no tagged
-releases, so it's pinned to the latest commit) and
+releases, so it's pinned to the latest commit, and carried in `third_party/gos7`
+with one line changed, `third_party/gos7/HOTLOOP_PATCH.txt` says which) and
 [danomagnum/gologix](https://github.com/danomagnum/gologix) v0.44.0-beta (MIT).
 Nothing is copied out of HotLoop's drivers, which are a different license and stay
 that way.
@@ -2037,14 +2038,6 @@ the point. A flow that leans on one breaks the day it stops being there.
 
 **Not done yet**, roughly in the order it bothers me:
 
-- **gos7 prints to the global logger.** When an S7 read times out, the library
-  writes a raw `*net.OpError ... i/o timeout` line to Go's global `log` from
-  `tcpclient.go` (the `log.Printf` in `Send`), and it has no logger field or
-  option that turns it off. The node's own error already says what happened and
-  what to check, so that line is noise on stderr. I won't redirect the global
-  logger to hide it, because that would swallow every other library's output
-  too. The fix is upstream: drop that `log.Printf` or send it through the
-  handler's `Logger`.
 - **The S7 and EtherNet/IP nodes have only met simulators.** They are tested
   against real servers that speak the protocols, and they have not talked to a
   Siemens CPU or a Logix controller. Phase 5 stays that honest until they have.

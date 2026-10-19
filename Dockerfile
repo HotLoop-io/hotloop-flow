@@ -35,6 +35,9 @@ WORKDIR /src
 # go.mod and go.sum first: the module download layer then survives every source
 # change, which is most of the build time on a cold runner.
 COPY go.mod go.sum ./
+# gos7 is a patched copy in this tree (go.mod replaces it), so it has to be here
+# before the modules are fetched.
+COPY third_party ./third_party
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 

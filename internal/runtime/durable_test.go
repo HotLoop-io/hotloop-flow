@@ -448,7 +448,14 @@ func TestDurableWireRemovedPurgesItsQueue(t *testing.T) {
 	inject(t, rig.rt, 0, 30)
 	processed(t, rig.rt, 30)
 	q := rig.sp.Wire("a:0>b")
-	waitFor(t, "the backlog on disk", func() bool { return q.Depth() >= 28 })
+	// All 30 end up on disk: the target never takes one, so none is delivered
+	// and acked. "Node a handled all 30" only means they were handed to the
+	// wire. The spool's writer counts each into Depth() after its commit, on its
+	// own goroutine, so the last one or two can still be on their way. Sampling
+	// "nearly all of them" and comparing it to what the purge deletes is a race
+	// between that writer and this test, and it lost on a slow runner (30
+	// dropped against the 29 sampled). Wait for every message instead.
+	waitFor(t, "all 30 on disk", func() bool { return q.Depth() == 30 })
 	queued := q.Depth()
 
 	plain := `[

@@ -140,7 +140,16 @@ done
 # why golang.org/x/time shows up as golang.org/x/time/rate. It also drops
 # the +incompatible off a pre-modules v2 like go-sourcemap's v2.1.3, so that
 # comes off here too, or the check calls a listed module missing.
-go version -m "$bin" | awk '$1 == "dep" { sub(/\+incompatible$/, "", $3); print $2 "\t" $3 }' >"$work/linked"
+#
+# A module the repository carries a patched copy of (a go.mod replace to a local
+# directory, third_party/) has no version of its own: go-licenses lists it as
+# Unknown. The binary records the replace on the line after the dep, so that
+# dep is expected as Unknown, and written to patched so the file can say
+# which version the copy was made from.
+go version -m "$bin" | awk '
+  $1 == "dep" { if (held) print held; mod = $2; ver = $3; sub(/\+incompatible$/, "", ver); held = mod "\t" ver; next }
+  $1 == "=>" && held && ($2 ~ /^\.\.?\// || $2 ~ /^\//) { print mod "\t" ver >"/dev/stderr"; held = mod "\tUnknown"; next }
+  END { if (held) print held }' >"$work/linked" 2>"$work/patched"
 [ -s "$work/linked" ] || fail "$bin carries no module build info. Was it built from this module?"
 missing=""
 while IFS=$'\t' read -r mod ver; do
@@ -187,7 +196,9 @@ gover=$(go env GOVERSION)
 awk -F'\t' '{
   key = $1 "\t" $2 "\t" $4
   if (!(key in lic)) { order[++n] = key; lic[key] = $3 } else { lic[key] = lic[key] ", " $3 }
-} END { for (i = 1; i <= n; i++) print order[i] "\t" lic[order[i]] }' "$work/rows" >"$work/mods"
+} END { for (i = 1; i <= n; i++) print order[i] "\t" lic[order[i]] }' "$work/rows" |
+  awk -F'\t' -v OFS='\t' -v pf="$work/patched" 'FILENAME == pf { patched[$1] = $2; next }
+    ($1 in patched) && $2 == "Unknown" { $2 = patched[$1] " (patched copy)" } { print }' "$work/patched" - >"$work/mods"
 
 {
   echo "Third-party software in $name"
