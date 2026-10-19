@@ -140,13 +140,15 @@ A historian going down for an hour shouldn't cost you an hour of readings.
 `scan` finds a PLC today and nothing in the palette can talk to it. That's the
 biggest hole in a product built for plants.
 
-- [ ] Modbus TCP read and write
-- [ ] OPC UA read, subscribe and write
+- [x] Modbus TCP read and write
+- [x] OPC UA read, subscribe and write
 - [ ] S7 read and write
 - [ ] Sparkplug B, as an edge node and as a host
 - [ ] EtherNet/IP read and write
 - [ ] Every one of them tested against a real device or the real simulator,
-      including what happens when the device goes silent and when it comes back
+      including what happens when the device goes silent and when it comes back.
+      Modbus TCP is done against pymodbus and OPC UA against Microsoft's OPC PLC,
+      silent and switched-off both. S7, Sparkplug B and EtherNet/IP are not done
 - [ ] HotLoop nodes: entity changes in, entity state, call a script, apply a
       recipe. Every command goes through HotLoop's write gate and lands in its
       logbook as `flow:<node id>`, and a write the gate refuses arrives at a

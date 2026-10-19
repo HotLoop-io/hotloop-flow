@@ -37,7 +37,7 @@ because it's a feature, not the point.
 Current release is `2.1.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.1.0`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-36,000 lines of Go, more than a third of it tests, 51 node types, and the race
+36,000 lines of Go, more than a third of it tests, 60 node types, and the race
 detector comes back clean on every package. Apache 2.0, the same terms for a
 business as for anyone, and nothing to sign up for.
 
@@ -1037,29 +1037,98 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**51 node types.**
+**60 node types.**
 
 | Category | Nodes |
 |---|---|
 | Common | inject, debug, complete, catch, status, link in, link out, comment, junction |
 | Function | function, switch, change, range, template, delay, trigger, exec, rbe |
-| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out |
+| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, opcua read/write/subscribe |
 | Sequence | split, join, sort, batch |
 | Parser | csv, html, json, xml, yaml |
 | Storage | file, file in, watch, influxdb out, postgres |
 | Discover | scan, netinfo, for inventorying an OT segment |
-| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres |
+| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, opcua |
 
 `scan` sweeps a CIDR range and identifies Modbus and EtherNet/IP endpoints, and
 `netinfo` reports the interfaces the runtime can actually see, which in macvlan
-mode is how a flow discovers its own address on the OT VLAN. Nothing in the
-palette can talk to the PLC `scan` just found yet. Modbus, OPC UA, S7, Sparkplug
-B and EtherNet/IP nodes are Phase 5 of the [roadmap](docs/ROADMAP.md), and that's
-the biggest hole in a product built for plants.
+mode is how a flow discovers its own address on the OT VLAN. Modbus TCP and
+OPC UA nodes can talk to what `scan` finds now, and they're the next section. S7,
+Sparkplug B and EtherNet/IP are still Phase 5 of the [roadmap](docs/ROADMAP.md).
 
 One Go descriptor per node type declares its properties, ports, defaults and
 help text, and the editor renders the dialog from it, so a node can't ship with
 a dialog that disagrees with its runtime.
+
+---
+
+## The plant floor
+
+`scan` could find a PLC and nothing in the palette could talk to it, which is a
+funny thing to ship in a product for plants. Modbus TCP and OPC UA are in now.
+Each one is a config node that holds the connection to the device and action
+nodes that point at it, same shape as the InfluxDB node, and the editor builds
+every dialog from the descriptor like everything else.
+
+They sit on MIT-licensed libraries, [simonvetter/modbus](https://github.com/simonvetter/modbus)
+v1.6.4 and [gopcua/opcua](https://github.com/gopcua/opcua) v0.9.1. Nothing is
+copied out of HotLoop's drivers, which are a different license and stay that way.
+
+**Modbus TCP** is `modbus read` and `modbus write` on a `hotloop-flow-modbus`
+server. Holding registers, input registers, coils and discrete inputs. Registers
+read as uint16, int16, uint32, int32, float32, uint64, int64 or float64, with the
+byte order and word order as switches, because the two devices on your line will
+not agree on either and the manual will not say. A quantity is values, not
+registers, so two float32 is four registers on the wire. Addresses are zero
+based as they go on the wire, and the dialog and the error both say out loud that
+register 40001 in a manual is address 0.
+
+**OPC UA** is `opcua read`, `opcua write` and `opcua subscribe` on a
+`hotloop-flow-opcua` server. Security mode None, Sign or SignAndEncrypt with the
+Basic256Sha256 or Aes128_Sha256_RsaOaep policy, anonymous or a username and
+password. A client certificate comes from a `tls-config` (it needs an
+application URI in the subject alternative name), and without one the node makes
+a throwaway certificate each time the flow starts and logs a warning, because
+the server then has to be told to trust a new one every time. If you set a
+server thumbprint the node refuses any other certificate. If you don't, it
+accepts whatever the server shows, which encrypts the conversation and proves
+nothing about who you're talking to. Pin it.
+
+**When the device goes quiet.** This is what a plant floor does all day, so it
+is tested the ugly way, against the real simulators with a line in between that
+swallows the traffic (a hung PLC) or slams the door (a switched-off one). A
+read or write that gets no answer fails inside the timeout, says so in words
+(`no answer from 10.20.1.15:502 within 3s. The device is silent. Check that it
+is powered...`), drops the connection and opens a fresh one on the next message.
+An OPC UA subscription notices on its own, turns its badge red, raises one error
+for a Catch node per outage and not one per retry, waits 1 second and then
+longer up to 30, and picks the subscription back up when the server returns. No
+redeploy. Errors name the thing to change: the Modbus exception code and what it
+usually means, the OPC UA status code and which setting it points at, a refused
+connection versus a silent one.
+
+**Writes change equipment, and there is no ceremony.** I looked for a
+confirmation pattern in Flow to follow and there isn't one for equipment. The
+guards that exist bound what a node may reach (`discovery.allowedCIDRs` for
+`scan`, the file and secret scopes), and nothing asks "are you sure" before a
+message does something. So the write nodes don't either. A write node is a
+deliberate thing someone placed on a canvas and put through the same deploy
+record as everything else, and the message arriving at its output means the device acknowledged it.
+When HotLoop is on the network, equipment writes are supposed to go through its
+write gate instead of straight to the PLC. That is on the roadmap and it isn't
+built, but nothing here stands in its way.
+
+**Tested against** Microsoft's OPC PLC (`opc-plc` 2.15.11) with anonymous and
+username logins across None, Sign and SignAndEncrypt, and against pymodbus
+through `oitc/modbus-server` 2.3.0, with real exception codes coming back. CI
+starts both, and fails if a test skips instead of running. Not done:
+Aes256_Sha256_RsaPss fails against OPC PLC on the client's signature
+(`BadSecurityChecksFailed`), so it isn't in the dropdown. Basic256 and
+Basic128Rsa15 are deprecated and the simulator doesn't offer them, so they're
+out too. A setting I can't test doesn't get a dropdown entry. No Modbus RTU, no
+Modbus over TLS, no OPC UA events, history or method calls, no browse, and 64 bit
+integers past 2^53 come out as a string of their exact digits because a flow's
+numbers can't hold them.
 
 ---
 
@@ -1588,8 +1657,8 @@ file, so an instance never gets reported as "supported" while staying silent
 about what is inside it. That is the difference between finding out at your desk
 and finding out when a line stops.
 
-By compatibility level the 51 node types are 10 full, 26 partial, 9 deliberately
-divergent, and 6 of Flow's own. Every node declares how it relates to
+By compatibility level the 60 node types are 12 full, 21 partial, 14 deliberately
+divergent, and 13 of Flow's own. Every node declares how it relates to
 Node-RED's node of the same name, and **a test fails the build if a node claims
 partial compatibility without stating in writing what is missing.** A node
 that is 90% compatible and silent about the other 10% is more dangerous than one
@@ -1667,8 +1736,9 @@ the point. A flow that leans on one breaks the day it stops being there.
 
 **Not done yet**, roughly in the order it bothers me:
 
-- **No industrial protocol nodes.** `scan` finds a Modbus or EtherNet/IP device
-  and nothing in the palette can then talk to it. Phase 5.
+- **No S7, Sparkplug B or EtherNet/IP nodes yet.** Modbus TCP and OPC UA are
+  in. `scan` finds an EtherNet/IP device and nothing in the palette can talk to
+  it. Phase 5.
 - **Persistent context.** Context lives in memory only, so flow and global
   context are gone every time the process restarts, and a counter or a latch in a
   flow resets when the pod moves. SQLite, Phase 4.
