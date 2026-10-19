@@ -266,10 +266,19 @@ but plenty of people drop one that doesn't.
       warnings in the editor log once and not twice, and `hotloop-flow import`
       writes its report to a writer like `deploy` does, so its tests stop
       swapping out standard output
-- [ ] gos7 writes raw timeout lines to Go's global logger on every network error
-      (`tcpclient.go`, the `log.Printf` in `Send`) and offers no way to turn
-      it off. Needs an upstream change; redirecting the global logger would hide
-      other libraries' output
+- [x] gos7 wrote a raw timeout line to Go's global logger on every network
+      error (`tcpclient.go`, the `log.Printf` in `Send`) and had no way to turn
+      it off. Flow carries gos7 in `third_party/gos7` now, with that one line
+      sent through the handler's `Logger`, which Flow leaves unset. Nothing else
+      in the library is touched, and `third_party/gos7/HOTLOOP_PATCH.txt` says
+      when the copy can go. Upstream still has the line; I didn't ask them to
+      take the change
+- [x] The durable wire purge test could count one more dropped than it had
+      sampled as queued. The test was wrong, not the queue: it waited for 28 of
+      30 messages on disk and then held the purge to exactly what it had seen,
+      while the spool was still counting the last ones. How many of the 30 are
+      on disk when the wire goes depends on timing, so it holds the purge to
+      what it saw as a floor and to the 30 sent as a ceiling now
 - [x] The durable wire kill test passed locally and failed on a slower runner.
       The queue counted a message as waiting before it was on disk, so a copy
       taken the moment the count hit 100 could be one short. It counts after the

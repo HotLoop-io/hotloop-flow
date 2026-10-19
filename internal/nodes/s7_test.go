@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -456,6 +458,54 @@ func TestS7RefusedConnectionSaysWhatIsWrong(t *testing.T) {
 	}
 	t.Logf("operator sees: %v", err)
 }
+
+// A CPU that accepts the connection and never answers. gos7 used to write a raw
+// "*net.OpError ... i/o timeout" line to Go's global logger from Send every time
+// that happened. The operator already gets the node's own error, so nothing
+// else may reach the global logger, and the error still has to reach the flow.
+func TestS7TimeoutDoesNotWriteToTheGlobalLogger(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Skip("no loopback")
+	}
+	defer l.Close()
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close()
+		}
+	}()
+
+	var logged bytes.Buffer
+	var mu sync.Mutex
+	oldOut, oldFlags := log.Writer(), log.Flags()
+	log.SetOutput(writerFunc(func(p []byte) (int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return logged.Write(p)
+	}))
+	defer log.SetOutput(oldOut)
+	defer log.SetFlags(oldFlags)
+
+	svc, done := s7Live(t, l.Addr().String(), "")
+	_, _, err = s7ReadOnce(t, svc, `"address":"DB1.DBW0","dataType":"int16"`)
+	done()
+	if err == nil || !strings.Contains(err.Error(), "silent") {
+		t.Fatalf("the timeout has to reach the flow as the node's own error, got %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if logged.Len() != 0 {
+		t.Errorf("the S7 library wrote to the global logger: %q", logged.String())
+	}
+}
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
 
 func TestS7UnknownHostSaysSo(t *testing.T) {
 	svc := &credServices{testServices: newTestServices(), configs: map[string]node.Node{}}

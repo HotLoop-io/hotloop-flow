@@ -445,10 +445,18 @@ func TestDurableWireRemovedPurgesItsQueue(t *testing.T) {
 	rig := startDurable(t, filepath.Join(t.TempDir(), "state.db"), spillFlow, Options{}, 0, sink)
 	defer rig.stop(t)
 	defer close(sink.gate)
-	inject(t, rig.rt, 0, 30)
-	processed(t, rig.rt, 30)
+	const sent = 30
+	inject(t, rig.rt, 0, sent)
+	processed(t, rig.rt, sent)
 	q := rig.sp.Wire("a:0>b")
 	waitFor(t, "the backlog on disk", func() bool { return q.Depth() >= 28 })
+	// Only a floor. Depth() is still moving when it is read: the spool's writer
+	// counts a message after its commit, on its own goroutine, and a message
+	// the target's goroutine was holding is written when it gets to it. How
+	// many of the 30 are on disk by the time the wire goes depends on the
+	// machine (28 to 30 in the stress runs), so the purge can't be held to the
+	// number seen here, which is what this test did and why it failed once on a
+	// slow runner: 30 dropped against the 29 sampled.
 	queued := q.Depth()
 
 	plain := `[
@@ -462,8 +470,14 @@ func TestDurableWireRemovedPurgesItsQueue(t *testing.T) {
 	if q.Depth() != 0 || rig.sp.Bytes() != 0 {
 		t.Fatalf("queue depth %d and %d bytes charged after the wire stopped being durable", q.Depth(), rig.sp.Bytes())
 	}
-	if q.Dropped() != queued {
-		t.Fatalf("%d counted dropped, want the %d that were queued", q.Dropped(), queued)
+	// What was on disk at the sample must all be counted, and the purge can't
+	// count more than was sent. A queue that kept rows, or a purge that missed
+	// them, drops below the first; double counting goes above the second.
+	if d := q.Dropped(); d < queued || d > sent {
+		t.Fatalf("%d counted dropped, want between the %d queued when sampled and the %d sent", d, queued, sent)
+	}
+	if n := sink.count(); n != 0 {
+		t.Fatalf("%d delivered to a target that never took one", n)
 	}
 }
 

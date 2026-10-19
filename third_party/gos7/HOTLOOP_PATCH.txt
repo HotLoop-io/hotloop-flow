@@ -1,0 +1,38 @@
+This is github.com/robinson/gos7 at commit c54e650665ba (2026-09-24, the latest
+on master; the module has no tagged releases) under BSD-3-Clause (LICENSE in
+this directory), minus its tests and its documentation PDFs, with one change.
+Flow's go.mod replaces the module with this directory.
+
+Why: Send in tcpclient.go writes a raw line to Go's global logger every time
+the first read of a reply fails:
+
+    log.Printf("%T %+v", err, err)
+
+On every S7 timeout that put "*net.OpError read tcp ...: i/o timeout" on
+stderr. Nobody can do anything with that line. The node already hands the flow
+an error that says what happened and what to check on the CPU. The handler's
+Logger field is the library's own switch for its logging, and this line
+ignores it. I won't point the global logger at the bin to hide it, because that
+would swallow every other library's output too, and a wrapper around the
+transport would break the type assertions the library makes on its own handler
+types in client.go and multi.go. So the copy is the fix.
+
+Change, and only this:
+  tcpclient.go  line 154: log.Printf("%T %+v", err, err) is now
+                mb.logf("%T %+v", err, err). Same text, but it goes to the
+                handler's Logger, which Flow leaves nil, so nothing is written.
+                Anyone who sets Logger still sees it, as they see every other
+                line the library logs.
+
+Every other byte of every other file is upstream's. A future upgrade is a diff
+of this one line. The proof is TestS7TimeoutDoesNotWriteToTheGlobalLogger in
+internal/nodes/s7_test.go: it points a node at a listener that never answers,
+captures the global logger, and fails if anything lands in it.
+
+Dropping it: when upstream stops writing that line (open issue 78 asks for a
+way to turn the library's logging off; no fix is merged, checked 2026-10-19),
+delete this directory, delete the replace line in go.mod, take the new commit
+with go get, remove the COPY third_party line from the Dockerfile, remove the
+gos7 section from NOTICE, and keep TestS7TimeoutDoesNotWriteToTheGlobalLogger:
+it is what proves the new release is quiet. Check with:
+gh issue view 78 -R robinson/gos7
