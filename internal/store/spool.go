@@ -419,6 +419,9 @@ func (s *Spool) Families() []metrics.Family {
 		{Name: "hotloop_flow_durable_wire_dropped_total", Type: "counter",
 			Help:    "Messages a durable wire gave up on: the quota policy evicted or refused them.",
 			Collect: each(func(q *WireQueue) float64 { return float64(q.dropped.Load()) })},
+		{Name: "hotloop_flow_durable_wire_given_up_total", Type: "counter",
+			Help:    "Messages a durable wire stopped retrying because the wire has an attempt limit and the target refused the message that many times. Each one was raised to the flow as an error with the message attached.",
+			Collect: each(func(q *WireQueue) float64 { return float64(q.gaveUp.Load()) })},
 		{Name: "hotloop_flow_durable_commits_total", Type: "counter",
 			Help:    "Transactions written to the durable queue. Flat while every durable wire's target keeps up, because nothing is written until one doesn't.",
 			Collect: func() []metrics.Sample { return []metrics.Sample{{Value: float64(s.commits.Load())}} }},
@@ -443,6 +446,7 @@ type WireQueue struct {
 	acked    atomic.Int64
 	retries  atomic.Int64
 	dropped  atomic.Int64
+	gaveUp   atomic.Int64
 
 	// inflight is the message being delivered right now. Evicting the oldest
 	// message must never take the one a target is in the middle of.
@@ -471,6 +475,12 @@ func (q *WireQueue) Retries() int64 { return q.retries.Load() }
 
 // Dropped counts messages given up on.
 func (q *WireQueue) Dropped() int64 { return q.dropped.Load() }
+
+// GaveUp counts messages given up on after the wire's attempt limit.
+func (q *WireQueue) GaveUp() int64 { return q.gaveUp.Load() }
+
+// CountGaveUp is kept by the pump when it stops retrying a message.
+func (q *WireQueue) CountGaveUp() { q.gaveUp.Add(1) }
 
 // CountRetry and CountDropped let the pump and the sender keep the counters.
 func (q *WireQueue) CountRetry()   { q.retries.Add(1) }

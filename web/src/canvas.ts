@@ -31,6 +31,8 @@ export interface CanvasCallbacks {
   onSelectionChange: () => void;
   /** Something the person should be told, such as why a group could not be made. */
   onNotice?: (message: string) => void;
+  /** A wire was double-clicked. */
+  onEditWire?: (wire: { from: FlowEntry; port: number; to: FlowEntry }) => void;
 }
 
 export interface CanvasOptions {
@@ -169,7 +171,24 @@ export class Canvas {
     }
     if (e.button !== 0) return;
 
-    const portEl = this.readOnly ? null : target.closest('[data-port]');
+    // A wire: two presses on it open its settings. A single press is still a
+    // press on empty canvas, so a marquee can start over a wire.
+    const wireEl = this.readOnly ? null : target.closest('path.wire[data-from][data-to]');
+    if (wireEl && wireEl.hasAttribute('data-port')) {
+      const key = `wire:${wireEl.getAttribute('data-from')}:${wireEl.getAttribute('data-port')}:${wireEl.getAttribute('data-to')}`;
+      const now = performance.now();
+      if (this.lastPress.id === key && now - this.lastPress.at < DOUBLE_PRESS_MS) {
+        this.lastPress = { id: '', at: 0 };
+        const from = this.graph.byId(wireEl.getAttribute('data-from')!);
+        const to = this.graph.byId(wireEl.getAttribute('data-to')!);
+        if (from && to) this.cb.onEditWire?.({ from, port: Number(wireEl.getAttribute('data-port')), to });
+        return;
+      }
+      this.lastPress = { id: key, at: now };
+    }
+
+    // A wire carries data-port too, which is the output it leaves from and not a place to start a new one.
+    const portEl = this.readOnly ? null : target.closest('[data-port]:not(.wire)');
     if (portEl) {
       const fromId = portEl.getAttribute('data-node')!;
       const port = Number(portEl.getAttribute('data-port'));
@@ -618,7 +637,8 @@ export class Canvas {
       path.setAttribute('d', wirePath(outputPort(from, port, total), inputPort(to)));
       const added = this.diff?.addedWires.has(wireKey(from.id, port, to.id));
       const lit = this.trace?.edges.get(`${from.id}>${to.id}`);
-      path.setAttribute('class', `${added ? 'wire diff-added' : 'wire'}${lit === undefined ? '' : lit ? ' trace-on' : ' trace-side'}`);
+      const durable = this.graph.wireSettings(from.id, to.id).durable;
+      path.setAttribute('class', `${added ? 'wire diff-added' : 'wire'}${durable ? ' durable' : ''}${lit === undefined ? '' : lit ? ' trace-on' : ' trace-side'}`);
       path.setAttribute('data-from', from.id);
       path.setAttribute('data-port', String(port));
       path.setAttribute('data-to', to.id);

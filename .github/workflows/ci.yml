@@ -321,8 +321,43 @@ jobs:
 
       - uses: azure/setup-helm@v5
 
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
       - name: helm lint
         run: helm lint charts/hotloop-flow
+
+      - name: Tracing and store values reach the config the binary reads
+        # values.yaml is a second copy of every setting in config.go, and a copy
+        # drifts. This renders the chart, takes the config.yaml out of its
+        # ConfigMap and loads it with the binary's own loader, which rejects keys
+        # it does not know. The defaults must equal the binary's, and every
+        # trace.* and store.* value must land in the field of the same name. A
+        # skip reads as a pass, so a skip fails here.
+        env:
+          HOTLOOP_FLOW_TEST_HELM: "1"
+        run: |
+          OUT=$(go test ./internal/config/ -count=1 -v -run TestChart 2>&1)
+          echo "$OUT" | grep -E "^(---|ok|FAIL)"
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::a chart config test skipped"; exit 1
+          fi
+          for t in TestChartDefaultsAreTheConfigDefaults TestChartTraceAndStoreValuesReachTheConfig; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
+
+      - name: A collector key comes from a Secret and never the ConfigMap
+        # Headers for a hosted collector are an API key. They are only ever an
+        # environment variable read from the Secret the operator names, and a
+        # default render has none.
+        run: |
+          N=$(helm template t charts/hotloop-flow | grep -c HOTLOOP_FLOW_TRACE_OTLP_HEADERS || true)
+          [ "$N" = 0 ] || { echo "::error::a default render sets the collector headers"; exit 1; }
+          helm template t charts/hotloop-flow --set trace.otlp.headersSecret.name=otel-key > otel.yaml
+          grep -A4 'name: HOTLOOP_FLOW_TRACE_OTLP_HEADERS' otel.yaml | grep -q 'name: otel-key' || { echo "::error::the headers do not come from the named Secret"; exit 1; }
+          awk '/^---/{c=0} /config.yaml: \|/{c=1} c&&/headers/{f=1} END{exit f}' otel.yaml || { echo "::error::headers leaked into the ConfigMap"; exit 1; }
 
       - name: The generated admin password matches its hash
         # The chart generates an admin password and prints how to read it, so the

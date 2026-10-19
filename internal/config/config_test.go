@@ -492,3 +492,29 @@ func TestStoreFromTheFileAndRefusals(t *testing.T) {
 		}
 	}
 }
+
+// A collector's API key comes from a Secret as an environment variable, not
+// from a ConfigMap, and it is added to whatever headers the file already has.
+func TestTraceHeadersCanComeFromTheEnvironment(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("HOTLOOP_FLOW_INSECURE", "true")
+	t.Setenv("HOTLOOP_FLOW_TRACE_OTLP_HEADERS", "x-api-key=abc=def, x-tenant = line3 ,junk")
+	path := writeConfig(t, "trace:\n  otlp:\n    endpoint: http://collector:4318\n    headers:\n      x-keep: kept\n      x-tenant: from-the-file\n")
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := cfg.Trace.OTLP.Headers
+	if h["x-api-key"] != "abc=def" {
+		t.Errorf("x-api-key = %q, want the value to keep its = signs", h["x-api-key"])
+	}
+	if h["x-tenant"] != "line3" {
+		t.Errorf("x-tenant = %q, want the environment to win over the file", h["x-tenant"])
+	}
+	if h["x-keep"] != "kept" {
+		t.Errorf("x-keep = %q, want the file's own header kept", h["x-keep"])
+	}
+	if len(h) != 3 {
+		t.Errorf("headers = %v, want the junk entry with no = left out", h)
+	}
+}

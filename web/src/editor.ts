@@ -9,7 +9,7 @@ import { describeImport, exportEntries, importEntries, parseEntries, toText } fr
 import { exportDialog, importDialog } from './flowio-ui';
 import { askText } from './modal';
 import { search, type Hit } from './search';
-import { groupDialog, instanceDialog, subflowDialog } from './structure-ui';
+import { flowDialog, groupDialog, instanceDialog, subflowDialog, wireDialog } from './structure-ui';
 import { type DiffOverlay, overlayFrom, summarise } from './diff';
 import { Graph, type FlowEntry } from './graph';
 import { confirmRollback, describe, resolveConflict } from './history';
@@ -81,6 +81,7 @@ export function mountEditor(
     onEditNode: (entry) => openEditor(entry),
     onSelectionChange: () => renderTabs(),
     onNotice: (m) => notice(m),
+    onEditWire: (w) => void editWire(w),
   });
 
   // A line of feedback over the canvas: what a copy took, what an import added,
@@ -136,6 +137,55 @@ export function mountEditor(
     if (result) graph.updateNode(entry.id, result.props);
   }
 
+  /** A wire's settings: durable, and how long it keeps trying a refused message. */
+  async function editWire(w: { from: FlowEntry; port: number; to: FlowEntry }): Promise<void> {
+    if (viewing) return;
+    if (w.from.id.startsWith('@') || w.to.id.startsWith('@')) {
+      notice('A wire on a subflow\'s own input or output cannot be durable. Mark the wire between the nodes inside, or the one that leaves the instance.');
+      return;
+    }
+    await wireDialog(graph, w.from, w.port, w.to);
+  }
+
+  /** A flow's name, and deleting it. */
+  async function editFlow(id: string): Promise<void> {
+    const tab = graph.byId(id);
+    if (!tab || tab.type !== 'tab' || viewing) return;
+    const outcome = await flowDialog(graph, tab);
+    if (outcome === 'deleted') {
+      graph.selection.clear();
+      renderTabs();
+      canvas.render();
+      canvas.fit();
+    }
+  }
+
+  /** Adds a configuration node of a type from the palette, once its dialog is filled in. */
+  async function newConfig(d: Descriptor): Promise<void> {
+    if (viewing) return;
+    const draft: FlowEntry = { id: '', type: d.type };
+    for (const p of d.props ?? []) if (p.default !== undefined) draft[p.name] = p.default;
+    const result = await editNode(graph, draft, d);
+    if (!result) return;
+    const made = graph.addConfig(d.type, { ...draft, ...result.props });
+    notice(`Added ${made.name || d.paletteLabel || d.type}. Pick it from the dialog of any node that needs one.`);
+  }
+
+  /** Turns the selection into a subflow and puts an instance where it was. */
+  async function selectionToSubflow(): Promise<void> {
+    if (viewing || graph.selection.size === 0) return;
+    const name = await askText('Selection to subflow', 'Name', `Subflow ${graph.subflows().length + 1}`, 'selection-subflow');
+    if (!name) return;
+    const made = graph.selectionToSubflow(name);
+    if (typeof made === 'string') {
+      notice(made);
+      return;
+    }
+    notice(`Made the subflow ${name}. Its template is in the tab bar.`);
+    renderTabs();
+    canvas.render();
+  }
+
   /** Shows a flow or a subflow on the canvas. */
   function openScope(id: string): void {
     if (viewing) closeView();
@@ -183,21 +233,23 @@ export function mountEditor(
       // runtime never lists them: it reserves their type prefix.
       const all = [...descriptors, ...graph.subflows().map((t) => subflowDescriptor(t))];
       for (const d of all) {
-        if (d.isConfig) continue;
         const hay = `${d.type} ${d.paletteLabel ?? ''} ${d.category}`.toLowerCase();
         if (filter && !hay.includes(filter.toLowerCase())) continue;
-        const g = groups.get(d.category) ?? [];
+        // Configuration nodes are shared by id and sit on no canvas, so they
+        // are listed together and added by a dialog rather than dropped.
+        const cat = d.isConfig ? 'configuration' : d.category;
+        const g = groups.get(cat) ?? [];
         g.push(d);
-        groups.set(d.category, g);
+        groups.set(cat, g);
       }
 
       for (const cat of [...groups.keys()].sort()) {
         list.append(el('div', { class: 'palette-cat' }, cat));
         for (const d of groups.get(cat)!) {
           const item = el('div', {
-            class: 'palette-item',
-            draggable: 'true',
-            title: d.help ?? d.type,
+            class: d.isConfig ? 'palette-item palette-config-type' : 'palette-item',
+            ...(d.isConfig ? {} : { draggable: 'true' }),
+            title: d.isConfig ? `${d.help ?? d.type} Double-click to add one.` : (d.help ?? d.type),
           },
             el('span', { class: 'swatch', style: `background:${d.color}` }),
             el('span', {}, d.paletteLabel ?? d.type),
@@ -210,10 +262,39 @@ export function mountEditor(
           // would rather not drag.
           item.addEventListener('dblclick', () => {
             if (viewing) return;
+            if (d.isConfig) { void newConfig(d); return; }
             const entry = canvas.place(d.type, { x: 200, y: 120 });
             if (entry) void openEditor(entry);
           });
           list.append(item);
+        }
+      }
+      // The configuration nodes this flow set already has: edit one, or remove
+      // one nothing uses.
+      const have = graph.configNodes().filter((c) => !filter
+        || `${c.type} ${String(c.name ?? '')}`.toLowerCase().includes(filter.toLowerCase()));
+      if (have.length > 0) {
+        list.append(el('div', { class: 'palette-cat' }, 'configuration in use'));
+        for (const c of have) {
+          const del = el('button', { class: 'icon', type: 'button', title: 'Delete', 'data-test': 'config-delete' }, '✕');
+          del.onclick = (ev) => {
+            ev.stopPropagation();
+            if (viewing) return;
+            const problem = graph.deleteConfig(c.id);
+            if (problem) notice(`${String(c.name || c.type)}: ${problem}`);
+          };
+          const row = el('div', {
+            class: 'palette-item palette-config',
+            title: 'Double-click to edit',
+            'data-test': 'config-node',
+            'data-config-id': c.id,
+          },
+            el('span', { class: 'swatch', style: `background:${byType.get(c.type)?.color ?? 'var(--text-sub)'}` }),
+            el('span', { class: 'palette-config-name' }, String(c.name || c.type)),
+            el('span', { class: 'palette-config-type-name' }, c.type),
+            del);
+          row.addEventListener('dblclick', () => void openEditor(c));
+          list.append(row);
         }
       }
       if (list.childElementCount === 0) {
@@ -231,7 +312,10 @@ export function mountEditor(
   let paletteSignature = '';
   /** What the palette shows of the subflows, so it is only redrawn when that changes. */
   function subflowSignature(): string {
-    return JSON.stringify(graph.subflows().map((t) => [t.id, t.name, t.color, t.category]));
+    return JSON.stringify([
+      graph.subflows().map((t) => [t.id, t.name, t.color, t.category]),
+      graph.configNodes().map((c) => [c.id, c.type, c.name]),
+    ]);
   }
 
   function subflowDescriptor(t: FlowEntry): Descriptor {
@@ -256,8 +340,9 @@ export function mountEditor(
     for (const t of g.tabs()) {
       const active = t.id === g.activeTab;
       const changed = overlay?.scopes.has(t.id) ? ' has-diff' : '';
-      const tab = el('button', { class: `tab${active ? ' active' : ''}${changed}` },
+      const tab = el('button', { class: `tab${active ? ' active' : ''}${changed}`, 'data-test': 'tab-flow', 'data-scope': t.id },
         String(t.label ?? 'Flow'));
+      tab.ondblclick = () => void editFlow(t.id);
       tab.onclick = () => {
         g.activeTab = t.id;
         g.selection.clear();
@@ -300,6 +385,21 @@ export function mountEditor(
     }
     tabBar.append(el('div', { class: 'spacer' }));
 
+    if (!viewing) {
+      const toSub = el('button', {
+        class: 'ghost', 'data-test': 'selection-to-subflow',
+        title: 'Move the selected nodes into a subflow and put an instance where they were',
+      }, 'Selection to subflow') as HTMLButtonElement;
+      toSub.disabled = g.selection.size === 0;
+      toSub.onclick = () => void selectionToSubflow();
+      tabBar.append(toSub);
+    }
+    if (!viewing && g.isSubflowScope(g.activeTab) === false && g.tabs().some((t) => t.id === g.activeTab)) {
+      const props = el('button', { class: 'ghost', 'data-test': 'flow-properties' }, 'Flow properties');
+      props.title = 'Rename or delete this flow';
+      props.onclick = () => void editFlow(g.activeTab);
+      tabBar.append(props);
+    }
     if (!viewing && g.isSubflowScope(g.activeTab)) {
       const props = el('button', { class: 'ghost', 'data-test': 'subflow-properties' }, 'Subflow properties');
       props.onclick = () => void editSubflow(g.activeTab);

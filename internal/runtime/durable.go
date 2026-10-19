@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,6 +47,18 @@ import (
 
 // durableKeyProp is the flow-file key that marks a node's wires durable.
 const durableKeyProp = "ew_durable"
+
+// durableAttemptsProp is the flow-file key that gives a durable wire a way out
+// of a message its target refuses forever:
+//
+//	"ew_durable_attempts": {"<id of the node the wire goes to>": 20}
+//
+// Without it a wire keeps retrying one message for as long as the target keeps
+// refusing it, and nothing behind that message is delivered. With it, the wire
+// counts the times the target failed that message, and on the last one raises
+// it to the flow as an error with the message attached, so a Catch node can
+// park it, and the wire moves on to the next. Absent, nothing changes.
+const durableAttemptsProp = "ew_durable_attempts"
 
 // queuedAtProp is the message property a durable wire stamps with the time the
 // message entered it, as RFC 3339 with nanoseconds.
@@ -125,6 +138,69 @@ func durableTargets(n *engine.Node) map[string]bool {
 		}
 	}
 	return out
+}
+
+// durableAttempts reads the attempt limits a node gives its durable wires, by
+// target id. A limit that is not a whole number of at least 1 is returned in
+// bad, because ignoring it quietly would leave a wire retrying forever that
+// somebody had told to stop.
+func durableAttempts(n *engine.Node) (limits map[string]int, bad map[string]any) {
+	raw, ok := n.Raw[durableAttemptsProp]
+	if !ok {
+		return nil, nil
+	}
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return nil, map[string]any{"": raw}
+	}
+	limits = make(map[string]int, len(obj))
+	for to, v := range obj {
+		f, isNum := v.(float64)
+		if !isNum || f < 1 || f != math.Trunc(f) || f > math.MaxInt32 {
+			if bad == nil {
+				bad = map[string]any{}
+			}
+			bad[to] = v
+			continue
+		}
+		limits[to] = int(f)
+	}
+	return limits, bad
+}
+
+// attemptLimit is how many times the target may refuse one message before the
+// wire gives up on it, or 0 for never. It is read from the flow that is running
+// now on every refusal, so a deploy that changes the limit applies to the
+// message the wire is holding.
+func (w *durableWire) attemptLimit() int {
+	n := w.rt.graph().flows.Nodes[w.from]
+	if n == nil {
+		return 0
+	}
+	limits, bad := durableAttempts(n)
+	for to, v := range bad {
+		if to != "" && to != w.to {
+			continue
+		}
+		if _, seen := w.warned.LoadOrStore("attempts:"+fmt.Sprint(v), true); !seen {
+			w.logf("durable wire %s has an attempt limit of %v, which is not a whole number of 1 or more, so the wire keeps retrying", w.key, v)
+		}
+	}
+	return limits[w.to]
+}
+
+// giveUp ends the retries of one message: it is raised to the flow as an error
+// from the node that refused it, with the message attached the way any node
+// error carries its message, and then taken off the queue so the wire moves on.
+// Raised first, so a crash in between sends it to the Catch twice and not never.
+func (w *durableWire) giveUp(e store.Entry, t *runner, attempts int, last error) {
+	msg, err := store.DecodeMsg(e.Body)
+	if err != nil {
+		msg = nil
+	}
+	w.q.CountGaveUp()
+	w.rt.raiseError(t, fmt.Errorf("durable wire %s gave up on a message after %d attempts: %w", w.key, attempts, last), msg)
+	w.q.Ack(e)
 }
 
 // syncDurable makes the running pumps match the wires the flow marks durable,
@@ -504,6 +580,7 @@ func (w *durableWire) deliver(ctx context.Context, e store.Entry) bool {
 	defer w.q.SetInflight(0)
 
 	pause := durableRetryMin
+	attempts := 0
 	for {
 		msg, err := store.DecodeMsg(e.Body)
 		if err != nil {
@@ -560,6 +637,11 @@ func (w *durableWire) deliver(ctx context.Context, e store.Entry) bool {
 		}
 		if ctx.Err() != nil {
 			return false
+		}
+		attempts++
+		if limit := w.attemptLimit(); limit > 0 && attempts >= limit {
+			w.giveUp(e, t, attempts, herr)
+			return true
 		}
 		w.q.CountRetry()
 		if !sleepCtx(ctx, pause) {

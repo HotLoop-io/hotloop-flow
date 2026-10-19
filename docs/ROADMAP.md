@@ -130,8 +130,8 @@ A historian going down for an hour shouldn't cost you an hour of readings.
 - [x] Durable wires: mark a wire durable and its queue spills to that same store
       instead of blocking or dropping. Survives a restart, keeps order, honors a
       disk quota, and the depth is a metric. Marked in the flow file with
-      `ew_durable`, so the round trip stays byte for byte. There's no editor
-      control for it yet
+      `ew_durable`, so the round trip stays byte for byte. Double-click a wire in
+      the editor to mark it
 - [x] Store-and-forward proven the ugly way: kill the real InfluxDB for ten
       minutes under steady input, bring it back, count rows. None missing, none
       doubled. Then kill -9 the runtime mid-queue and count again. The script, the
@@ -236,6 +236,17 @@ but plenty of people drop one that doesn't.
       editing, search across flows, debug filtering
 - [x] Browser tests for the editor in CI, and a click-through of every node
       dialog
+- [x] Editor gaps the first pass left: add a configuration node from the
+      palette (the dialog told you to and you couldn't), turn a selection into a
+      subflow, rename and delete a flow, and mark a wire durable by
+      double-clicking it
+- [x] A way out for a message a durable wire's target refuses forever: an opt-in
+      attempt limit per wire. After that many refusals the message goes to the
+      flow's Catch as an error with the message attached and the wire moves on.
+      Off by default, so a wire still holds on and retries exactly as before
+- [x] Helm values for `trace.*`, checked in CI by loading the rendered config
+      with the binary's own loader. `store.*` was already there from the
+      durable work and now has the same check
 - [x] Secrets by reference: a node reads a password from a mounted Kubernetes
       Secret or file, so it never lives in the flow file at all
 - [ ] Bring your flows: `hotloop-flow import` keeps reporting exactly what will

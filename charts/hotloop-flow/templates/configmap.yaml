@@ -45,6 +45,18 @@ data:
         maxBytes: {{ .Values.store.durable.maxBytes | int64 }}
         ackFlush: {{ .Values.store.durable.ackFlush }}
 
+    trace:
+      enabled: {{ .Values.trace.enabled }}
+      traces: {{ .Values.trace.traces | int }}
+      maxHops: {{ .Values.trace.maxHops | int }}
+      maxMessageBytes: {{ .Values.trace.maxMessageBytes | int }}
+      maxBytes: {{ .Values.trace.maxBytes | int64 }}
+      perSecond: {{ .Values.trace.perSecond | int }}
+      otlp:
+        endpoint: {{ .Values.trace.otlp.endpoint | quote }}
+        serviceName: {{ .Values.trace.otlp.serviceName | quote }}
+        interval: {{ .Values.trace.otlp.interval }}
+
     discovery:
       enabled: {{ .Values.discovery.enabled }}
       allowedCIDRs:

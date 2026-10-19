@@ -8,12 +8,36 @@
 // round, so the rules are in one place and the same for the clipboard, the
 // Import dialog and a dropped file.
 
-import { type FlowEntry, type Graph, type Point, NODE_HEIGHT, NODE_WIDTH, SUBFLOW_PREFIX, generateId, parsePortId } from './graph';
+import {
+  type FlowEntry, type Graph, type Point,
+  DURABLE_ATTEMPTS_KEY, DURABLE_KEY, NODE_HEIGHT, NODE_WIDTH, SUBFLOW_PREFIX, generateId, parsePortId,
+} from './graph';
 
 export type ExportScope = 'selection' | 'flow' | 'all';
 
 /** Keys that are about structure, never an id held in a setting. */
-const STRUCTURAL = new Set(['id', 'type', 'z', 'g', 'x', 'y', 'w', 'h', 'wires', 'name', 'info', 'in', 'out']);
+const STRUCTURAL = new Set(['id', 'type', 'z', 'g', 'x', 'y', 'w', 'h', 'wires', 'name', 'info', 'in', 'out', DURABLE_KEY, DURABLE_ATTEMPTS_KEY]);
+
+/**
+ * Rewrites the ids a node's durable wires name, dropping the ones `keep` does
+ * not map: a durable wire to a node that did not come along is a wire that did
+ * not come along either, and the mark would name nothing.
+ */
+function mapDurable(e: FlowEntry, keep: (id: string) => string | undefined): void {
+  if (Array.isArray(e[DURABLE_KEY])) {
+    const ids = (e[DURABLE_KEY] as unknown[]).map((id) => (typeof id === 'string' ? keep(id) : undefined)).filter((id): id is string => id !== undefined);
+    if (ids.length > 0) e[DURABLE_KEY] = ids; else delete e[DURABLE_KEY];
+  }
+  const limits = e[DURABLE_ATTEMPTS_KEY];
+  if (limits && typeof limits === 'object') {
+    const next: Record<string, unknown> = {};
+    for (const [id, n] of Object.entries(limits as Record<string, unknown>)) {
+      const mapped = keep(id);
+      if (mapped !== undefined) next[mapped] = n;
+    }
+    if (Object.keys(next).length > 0) e[DURABLE_ATTEMPTS_KEY] = next; else delete e[DURABLE_ATTEMPTS_KEY];
+  }
+}
 
 /**
  * The entries for a scope, ready to write out.
@@ -54,6 +78,7 @@ export function exportEntries(graph: Graph, scope: ExportScope): FlowEntry[] {
     delete copy.credentials;
     if (copy.wires) copy.wires = copy.wires.map((port) => port.filter((id) => picked.has(id)));
     if (copy.g && !picked.has(copy.g)) delete copy.g;
+    mapDurable(copy, (id) => (picked.has(id) ? id : undefined));
     if (copy.type === 'group' && Array.isArray(copy.nodes)) {
       copy.nodes = (copy.nodes as string[]).filter((id) => picked.has(id));
     }
@@ -264,6 +289,7 @@ export function importEntries(graph: Graph, entries: FlowEntry[], opts: ImportOp
     if (e.wires) {
       e.wires = e.wires.map((port) => port.map((id) => mapId(id)).filter((id): id is string => id !== undefined));
     }
+    mapDurable(e, (id) => mapId(id));
     if (e.type === 'group') {
       groups++;
       e.nodes = ((e.nodes as string[] | undefined) ?? []).map((id) => mapId(id)).filter((id): id is string => id !== undefined);

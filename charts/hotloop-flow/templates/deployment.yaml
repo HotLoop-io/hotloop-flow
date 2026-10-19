@@ -115,6 +115,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "hotloop-flow.secretName" . }}
                   key: credential-secret
+            {{- if .Values.trace.otlp.headersSecret.name }}
+            - name: HOTLOOP_FLOW_TRACE_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.trace.otlp.headersSecret.name }}
+                  key: {{ .Values.trace.otlp.headersSecret.key }}
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

@@ -141,7 +141,13 @@ is refused with an error naming the path.
 gets it forever, with the 5 second pause between tries, and the messages behind
 it wait. The retry counter and the depth are how you see it. That's the right
 call for a historian that's down. It's the wrong one for a message that's
-malformed, and there is no dead-letter queue yet.
+malformed, so a wire can be given a limit: `"ew_durable_attempts": {"influx": 20}`
+on the node it leaves, or the wire dialog in the editor. After the target has
+refused one message that many times from the queue, it goes to the flow as an
+error from the node that refused it with the message attached, a Catch node can
+park it, and the wire moves on. Without the key nothing changes. There is still
+no dead-letter queue: a Catch node is where you build it, and
+`hotloop_flow_durable_wire_given_up_total` counts what went there.
 
 ## Settings
 

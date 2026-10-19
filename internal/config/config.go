@@ -510,6 +510,20 @@ func applyEnv(cfg *Config) {
 	envStr("HOTLOOP_FLOW_OVERFLOW", &cfg.Runtime.Overflow)
 
 	envStr("HOTLOOP_FLOW_TRACE_OTLP_ENDPOINT", &cfg.Trace.OTLP.Endpoint)
+	// Headers for a hosted collector are usually an API key, which has no
+	// business in a ConfigMap, so they can come from a Secret as
+	// Name=value pairs separated by commas. Whatever the file says for the same
+	// header, this wins.
+	if v := os.Getenv("HOTLOOP_FLOW_TRACE_OTLP_HEADERS"); v != "" {
+		if cfg.Trace.OTLP.Headers == nil {
+			cfg.Trace.OTLP.Headers = map[string]string{}
+		}
+		for _, pair := range strings.Split(v, ",") {
+			if name, value, ok := strings.Cut(pair, "="); ok && strings.TrimSpace(name) != "" {
+				cfg.Trace.OTLP.Headers[strings.TrimSpace(name)] = strings.TrimSpace(value)
+			}
+		}
+	}
 	envStr("HOTLOOP_FLOW_STORE_PATH", &cfg.Store.Path)
 	envStr("HOTLOOP_FLOW_STORE_SYNCHRONOUS", &cfg.Store.Synchronous)
 	if v, ok := os.LookupEnv("HOTLOOP_FLOW_CONTEXT_PERSIST"); ok && v != "" {
