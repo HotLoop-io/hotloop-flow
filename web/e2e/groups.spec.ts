@@ -116,6 +116,8 @@ test('nodes dragged into a group join it and dragged out leave it', async ({ pag
   expect(group.nodes as string[]).toContain('c2');
 
   // And back out.
+  // Two presses on one node inside 400ms are a double-click, which opens its dialog.
+  await page.waitForTimeout(450);
   const inside = await centre(nodeBody(page, 'c2'));
   await drag(page, inside, { x: inside.x, y: inside.y + 150 });
   await deploy(page);
