@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	github.com/bufbuild/protocompile v0.14.1
 	github.com/coder/websocket v1.8.15
+	github.com/danomagnum/gologix v0.44.0-beta
 	github.com/dop251/goja v0.0.0-20260806115107-493f22071ef6
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
@@ -12,6 +13,7 @@ require (
 	github.com/gopcua/opcua v0.9.1
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/recolabs/gnata v0.5.0
+	github.com/robinson/gos7 v0.0.0-20260924061028-c54e650665ba
 	github.com/simonvetter/modbus v1.6.4
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
@@ -49,6 +51,7 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/npat-efault/crc16 v0.0.0-20161013170008-4128ccbe47c3 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect

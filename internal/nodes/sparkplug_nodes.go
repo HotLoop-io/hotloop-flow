@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -19,7 +20,9 @@ import (
 func spTypeOptions() []node.Option {
 	var opts []node.Option
 	for _, n := range []string{"Boolean", "Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32",
-		"UInt64", "Float", "Double", "String", "Text", "UUID", "DateTime", "Bytes"} {
+		"UInt64", "Float", "Double", "String", "Text", "UUID", "DateTime", "Bytes", "DataSet", "Template",
+		"BooleanArray", "Int8Array", "Int16Array", "Int32Array", "Int64Array", "UInt8Array", "UInt16Array",
+		"UInt32Array", "UInt64Array", "FloatArray", "DoubleArray", "StringArray", "DateTimeArray"} {
 		opts = append(opts, node.Option{Value: n, Label: n})
 	}
 	return opts
@@ -53,12 +56,14 @@ type spDecl struct {
 	dt      uint32
 	initial any
 	alias   uint64
+	props   map[string]any
 }
 
 type spUpdate struct {
 	decl      *spDecl
 	value     any
 	timestamp uint64
+	props     map[string]any
 }
 
 type spOutNode struct {
@@ -73,6 +78,7 @@ type spOutNode struct {
 	// Guarded by the server's lock, because the birth that reads them runs
 	// under it.
 	values map[string]any
+	props  map[string]map[string]any
 	alive  bool
 }
 
@@ -103,7 +109,13 @@ func registerSparkplugOut() {
 				{Name: "name", Kind: node.PropString, Label: "Name", Placeholder: "Boiler/Temperature"},
 				{Name: "dataType", Kind: node.PropSelect, Label: "Type", Default: "Double", Options: spTypeOptions()},
 				{Name: "initial", Kind: node.PropString, Label: "Value at birth",
-					Help: "Empty is null until the first message."},
+					Help: "Empty is null until the first message. For an array, a DataSet or a Template, JSON: " +
+						"[1, 2, 3], or {\"columns\": [\"Name\"], \"types\": [\"String\"], \"rows\": [[\"a\"]]}, or " +
+						"{\"isDefinition\": true, \"metrics\": [{\"name\": \"Speed\", \"type\": \"Double\"}]}."},
+				{Name: "properties", Kind: node.PropString, Label: "Properties",
+					Help: "Optional. A PropertySet for the metric, as JSON: {\"engUnit\": \"degC\", \"Quality\": " +
+						"{\"type\": \"Int32\", \"value\": 192}}. A value with no type is a boolean, a string, an " +
+						"Int32 or Int64 for a whole number or a Double. Spell out {\"type\", \"value\"} for anything else."},
 			}, Help: "A birth has to list every metric before it is ever sent, so they are declared here."},
 		},
 		Help: "Publishes metrics to a Sparkplug host as an edge node, or as one of its devices. msg.payload is " +
@@ -123,6 +135,7 @@ func newSparkplugOut(def *node.Definition) (node.Node, error) {
 		svc:    def.Services,
 		byName: map[string]*spDecl{},
 		values: map[string]any{},
+		props:  map[string]map[string]any{},
 	}
 	if o.cfgID == "" {
 		return nil, fmt.Errorf("no edge node selected: pick the Sparkplug connection to publish through")
@@ -160,6 +173,17 @@ func newSparkplugOut(def *node.Definition) (node.Node, error) {
 			d.initial = v
 			o.values[name] = v
 		}
+		if raw := strings.TrimSpace(stringOr(m["properties"], "")); raw != "" {
+			var props map[string]any
+			if err := json.Unmarshal([]byte(raw), &props); err != nil {
+				return nil, fmt.Errorf("metric %q: the properties %q aren't a JSON object: %v", name, raw, err)
+			}
+			if _, err := spPropsBytes(props); err != nil {
+				return nil, fmt.Errorf("metric %q: properties: %w", name, err)
+			}
+			d.props = props
+			o.props[name] = props
+		}
 		o.decls = append(o.decls, d)
 		o.byName[name] = d
 	}
@@ -179,6 +203,16 @@ func spParseInitial(dt uint32, s string) (any, error) {
 	case spBytes:
 		return []byte(s), nil
 	}
+	if _, isArray := spArrayElem[dt]; isArray || dt == spDataSet || dt == spTemplate {
+		var v any
+		if err := json.Unmarshal([]byte(s), &v); err != nil {
+			return nil, fmt.Errorf("isn't JSON: %v", err)
+		}
+		if _, err := spValueToRaw(dt, v); err != nil {
+			return nil, err
+		}
+		return v, nil
+	}
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return nil, fmt.Errorf("isn't a number")
@@ -197,6 +231,9 @@ func (o *spOutNode) birthMetrics(now uint64, aliases bool) ([]*spMetric, error) 
 		m, err := spMetricFor(d.name, d.dt, o.values[d.name], true, now)
 		if err != nil {
 			return nil, fmt.Errorf("metric %q: %w", d.name, err)
+		}
+		if err := m.setProps(o.props[d.name]); err != nil {
+			return nil, fmt.Errorf("metric %q: properties: %w", d.name, err)
 		}
 		if aliases && d.alias != 0 {
 			m.Alias, m.HasAlias = d.alias, true
@@ -356,6 +393,16 @@ func (o *spOutNode) parse(payload any) ([]spUpdate, error) {
 			}
 			if err := add(name, v, ts); err != nil {
 				return nil, err
+			}
+			if pr, ok := m["properties"]; ok && pr != nil {
+				pm, isMap := pr.(map[string]any)
+				if !isMap {
+					return nil, fmt.Errorf("item %d: the properties are %s, and have to be an object", i, describeType(pr))
+				}
+				if _, err := spPropsBytes(pm); err != nil {
+					return nil, fmt.Errorf("metric %q: properties: %w", name, err)
+				}
+				ups[len(ups)-1].props = pm
 			}
 		}
 	default:
@@ -561,6 +608,9 @@ func spEventMsg(m *engine.Msg, ev *spEvent) any {
 		}
 		if mt.IsTransient {
 			e["isTransient"] = true
+		}
+		if mt.Properties != nil {
+			e["properties"] = mt.Properties
 		}
 		if mt.Unsupported != "" {
 			e["unsupported"] = mt.Unsupported
