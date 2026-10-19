@@ -409,6 +409,25 @@ export class Api {
     return this.send('POST', '/tests/from-debug', { node, msgId });
   }
 
+  /** The trace of the message a Debug node showed, from the id the debug sidebar has. */
+  findTrace(msgId: string, node: string): Promise<{ trace: TraceView; focus: number; path: number[] }> {
+    return this.get(`/traces/find?msgId=${encodeURIComponent(msgId)}&node=${encodeURIComponent(node)}`);
+  }
+
+  /** Drafts a flow test from a whole trace. Saves nothing. */
+  draftTestFromTrace(traceId: string): Promise<{ name: string; yaml: string }> {
+    return this.send('POST', `/traces/${traceId}/test`, {});
+  }
+
+  /**
+   * Puts the message that started a trace into a flow and compares where it
+   * ends up with where it ended up the first time. Flows is the working copy;
+   * leave it out to replay into what's running.
+   */
+  replay(traceId: string, flows?: unknown[]): Promise<ReplayResult> {
+    return this.send('POST', `/traces/${traceId}/replay`, flows ? { flows } : {});
+  }
+
   /**
    * Opens the event stream.
    *
@@ -471,4 +490,51 @@ export class Api {
       socket?.close();
     };
   }
+}
+
+/** One node handling one message, as GET /traces serves it. */
+export interface HopView {
+  id: number;
+  parents?: number[];
+  /** The output port of the parent the message left by. */
+  port: number;
+  via?: string;
+  node: string;
+  type: string;
+  entry?: string;
+  at: string;
+  nanos: number;
+  done: boolean;
+  msgId: string;
+  /** The message as the node was handed it. Absent when it was too big to keep. */
+  msg?: Record<string, unknown>;
+  cut?: boolean;
+  error?: string;
+  sent: number;
+  /** The node on the canvas to light, for a hop inside a subflow. */
+  canvas?: string;
+}
+
+/** Everything that came of one message entering the flow. */
+export interface TraceView {
+  id: string;
+  started: string;
+  truncated?: boolean;
+  hops: HopView[];
+}
+
+/** How a replay into a draft came out against the original. */
+export interface ReplayResult {
+  same: boolean;
+  differences?: {
+    node: string;
+    label: string;
+    kind: 'changed' | 'missing' | 'extra';
+    before?: Record<string, unknown>;
+    after?: Record<string, unknown>;
+    changes?: string[];
+  }[];
+  trace?: TraceView;
+  problems?: { message: string; node?: string }[];
+  log?: string[];
 }

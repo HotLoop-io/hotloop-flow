@@ -32,6 +32,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/mfa"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/nodes" // registers the built-in palette
+	"github.com/HotLoop-io/hotloop-flow/internal/otlp"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
 	"github.com/HotLoop-io/hotloop-flow/internal/shell"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
@@ -271,6 +272,30 @@ func cmdServe(args []string) error {
 		}
 	}
 
+	if cfg.Trace.Enabled {
+		app.tracer = engine.NewTracer(engine.TraceLimits{
+			Traces: cfg.Trace.Traces, MaxHops: cfg.Trace.MaxHops,
+			MaxMessageBytes: cfg.Trace.MaxMessageBytes, MaxBytes: cfg.Trace.MaxBytes, PerSecond: cfg.Trace.PerSecond,
+		})
+		extraMetrics = append(extraMetrics, traceFamilies(app.tracer)...)
+	}
+	var exporter *otlp.Exporter
+	if ep := cfg.Trace.OTLP.Endpoint; ep != "" {
+		if app.tracer == nil {
+			return fmt.Errorf("trace.otlp.endpoint is set and trace.enabled is false; there's nothing to send")
+		}
+		exporter, err = otlp.New(otlp.Config{
+			Endpoint: ep, Headers: cfg.Trace.OTLP.Headers, ServiceName: cfg.Trace.OTLP.ServiceName,
+			ServiceVersion: version, Interval: cfg.Trace.OTLP.Interval,
+		}, log)
+		if err != nil {
+			return err
+		}
+		app.tracer.OnFinish(exporter.Add)
+		extraMetrics = append(extraMetrics, otlpFamilies(exporter)...)
+		log.Info("sending traces to an OpenTelemetry collector", "endpoint", ep)
+	}
+
 	trail, err := audit.Open(cfg.AuditPath(), cfg.Audit.MaxBytes, cfg.Audit.Keep)
 	if err != nil {
 		return err
@@ -308,6 +333,8 @@ func cmdServe(args []string) error {
 		Rollback:     app.rollback,
 		Tests:        app.tests,
 		Capture:      app.capture,
+		Tracer:       app.tracer,
+		Replay:       app.tests.Replay,
 		FlowRoutes:   nodes.Routes,
 		Version:      version,
 	})
@@ -339,6 +366,14 @@ func cmdServe(args []string) error {
 		log.Info("mirroring deployments to git", "url", gitmirror.Redact(cfg.History.Git.URL),
 			"branch", app.mirror.Status().Branch)
 	}
+
+	var exporterStop context.CancelFunc = func() {}
+	if exporter != nil {
+		var exporterCtx context.Context
+		exporterCtx, exporterStop = context.WithCancel(context.Background())
+		go exporter.Run(exporterCtx)
+	}
+	defer exporterStop()
 
 	// Per-node failures are logged inside start and are not fatal: a flow with
 	// one bad node still runs the other nodes, and refusing to boot over a
@@ -375,6 +410,12 @@ func cmdServe(args []string) error {
 		log.Warn("http shutdown did not complete cleanly", "error", err)
 	}
 	app.stop(shutdownCtx)
+	if exporter != nil {
+		// After the flows stop, so the last hops they finish are in the batch
+		// that goes out on the way down.
+		exporterStop()
+		exporter.Wait()
+	}
 	log.Info("stopped")
 	return nil
 }
@@ -401,6 +442,10 @@ type application struct {
 	// capture keeps the last messages into the flows and out at their Debug
 	// nodes, across deploys, for the editor to make tests from.
 	capture *runtime.Capture
+	// tracer keeps the journeys messages make through the flows, across
+	// deploys, so a message from before a deploy can still be looked at
+	// after it. Nil when tracing is off.
+	tracer *engine.Tracer
 
 	mu      sync.Mutex
 	rt      *runtime.Runtime
@@ -435,6 +480,7 @@ func (a *application) start(ctx context.Context, flows *engine.Flows) []runtime.
 	rt.SetContexts(a.contexts)
 	rt.SetSpool(a.spool)
 	rt.SetCapture(a.capture)
+	rt.SetTracer(a.tracer)
 	rt.SetCredentials(func(nodeID string) map[string]string {
 		return a.creds.Get(nodeID)
 	})

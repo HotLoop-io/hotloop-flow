@@ -1,16 +1,22 @@
 // The editor view: palette, tabs, canvas, review and deploy, history, and the
 // live sidebar.
 
-import type { Api, Deployment, Descriptor, DiffResult, NodeStat, RuntimeEvent } from './api';
+import type { Api, Deployment, Descriptor, DiffResult, NodeStat, RuntimeEvent, TraceView } from './api';
 import { ApiError } from './api';
 import { Canvas } from './canvas';
 import { editNode } from './dialog';
+import { describeImport, exportEntries, importEntries, parseEntries, toText } from './flowio';
+import { exportDialog, importDialog } from './flowio-ui';
+import { askText } from './modal';
+import { search, type Hit } from './search';
+import { groupDialog, instanceDialog, subflowDialog } from './structure-ui';
 import { type DiffOverlay, overlayFrom, summarise } from './diff';
 import { Graph, type FlowEntry } from './graph';
 import { confirmRollback, describe, resolveConflict } from './history';
 import { setDarkMode } from './theme';
 import { twoFactorDialog } from './account';
-import { draftTestDialog, editSuiteDialog, marksFrom, renderReport } from './tests';
+import { draftTestDialog, draftTestFromTraceDialog, editSuiteDialog, marksFrom, renderReport } from './tests';
+import { overlayFrom as traceOverlay, renderReplay, renderTrace } from './trace';
 import type { TestReport } from './api';
 
 export interface EditorHandles {
@@ -50,12 +56,16 @@ export function mountEditor(
     : null;
   if (mfaBtn) mfaBtn.onclick = () => void twoFactorDialog(api);
 
+  const searchBtn = el('button', { class: 'ghost', 'data-test': 'search-open', title: 'Search every flow (Ctrl+F)' }, 'Search');
+  const importBtn = el('button', { class: 'ghost', 'data-test': 'import-open', title: 'Import flows from JSON or a file' }, 'Import');
+  const exportBtn = el('button', { class: 'ghost', 'data-test': 'export-open', title: 'Export the selection, this flow, or everything' }, 'Export');
+
   const topbar = el('div', { class: 'topbar' },
     el('div', { class: 'brand' }, el('span', {}, 'Hot', el('span', { class: 'mark' }, 'Loop'), ' Flow'),
       el('span', { class: 'version' }, version)),
     el('div', { class: 'spacer' }),
     el('div', { class: 'conn mono' }, connDot, connText),
-    fitBtn, themeBtn, deployBtn, ...(mfaBtn ? [mfaBtn] : []), signOut,
+    searchBtn, importBtn, exportBtn, fitBtn, themeBtn, deployBtn, ...(mfaBtn ? [mfaBtn] : []), signOut,
   );
 
   const tabBar = el('div', { class: 'tabbar' });
@@ -70,7 +80,20 @@ export function mountEditor(
   const canvas = new Canvas(canvasHost, graph, {
     onEditNode: (entry) => openEditor(entry),
     onSelectionChange: () => renderTabs(),
+    onNotice: (m) => notice(m),
   });
+
+  // A line of feedback over the canvas: what a copy took, what an import added,
+  // why a group could not be made. It goes by itself.
+  const toast = el('div', { class: 'toast', hidden: '', role: 'status', 'data-test': 'notice' });
+  canvasHost.append(toast);
+  let toastTimer: number | undefined;
+  function notice(message: string): void {
+    toast.textContent = message;
+    toast.hidden = false;
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => { toast.hidden = true; }, 5000);
+  }
 
   // A second, read-only canvas for looking at a deployment from the history.
   // Separate from the working copy on purpose: viewing the past must never
@@ -94,8 +117,53 @@ export function mountEditor(
   const shownCanvas = () => (viewing ? viewCanvas : canvas);
 
   async function openEditor(entry: FlowEntry): Promise<void> {
+    if (viewing) return;
+    // A template's own ports have nothing to edit: its shape is in its properties.
+    if (entry.id.startsWith('@')) return;
+
+    if (entry.type === 'group') {
+      await groupDialog(graph, entry);
+      return;
+    }
+    const template = graph.subflowOfType(entry.type);
+    if (template) {
+      const outcome = await instanceDialog(entry, template);
+      if (outcome?.kind === 'save') graph.updateNode(entry.id, { name: outcome.name, env: outcome.env });
+      if (outcome?.kind === 'edit') openScope(template.id);
+      return;
+    }
     const result = await editNode(graph, entry, byType.get(entry.type));
     if (result) graph.updateNode(entry.id, result.props);
+  }
+
+  /** Shows a flow or a subflow on the canvas. */
+  function openScope(id: string): void {
+    if (viewing) closeView();
+    graph.activeTab = id;
+    graph.selection.clear();
+    renderTabs();
+    canvas.render();
+    canvas.fit();
+  }
+
+  async function editSubflow(id: string): Promise<void> {
+    const tpl = graph.byId(id);
+    if (!tpl) return;
+    const outcome = await subflowDialog(graph, tpl);
+    if (outcome === 'deleted') {
+      renderTabs();
+      canvas.render();
+      canvas.fit();
+    }
+  }
+
+  async function newSubflow(): Promise<void> {
+    const name = await askText('New subflow', 'Name', `Subflow ${graph.subflows().length + 1}`, 'new-subflow');
+    if (!name) return;
+    graph.addSubflow(name);
+    renderTabs();
+    canvas.render();
+    canvas.fit();
   }
 
   // ── Palette ────────────────────────────────────────────────────────────────
@@ -111,7 +179,10 @@ export function mountEditor(
     const draw = (filter: string) => {
       list.replaceChildren();
       const groups = new Map<string, Descriptor[]>();
-      for (const d of descriptors) {
+      // Subflow templates are palette entries too, made here because the
+      // runtime never lists them: it reserves their type prefix.
+      const all = [...descriptors, ...graph.subflows().map((t) => subflowDescriptor(t))];
+      for (const d of all) {
         if (d.isConfig) continue;
         const hay = `${d.type} ${d.paletteLabel ?? ''} ${d.category}`.toLowerCase();
         if (filter && !hay.includes(filter.toLowerCase())) continue;
@@ -131,14 +202,16 @@ export function mountEditor(
             el('span', { class: 'swatch', style: `background:${d.color}` }),
             el('span', {}, d.paletteLabel ?? d.type),
           );
+          item.setAttribute('data-palette-type', d.type);
           item.addEventListener('dragstart', (e) => {
             (e as DragEvent).dataTransfer?.setData('text/hotloop-flow-node', d.type);
           });
           // Double-click drops it at the centre of the view, for anyone who
           // would rather not drag.
           item.addEventListener('dblclick', () => {
-            const entry = graph.addNode(d.type, { x: 200, y: 120 });
-            void openEditor(entry);
+            if (viewing) return;
+            const entry = canvas.place(d.type, { x: 200, y: 120 });
+            if (entry) void openEditor(entry);
           });
           list.append(item);
         }
@@ -150,6 +223,29 @@ export function mountEditor(
 
     search.addEventListener('input', () => draw(search.value));
     draw('');
+    redrawPalette = () => draw(search.value);
+  }
+
+  /** Set by renderPalette: redraws the list with the filter as it stands. */
+  let redrawPalette: () => void = () => undefined;
+  let paletteSignature = '';
+  /** What the palette shows of the subflows, so it is only redrawn when that changes. */
+  function subflowSignature(): string {
+    return JSON.stringify(graph.subflows().map((t) => [t.id, t.name, t.color, t.category]));
+  }
+
+  function subflowDescriptor(t: FlowEntry): Descriptor {
+    return {
+      type: `subflow:${t.id}`,
+      category: 'subflows',
+      color: typeof t.color === 'string' && t.color ? t.color : '#DDAA99',
+      icon: 'subflow',
+      inputs: Array.isArray(t.in) ? (t.in as unknown[]).length : 0,
+      outputs: Array.isArray(t.out) ? (t.out as unknown[]).length : 0,
+      paletteLabel: String(t.name || 'subflow'),
+      help: typeof t.info === 'string' && t.info ? t.info : 'A subflow',
+      compatibility: { level: 'full' },
+    };
   }
 
   // ── Tabs ───────────────────────────────────────────────────────────────────
@@ -171,8 +267,24 @@ export function mountEditor(
       };
       tabBar.append(tab);
     }
+    for (const t of g.subflows()) {
+      const active = t.id === g.activeTab;
+      const changed = overlay?.scopes.has(t.id) ? ' has-diff' : '';
+      const tab = el('button', {
+        class: `tab tab-subflow${active ? ' active' : ''}${changed}`,
+        'data-test': 'tab-subflow', 'data-scope': t.id, title: 'Subflow',
+      }, String(t.name || 'subflow'));
+      tab.onclick = () => {
+        g.activeTab = t.id;
+        g.selection.clear();
+        shownCanvas().render();
+        renderTabs();
+        shownCanvas().fit();
+      };
+      tabBar.append(tab);
+    }
     if (!viewing) {
-      const add = el('button', { class: 'tab tab-add', title: 'Add a flow' }, '+');
+      const add = el('button', { class: 'tab tab-add', 'data-test': 'tab-add', title: 'Add a flow' }, '+');
       add.onclick = () => {
         const label = prompt('Name for the new flow', `Flow ${graph.tabs().length + 1}`);
         if (label) {
@@ -182,28 +294,84 @@ export function mountEditor(
         }
       };
       tabBar.append(add);
+      const addSub = el('button', { class: 'tab tab-add', 'data-test': 'tab-add-subflow', title: 'Add a subflow' }, '+ subflow');
+      addSub.onclick = () => void newSubflow();
+      tabBar.append(addSub);
     }
     tabBar.append(el('div', { class: 'spacer' }));
+
+    if (!viewing && g.isSubflowScope(g.activeTab)) {
+      const props = el('button', { class: 'ghost', 'data-test': 'subflow-properties' }, 'Subflow properties');
+      props.onclick = () => void editSubflow(g.activeTab);
+      tabBar.append(props);
+    }
 
     const state = el('div', { class: 'tab-state mono', 'data-test': 'tab-state' },
       viewing ? `viewing deployment ${viewing.seq}, read only`
         : graph.dirty ? 'unsaved changes' : 'saved');
     tabBar.append(state);
     deployBtn.disabled = !graph.dirty || viewing !== null || reviewing;
+    importBtn.disabled = viewing !== null;
+
+    // The palette follows the subflows, and the debug filter follows the
+    // flow and selection it is scoped to.
+    const sig = subflowSignature();
+    if (sig !== paletteSignature) {
+      paletteSignature = sig;
+      redrawPalette();
+    }
+    refilterIfScopeMoved();
   }
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
-  const logBody = el('div', { class: 'log' }, el('div', { class: 'empty' }, 'Waiting for events…'));
+  const logBody = el('div', { class: 'log', 'data-test': 'debug-log' }, el('div', { class: 'empty' }, 'Waiting for events…'));
+
+  // ── Debug filtering ──
+  //
+  // The log keeps what it has shown, so a filter applies to what is already
+  // there as well as to what arrives. Without that, narrowing the log to one
+  // node would hide the line you were looking for and show you nothing until
+  // the next message.
+  type Scope = 'all' | 'flow' | 'selected';
+  interface LogItem { e: RuntimeEvent; text: string; nodeId: string }
+  const logItems: LogItem[] = [];
+  const topicsOn = new Set<string>(['debug', 'error', 'dropped', 'other']);
+  let scopeMode: Scope = 'all';
+  let filterText = '';
+  let cleared = false;
+  let scopeKey = '';
+
+  const scopeSelect = el('select', { 'data-test': 'debug-scope', title: 'Which nodes to show messages from' },
+    el('option', { value: 'all' }, 'All nodes'),
+    el('option', { value: 'flow' }, 'This flow'),
+    el('option', { value: 'selected' }, 'Selected nodes')) as HTMLSelectElement;
+  const textFilter = el('input', { type: 'search', placeholder: 'Filter messages…', 'data-test': 'debug-filter' }) as HTMLInputElement;
+  const countText = el('span', { class: 'mono filter-count', 'data-test': 'debug-count' });
+  const topicBoxes = el('div', { class: 'topic-filter' });
+  for (const t of ['debug', 'error', 'dropped']) {
+    const box = el('input', { type: 'checkbox', 'data-test': `debug-topic-${t}` }) as HTMLInputElement;
+    box.checked = true;
+    box.onchange = () => {
+      if (box.checked) topicsOn.add(t); else topicsOn.delete(t);
+      redrawLog();
+    };
+    topicBoxes.append(el('label', {}, box, t));
+  }
+  scopeSelect.onchange = () => { scopeMode = scopeSelect.value as Scope; scopeKey = ''; redrawLog(); };
+  textFilter.addEventListener('input', () => { filterText = textFilter.value.trim().toLowerCase(); redrawLog(); });
+  const filterBar = el('div', { class: 'debug-filter' }, scopeSelect, textFilter, topicBoxes, countText);
   const statsBody = el('tbody');
   const reviewSlot = el('div', { class: 'review-slot' });
   const historyBody = el('div', { class: 'history', 'data-test': 'history' },
     el('div', { class: 'empty' }, 'Loading…'));
   const testsBody = el('div', { class: 'tests', 'data-test': 'tests' },
     el('div', { class: 'empty' }, 'Loading…'));
+  const traceBody = el('div', { class: 'trace', 'data-test': 'trace' },
+    el('div', { class: 'empty' }, 'Click Trace on a debug message to see the path it took.'));
 
   function renderSidebar(): void {
     const clear = el('button', { class: 'ghost' }, 'Clear');
-    clear.onclick = () => logBody.replaceChildren(el('div', { class: 'empty' }, 'Cleared.'));
+    clear.onclick = () => { logItems.length = 0; cleared = true; redrawLog(); };
     const refreshHistoryBtn = el('button', { class: 'ghost', title: 'Reload the deployment log' }, 'Refresh');
     refreshHistoryBtn.onclick = () => void refreshHistory();
     const runTestsBtn = el('button', {
@@ -220,7 +388,10 @@ export function mountEditor(
       historyBody,
       el('div', { class: 'side-head' }, el('h3', {}, 'Tests'), el('div', { class: 'spacer' }), runTestsBtn, editTestsBtn),
       testsBody,
+      el('div', { class: 'side-head' }, el('h3', {}, 'Trace')),
+      traceBody,
       el('div', { class: 'side-head' }, el('h3', {}, 'Debug'), el('div', { class: 'spacer' }), clear),
+      filterBar,
       logBody,
       el('div', { class: 'side-head' }, el('h3', {}, 'Runtime')),
       el('div', { class: 'scroll-x' },
@@ -272,8 +443,6 @@ export function mountEditor(
 
   const MAX_LOG = 250;
   function appendEvent(e: RuntimeEvent): void {
-    logBody.querySelector('.empty')?.remove();
-
     // Status events paint the canvas rather than filling the log — a chatty
     // node would otherwise drown out the debug output that was asked for.
     if (e.topic === 'status') {
@@ -297,7 +466,77 @@ export function mountEditor(
       default: text = JSON.stringify(e.data);
     }
 
-    const line = el('div', { class: 'log-line' },
+    const nodeId = String(e.data.id ?? e.data.nodeId ?? '');
+    const item: LogItem = { e, text, nodeId };
+    logItems.push(item);
+    while (logItems.length > MAX_LOG) logItems.shift();
+    cleared = false;
+    if (passes(item)) {
+      logBody.querySelector('.empty')?.remove();
+      logBody.append(logLine(item));
+      while (logBody.children.length > MAX_LOG) logBody.firstChild?.remove();
+      logBody.scrollTop = logBody.scrollHeight;
+    }
+    updateCount();
+  }
+
+  /** The node on the canvas an event is about. A node inside a subflow has an id of instance:node. */
+  function canvasNodeOf(id: string): FlowEntry | undefined {
+    if (!id) return undefined;
+    return graph.byId(id) ?? graph.byId(id.split(':')[0]!);
+  }
+
+  function passes(item: LogItem): boolean {
+    const topic = ['debug', 'error', 'dropped'].includes(item.e.topic) ? item.e.topic : 'other';
+    if (!topicsOn.has(topic)) return false;
+    if (scopeMode !== 'all') {
+      const node = canvasNodeOf(item.nodeId);
+      if (!node) return false;
+      if (scopeMode === 'flow' && node.z !== graph.activeTab) return false;
+      if (scopeMode === 'selected' && !graph.selection.has(node.id)) return false;
+    }
+    if (filterText !== '') {
+      const label = canvasNodeOf(item.nodeId);
+      const hay = `${item.e.topic} ${label ? graph.label(label) : ''} ${item.text}`.toLowerCase();
+      if (!hay.includes(filterText)) return false;
+    }
+    return true;
+  }
+
+  function updateCount(): void {
+    const shown = logItems.filter(passes).length;
+    countText.textContent = shown === logItems.length ? `${shown}` : `${shown} of ${logItems.length}`;
+  }
+
+  function redrawLog(): void {
+    logBody.replaceChildren();
+    const shown = logItems.filter(passes);
+    if (shown.length === 0) {
+      logBody.append(el('div', { class: 'empty' },
+        cleared ? 'Cleared.'
+          : logItems.length === 0 ? 'Waiting for events…'
+            : `Nothing matches. ${logItems.length} message${logItems.length === 1 ? ' is' : 's are'} hidden by the filter.`));
+    } else {
+      const frag = document.createDocumentFragment();
+      for (const item of shown) frag.append(logLine(item));
+      logBody.append(frag);
+      logBody.scrollTop = logBody.scrollHeight;
+    }
+    updateCount();
+  }
+
+  /** The flow or selection a scoped log follows moved: draw it again. */
+  function refilterIfScopeMoved(): void {
+    if (scopeMode === 'all') return;
+    const key = `${scopeMode}|${graph.activeTab}|${[...graph.selection].sort().join(',')}`;
+    if (key === scopeKey) return;
+    scopeKey = key;
+    redrawLog();
+  }
+
+  function logLine(item: LogItem): HTMLElement {
+    const { e, text } = item;
+    const line = el('div', { class: 'log-line', 'data-topic': e.topic, 'data-node': item.nodeId },
       el('span', { class: 'log-time' }, new Date(e.at).toLocaleTimeString()),
       el('span', { class: `log-topic ${e.topic}` }, e.topic),
       el('span', { class: 'log-body' }, text));
@@ -310,12 +549,16 @@ export function mountEditor(
         title: 'Make a flow test from this message',
       }, 'Test');
       make.onclick = () => void makeTest(String(e.data.id), String(e.data.msgId));
-      line.append(make);
+      // The path it took: lit on the canvas, with timing and the message at
+      // every hop.
+      const path = el('button', {
+        class: 'ghost log-trace', 'data-test': 'debug-trace',
+        title: 'Light the path this message took',
+      }, 'Trace');
+      path.onclick = () => void showTrace(String(e.data.id), String(e.data.msgId));
+      line.append(path, make);
     }
-    logBody.append(line);
-
-    while (logBody.children.length > MAX_LOG) logBody.firstChild?.remove();
-    logBody.scrollTop = logBody.scrollHeight;
+    return line;
   }
 
   // ── Review and deploy ──────────────────────────────────────────────────────
@@ -521,6 +764,78 @@ export function mountEditor(
     }
   }
 
+  // ── Tracing ────────────────────────────────────────────────────────────────
+
+  /** The trace on show, so Replay and Make test know what they're about. */
+  let shownTrace: { trace: TraceView; focus: number | null; path: number[] | null } | null = null;
+
+  function drawTrace(): void {
+    if (!shownTrace) return;
+    const { trace, focus, path } = shownTrace;
+    renderTrace(traceBody, trace, focus, path, graph, {
+      pick: (id) => {
+        const entry = graph.byId(id);
+        if (!entry) return;
+        if (entry.z) graph.activeTab = entry.z;
+        graph.selection = new Set([id]);
+        renderTabs();
+        canvas.render();
+      },
+      makeTest: () => void makeTraceTest(trace.id),
+      replay: () => void replayTrace(trace.id),
+      clear: () => {
+        shownTrace = null;
+        canvas.setTrace(null);
+        traceBody.replaceChildren(el('div', { class: 'empty' }, 'Click Trace on a debug message to see the path it took.'));
+      },
+    });
+    canvas.setTrace(traceOverlay(trace, focus, path));
+  }
+
+  async function showTrace(node: string, msgId: string): Promise<void> {
+    try {
+      const found = await api.findTrace(msgId, node);
+      shownTrace = { trace: found.trace, focus: found.focus, path: found.path };
+      // On the tab the Debug node is on, which is where the path ends.
+      const at = found.trace.hops[found.focus];
+      const entry = at ? graph.byId(at.canvas || at.node) : undefined;
+      if (entry?.z && graph.activeTab !== entry.z) {
+        graph.activeTab = entry.z;
+        renderTabs();
+      }
+      drawTrace();
+    } catch (ex) {
+      if (ex instanceof ApiError && ex.status === 404) {
+        traceBody.replaceChildren(el('div', { class: 'empty', 'data-test': 'trace-gone' }, ex.message));
+        canvas.setTrace(null);
+        return;
+      }
+      failed(ex, 'Could not load the trace');
+    }
+  }
+
+  async function makeTraceTest(traceId: string): Promise<void> {
+    try {
+      const added = await draftTestFromTraceDialog(api, traceId);
+      if (added) void refreshTests(`Added: ${added.join(', ')}`);
+    } catch (ex) {
+      failed(ex, 'Could not make the test');
+    }
+  }
+
+  async function replayTrace(traceId: string): Promise<void> {
+    traceBody.replaceChildren(el('div', { class: 'empty' }, 'Replaying…'));
+    try {
+      // The working copy, deployed or not: that's what a draft is.
+      const res = await api.replay(traceId, graph.all());
+      renderReplay(traceBody, res, drawTrace);
+      if (res.trace) canvas.setTrace(traceOverlay(res.trace, null, null));
+    } catch (ex) {
+      drawTrace();
+      failed(ex, 'Could not replay the message');
+    }
+  }
+
   // ── History ────────────────────────────────────────────────────────────────
 
   let history: Deployment[] = [];
@@ -645,6 +960,176 @@ export function mountEditor(
     canvas.render();
   }
 
+  // ── Search ─────────────────────────────────────────────────────────────────
+  //
+  // One box over the canvas that looks in every flow and subflow. A hit takes
+  // you there: the right tab, the node selected, the view centred on it.
+
+  const searchInput = el('input', { type: 'search', placeholder: 'Search every flow…', 'data-test': 'search-input' }) as HTMLInputElement;
+  const searchCount = el('div', { class: 'search-count mono', 'data-test': 'search-count' });
+  const searchResults = el('div', { class: 'search-results', 'data-test': 'search-results' });
+  const searchClose = el('button', { class: 'ghost icon', title: 'Close', 'data-test': 'search-close' }, '✕');
+  const searchPanel = el('div', { class: 'search-panel', hidden: '', 'data-test': 'search-panel' },
+    el('div', { class: 'search-head' }, searchInput, searchClose), searchCount, searchResults);
+  canvasHost.append(searchPanel);
+  let hits: Hit[] = [];
+
+  function runSearch(): void {
+    hits = search(graph, searchInput.value);
+    searchResults.replaceChildren();
+    if (searchInput.value.trim() === '') {
+      searchCount.textContent = '';
+      return;
+    }
+    searchCount.textContent = hits.length === 0 ? 'Nothing found.' : `${hits.length} found${hits.length >= 200 ? ', showing the first 200' : ''}`;
+    for (const h of hits) {
+      const row = el('button', { class: 'search-hit', 'data-test': 'search-hit', 'data-id': h.id },
+        el('span', { class: 'hit-label' }, h.label),
+        el('span', { class: 'hit-meta mono' }, `${h.type} · ${h.scopeLabel}${h.config ? ' · configuration' : ''}`),
+        el('span', { class: 'hit-snippet mono' }, h.field === 'name' ? '' : `${h.field}: ${h.snippet}`));
+      row.onclick = () => reveal(h);
+      searchResults.append(row);
+    }
+  }
+
+  function openSearch(): void {
+    searchPanel.hidden = false;
+    searchInput.focus();
+    searchInput.select();
+    runSearch();
+  }
+
+  function closeSearch(): void {
+    searchPanel.hidden = true;
+    canvas.render();
+  }
+
+  /** Goes to a hit. */
+  function reveal(h: Hit): void {
+    if (viewing) closeView();
+    const entry = graph.byId(h.id);
+    if (!entry) return;
+    if (h.config) {
+      // A configuration node is on no canvas, so its dialog is where it is.
+      void openEditor(entry);
+      return;
+    }
+    if (h.scope && graph.isScope(h.scope)) graph.activeTab = h.scope;
+    const isScope = entry.type === 'tab' || entry.type === 'subflow';
+    graph.selection = isScope ? new Set() : new Set([entry.id]);
+    renderTabs();
+    canvas.render();
+    if (isScope) canvas.fit(); else canvas.centerOn(entry.id);
+  }
+
+  searchBtn.onclick = () => (searchPanel.hidden ? openSearch() : closeSearch());
+  searchClose.onclick = () => closeSearch();
+  searchInput.addEventListener('input', runSearch);
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeSearch(); }
+    if (e.key === 'Enter' && hits[0]) { e.preventDefault(); reveal(hits[0]); }
+  });
+  // The graph changed under an open search: its results are out of date.
+  graph.onChange(() => { if (!searchPanel.hidden) runSearch(); });
+
+  // ── Copy, cut, paste, import and export ────────────────────────────────────
+
+  const textEntry = (t: EventTarget | null) =>
+    t instanceof Element && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]') !== null;
+  const dialogOpen = () => document.querySelector('.dialog-backdrop') !== null;
+  // The clipboard of this page, for a browser that will not hand the page its
+  // own clipboard back. Used only when the real one comes back empty.
+  let held = '';
+  let lastPaste: { x: number; y: number } | null = null;
+
+  /**
+   * Whether a clipboard event is ours: nobody is typing, and either the canvas
+   * has the focus or nothing on the page is selected as text. A stray text
+   * selection elsewhere, left by a double-click that wandered, must not stop
+   * Ctrl+C on a node from copying it.
+   */
+  const ours = (e: ClipboardEvent) => {
+    if (viewing || dialogOpen() || textEntry(e.target) || textEntry(document.activeElement)) return false;
+    const onCanvas = document.activeElement?.classList.contains('canvas') ?? false;
+    return onCanvas || !(window.getSelection()?.toString());
+  };
+
+  const selectedNodes = () => [...graph.selection].filter((id) => !id.startsWith('@') && graph.byId(id));
+
+  function onCopy(e: ClipboardEvent, cut: boolean): void {
+    if (!ours(e) || selectedNodes().length === 0) return;
+    const entries = exportEntries(graph, 'selection');
+    const text = toText(entries);
+    held = text;
+    e.clipboardData?.setData('text/plain', text);
+    e.preventDefault();
+    const n = entries.filter((x) => x.type !== 'group' && x.type !== 'subflow' && !graph.isConfig(x)).length;
+    if (cut) {
+      graph.deleteSelection();
+      notice(`Cut ${n} node${n === 1 ? '' : 's'}.`);
+    } else {
+      notice(`Copied ${n} node${n === 1 ? '' : 's'}.`);
+    }
+  }
+
+  function placeAt(): { x: number; y: number } {
+    const base = canvas.lastPointer() ?? canvas.viewCenter();
+    // Pasting twice without moving the pointer would stack the second copy
+    // exactly on the first, where nobody can tell there are two.
+    const at = lastPaste && lastPaste.x === base.x && lastPaste.y === base.y
+      ? { x: base.x + 20, y: base.y + 20 } : { ...base };
+    lastPaste = { x: at.x, y: at.y };
+    return at;
+  }
+
+  function runImport(text: string, intoNewFlow?: string): void {
+    const parsed = parseEntries(text);
+    if (!parsed.entries) { notice(parsed.error ?? 'That could not be read.'); return; }
+    const result = importEntries(graph, parsed.entries, {
+      scope: graph.activeTab, at: placeAt(),
+      ...(intoNewFlow !== undefined ? { intoNewFlow } : {}),
+    });
+    afterImport(result);
+  }
+
+  function afterImport(result: ReturnType<typeof importEntries>): void {
+    graph.activeTab = result.show;
+    graph.selection = new Set(result.added);
+    renderTabs();
+    canvas.render();
+    notice(describeImport(result));
+  }
+
+  const copyListener = (e: ClipboardEvent) => onCopy(e, false);
+  const cutListener = (e: ClipboardEvent) => onCopy(e, true);
+  const pasteListener = (e: ClipboardEvent) => {
+    if (!ours(e)) return;
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    const source = text !== '' ? text : held;
+    if (source === '') return;
+    e.preventDefault();
+    runImport(source);
+  };
+  document.addEventListener('copy', copyListener);
+  document.addEventListener('cut', cutListener);
+  document.addEventListener('paste', pasteListener);
+
+  exportBtn.onclick = () => exportDialog(graph);
+  importBtn.onclick = async () => {
+    const result = await importDialog(graph, canvas.lastPointer() ?? canvas.viewCenter());
+    if (result) afterImport(result);
+  };
+
+  // Ctrl+F belongs to this page while the editor is up, because the browser's
+  // own find cannot see inside the canvas.
+  const onSearchKey = (e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'f' && !dialogOpen()) {
+      e.preventDefault();
+      openSearch();
+    }
+  };
+  document.addEventListener('keydown', onSearchKey);
+
   // ── Wiring ─────────────────────────────────────────────────────────────────
   fitBtn.onclick = () => canvas.fit();
   themeBtn.onclick = () => {
@@ -689,6 +1174,10 @@ export function mountEditor(
 
   function teardown(): void {
     window.removeEventListener('beforeunload', beforeUnload);
+    document.removeEventListener('keydown', onSearchKey);
+    document.removeEventListener('copy', copyListener);
+    document.removeEventListener('cut', cutListener);
+    document.removeEventListener('paste', pasteListener);
     if (statsTimer) window.clearInterval(statsTimer);
     if (historyTimer) window.clearInterval(historyTimer);
     disconnect?.();

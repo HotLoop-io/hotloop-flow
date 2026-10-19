@@ -112,6 +112,9 @@ type Runtime struct {
 	// the Debug nodes, for the editor to turn into tests. Nil-safe.
 	capture *Capture
 
+	// tracer, when set, writes down every hop a message makes. Nil-safe.
+	tracer *engine.Tracer
+
 	// observer sees every message a node is handed and every message it sends.
 	// Only a flow test sets one: it is how a test knows what came out of a port
 	// without wiring anything into the flow it is testing.
@@ -138,6 +141,11 @@ type Observer interface {
 
 // SetObserver installs an observer. Call it before Start.
 func (rt *Runtime) SetObserver(o Observer) { rt.observer = o }
+
+// SetTracer installs the tracer. Call it before Start. The tracer outlives the
+// runtime: a deploy builds a new runtime and hands it the same one, so a trace
+// of a message from before the deploy is still there to read after it.
+func (rt *Runtime) SetTracer(t *engine.Tracer) { rt.tracer = t }
 
 // SetStandIns gives every node built from here on a stand-in for the outside
 // world, so that nothing it does reaches a broker, a database, a socket, a file
@@ -180,7 +188,7 @@ func (rt *Runtime) SendFrom(nodeID string, port int, msg *engine.Msg) error {
 	if port < 0 {
 		return fmt.Errorf("port %d does not exist", port)
 	}
-	rt.deliver(r, port, msg)
+	rt.deliver(r, port, msg, nil, -1)
 	return nil
 }
 
@@ -823,7 +831,10 @@ func sortedKeys[V any](m map[string]V) []string {
 // undocumented source of aliasing bugs. The cost of cloning unconditionally is
 // bounded by engine.ImmutableBytes, which shares rather than copies the large
 // binary payloads where it would actually hurt.
-func (rt *Runtime) deliver(from *runner, port int, msg *engine.Msg) {
+//
+// ec and eh are the trace and hop of the Receive the sending node is inside,
+// when it is inside one; tracing uses them to say which hop sent the message.
+func (rt *Runtime) deliver(from *runner, port int, msg *engine.Msg, ec *engine.Trace, eh int) {
 	if o := rt.observer; o != nil {
 		msg.EnsureID()
 		o.Sent(from.id, port, msg.Clone())
@@ -841,6 +852,7 @@ func (rt *Runtime) deliver(from *runner, port int, msg *engine.Msg) {
 		return
 	}
 	msg.EnsureID()
+	rt.tracer.Outgoing(msg, from.id, from.typ, port, "", ec, eh, rt.opts.Now())
 	from.stats.Sent.Add(1)
 	for _, t := range targets {
 		if t.d != nil {
@@ -927,6 +939,9 @@ func (rt *Runtime) raiseError(from *runner, err error, msg *engine.Msg) {
 			},
 		}
 		out.Data["_errorDepth"] = float64(depth + 1)
+		if msg != nil {
+			rt.tracer.Outgoing(out, from.id, from.typ, -1, "error", nil, -1, rt.opts.Now())
+		}
 		h.r.enqueue(rt.ctx, out, from)
 	}
 }

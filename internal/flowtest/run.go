@@ -41,6 +41,10 @@ type Options struct {
 
 	// Match, when set, runs only the tests whose names it matches.
 	Match *regexp.Regexp
+
+	// Tracer, when set, writes down the journey of every message the run
+	// moves. A replay reads its answer from it.
+	Tracer *engine.Tracer
 }
 
 // Report is the outcome of one test file.
@@ -208,6 +212,7 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 	clock := newVirtualClock(start)
 
 	rt := runtime.New(opts.Registry, flows, opts.Runtime)
+	rt.SetTracer(opts.Tracer)
 	ctxs := store.NewScopedContexts()
 	if err := startContext(ctxs, fx.start); err != nil {
 		return problem("%v", err)

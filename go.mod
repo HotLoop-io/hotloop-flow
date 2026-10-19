@@ -8,8 +8,10 @@ require (
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/go-git/go-git/v5 v5.19.2
+	github.com/gopcua/opcua v0.9.1
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/recolabs/gnata v0.5.0
+	github.com/simonvetter/modbus v1.6.4
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
 	golang.org/x/crypto v0.54.0
@@ -32,6 +34,7 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
+	github.com/goburrow/serial v0.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/pprof v0.0.0-20260802141513-ef3492d7dac3 // indirect
 	github.com/google/uuid v1.6.0 // indirect

@@ -87,6 +87,43 @@ jobs:
           for i in $(seq 1 20); do (echo > /dev/tcp/127.0.0.1/1884) 2>/dev/null && break; sleep 1; done
           sudo podman logs mosquitto-auth
 
+      - name: Start a real OpenTelemetry collector
+        # The tracing export is tested against the stock collector image, not a
+        # stand-in for one, with the config in testdata/otel mounted over its
+        # own: an OTLP/HTTP receiver, and the debug exporter printing every span
+        # it accepts into a file the test reads back. The image is pinned to a
+        # release, so a collector change shows up as a version bump in a PR.
+        run: |
+          docker run -d --name otel -p 4318:4318             -v "$PWD/testdata/otel/collector.yaml:/etc/otelcol/config.yaml:ro"             otel/opentelemetry-collector:0.163.1 --config /etc/otelcol/config.yaml
+          : > "$RUNNER_TEMP/otel.log"
+          nohup docker logs -f otel > "$RUNNER_TEMP/otel.log" 2>&1 &
+          for _ in $(seq 1 30); do grep -q "Everything is ready" "$RUNNER_TEMP/otel.log" && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/otel.log"; exit 1
+
+      - name: Start a real Modbus TCP server and a real OPC UA server
+        # The Modbus and OPC UA tests talk to real servers or they skip, and a
+        # skip reads as a pass. Modbus is oitc/modbus-server (pymodbus) with the
+        # registers in testdata/plant/modbus_server.json. OPC UA is Microsoft's
+        # OPC PLC with the tags in testdata/plant/opcplc_nodes.json and a login
+        # of flowuser/flowpass. Both versions are pinned: a simulator that
+        # changes under the tests is a failure nobody can read.
+        run: |
+          docker run -d --name modbus -p 5020:5020 \
+            -v "$PWD/testdata/plant/modbus_server.json:/app/modbus_server.json:ro" \
+            docker.io/oitc/modbus-server:2.3.0
+          docker run -d --name opcplc -p 50000:50000 \
+            -v "$PWD/testdata/plant/opcplc_nodes.json:/cfg/nodes.json:ro" \
+            mcr.microsoft.com/iotedge/opc-plc:2.15.11 \
+            --pn=50000 --autoaccept --unsecuretransport \
+            --defaultuser=flowuser --defaultpassword=flowpass \
+            --heartbeats --nodesfile=/cfg/nodes.json \
+            --fastnodes=1 --fastrate=1 --fasttype=UInt --slownodes=1 --slowrate=1 --slowtype=UInt
+          for p in 5020 50000; do
+            for i in $(seq 1 60); do nc -z localhost $p && break; sleep 1; done
+            nc -z localhost $p || { docker logs modbus; docker logs opcplc; echo "::error::nothing on $p"; exit 1; }
+          done
+          sleep 5
+
       - name: Test with race detector
         # The race detector needs cgo. This is the test build only — the shipped
         # binary is built CGO_ENABLED=0 in the Dockerfile so it stays static and
@@ -97,6 +134,10 @@ jobs:
           HOTLOOP_FLOW_TEST_MQTT_AUTH: 127.0.0.1:1884
           HOTLOOP_FLOW_TEST_MQTT_USER: line3
           HOTLOOP_FLOW_TEST_MQTT_PASSWORD: ci-broker-pass
+          HOTLOOP_FLOW_TEST_OTLP: localhost:4318
+          HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
+          HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
+          HOTLOOP_FLOW_TEST_OPCUA: localhost:50000
         run: go test -race -count=1 -coverprofile=coverage.out ./...
 
       - name: The broker tests actually ran
@@ -156,6 +197,33 @@ jobs:
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 
+      - name: The Modbus and OPC UA tests actually ran
+        # Same reasoning as the MQTT check: a simulator that failed to come up
+        # turns every one of these into a skip, and a skip reads as a pass.
+        env:
+          HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
+          HOTLOOP_FLOW_TEST_OPCUA: localhost:50000
+        run: |
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'Modbus|OPCUA' 2>&1)
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::a Modbus or OPC UA test skipped; the simulator is not reachable"
+            exit 1
+          fi
+          for t in TestModbusReadsWhatTheRealServerHolds \
+            TestModbusWriteIsReadBackFromTheRealServer \
+            TestModbusServerSaysNoAndTheErrorSaysWhatToDo \
+            TestModbusDeviceGoesSilentThenComesBack \
+            TestOPCUAWriteIsReadBackFromTheRealServer \
+            TestOPCUAServerSaysNoAndTheErrorSaysWhatToDo \
+            TestOPCUASecurityModesPoliciesAndLogins \
+            TestOPCUAClientCertificateFromATLSConfig \
+            TestOPCUASubscribeDeliversTheServersChanges \
+            TestOPCUASubscriptionSurvivesTheServerGoingSilentAndDownAndComingBack \
+            TestOPCUAReadDuringSilenceTimesOutAndRecovers; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
+
       - name: The OpenSSL interop test actually ran
         # The PKCS#12 bundle and encrypted key that test reads are written by
         # the openssl on the runner, which is the point: a file from the tool a
@@ -169,6 +237,35 @@ jobs:
           fi
           echo "$OUT" | grep -q -- "--- PASS: TestTLSConfigReadsWhatOpenSSLWrites" || {
             echo "::error::the OpenSSL interop test did not pass"; exit 1; }
+
+      - name: The collector actually received the spans
+        # No collector turns the test into a skip, and a skip reads as a pass.
+        env:
+          HOTLOOP_FLOW_TEST_OTLP: localhost:4318
+          HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
+        run: |
+          OUT=$(go test ./internal/otlp/ -count=1 -v -run TestSpansReachARealCollector 2>&1)
+          echo "$OUT" | grep -E 'reached the collector|^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::the collector test skipped; the collector is not reachable"; exit 1
+          fi
+          echo "$OUT" | grep -q -- "--- PASS: TestSpansReachARealCollector" || {
+            echo "::error::the collector test did not pass"; exit 1; }
+          echo "### Spans the real collector received" >> "$GITHUB_STEP_SUMMARY"
+          grep -c '^Span #' "$RUNNER_TEMP/otel.log" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: A million messages through the tracer
+        # The README says tracing every message through a flow keeps memory flat,
+        # and the number is published. The race run above does 50,000; this is
+        # the million, without the race detector so it finishes in seconds.
+        # Anything that stops the heap being flat fails the test itself.
+        env:
+          HOTLOOP_FLOW_SOAK_MESSAGES: "1000000"
+          HOTLOOP_FLOW_SOAK_OUT: ${{ runner.temp }}/soak.txt
+        run: |
+          go test ./internal/runtime/ -count=1 -run TestTraceMemoryStaysFlatUnderASoak -v 2>&1 | grep -E '^(---|ok|FAIL)'
+          cat "$HOTLOOP_FLOW_SOAK_OUT"
+          { echo '### Trace soak'; echo '```'; cat "$HOTLOOP_FLOW_SOAK_OUT"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: The JSONata suite actually ran
         # A missing suite turns the test into a skip, and a skip reads as a
@@ -426,6 +523,10 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
-      - name: Click through review, history, rollback, conflicts and flow tests
+      - name: Click through the editor
+        # Review, history, rollback, conflicts and flow tests, then copy and paste,
+        # import and export, subflows, groups, search, the debug filters, and every
+        # node dialog the runtime offers. The dialog test reads its list of node
+        # types from GET /nodes on the binary it is testing, so it cannot go stale.
         working-directory: web/e2e
         run: npx playwright test

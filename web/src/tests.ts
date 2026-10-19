@@ -24,9 +24,18 @@ export interface TestMark {
  * Resolves with the names of the tests added, or null when nothing was.
  */
 export async function draftTestDialog(api: Api, node: string, msgId: string): Promise<string[] | null> {
+  return offerDraft(api, () => api.draftTest(node, msgId), 'What went in at the source, and what this Debug node showed. Change anything you like before adding it.');
+}
+
+/** The same two clicks, for a test made from a whole trace: every place the message ended. */
+export async function draftTestFromTraceDialog(api: Api, traceId: string): Promise<string[] | null> {
+  return offerDraft(api, () => api.draftTestFromTrace(traceId), 'What went in at the source, and what every Debug node or other end of the trace was handed. Change anything you like before adding it.');
+}
+
+async function offerDraft(api: Api, make: () => Promise<{ name: string; yaml: string }>, blurb: string): Promise<string[] | null> {
   let draft: { name: string; yaml: string };
   try {
-    draft = await api.draftTest(node, msgId);
+    draft = await make();
   } catch (ex) {
     if (ex instanceof ApiError && ex.status === 401) throw ex;
     alert(`Could not make a test from that message: ${ex instanceof Error ? ex.message : ex}`);
@@ -36,7 +45,7 @@ export async function draftTestDialog(api: Api, node: string, msgId: string): Pr
   let text = draft.yaml;
   for (;;) {
     const intro = document.createElement('p');
-    intro.textContent = 'What went in at the source, and what this Debug node showed. Change anything you like before adding it.';
+    intro.textContent = blurb;
     const area = document.createElement('textarea');
     area.className = 'code test-yaml';
     area.value = text;

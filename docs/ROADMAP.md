@@ -109,13 +109,13 @@ Tests are YAML next to the flows, so they diff and review the same way.
 
 ### Phase 3: tracing and replay
 
-- [ ] Click a debug message and the canvas lights up the path it took, with
+- [x] Click a debug message and the canvas lights up the path it took, with
       timing and the payload at every hop, through splits, joins and subflows
-- [ ] Bounded trace buffer. Memory stays flat under a million-message soak, and
+- [x] Bounded trace buffer. Memory stays flat under a million-message soak, and
       the number is published
-- [ ] Replay a captured message into a draft of the flow and compare the output
-- [ ] A captured trace becomes a Phase 2 test
-- [ ] OpenTelemetry export, proven against a real collector
+- [x] Replay a captured message into a draft of the flow and compare the output
+- [x] A captured trace becomes a Phase 2 test
+- [x] OpenTelemetry export, proven against a real collector
 
 ### Phase 4: durable state
 
@@ -147,13 +147,15 @@ A historian going down for an hour shouldn't cost you an hour of readings.
 `scan` finds a PLC today and nothing in the palette can talk to it. That's the
 biggest hole in a product built for plants.
 
-- [ ] Modbus TCP read and write
-- [ ] OPC UA read, subscribe and write
+- [x] Modbus TCP read and write
+- [x] OPC UA read, subscribe and write
 - [ ] S7 read and write
 - [ ] Sparkplug B, as an edge node and as a host
 - [ ] EtherNet/IP read and write
 - [ ] Every one of them tested against a real device or the real simulator,
-      including what happens when the device goes silent and when it comes back
+      including what happens when the device goes silent and when it comes back.
+      Modbus TCP is done against pymodbus and OPC UA against Microsoft's OPC PLC,
+      silent and switched-off both. S7, Sparkplug B and EtherNet/IP are not done
 - [ ] HotLoop nodes: entity changes in, entity state, call a script, apply a
       recipe. Every command goes through HotLoop's write gate and lands in its
       logbook as `flow:<node id>`, and a write the gate refuses arrives at a
@@ -185,6 +187,33 @@ biggest hole in a product built for plants.
 - [ ] An MCP client node, so a flow can call tools on other servers, HotLoop's
       included
 
+### Phase 8: the editor, rewritten in Astro
+
+Last, on purpose. Nothing above waits on it and nothing above should be slowed
+down by it.
+
+Every HotLoop project is getting one modern UI, and this editor is the one that
+doesn't match yet. It's hand-built vanilla TypeScript on native SVG, which was the
+right call when the goal was a small static binary with nothing to audit, and it's
+now the thing that looks like it came from a different company. I'd rather fix
+that once, at the end, with every feature already settled, than rewrite a moving
+target and then rewrite it again every time a phase lands.
+
+- [ ] A design pass first, before a line of Astro. What the editor should look
+      and feel like next to the rest of HotLoop, settled on paper and in the
+      shared tokens, so the rewrite is building a thing somebody already decided
+      on instead of deciding as it goes
+- [ ] The editor rebuilt in Astro with the canvas, dialogs, history, review,
+      tests, tracing, search and groups all carried over, and none of them
+      allowed to get worse. The browser tests in `web/e2e` are the bar: they pass
+      against the new editor unchanged, or the rewrite isn't done
+- [ ] Still embedded in the one static binary, still no network needed on an
+      edge box, still inside the binary size budget, and the license gate still
+      covers everything that ships in the bundle
+
+Flow stays its own product through all of this. It shares the look with HotLoop,
+not the code, and it is never embedded in HotLoop.
+
 ---
 
 ## Everyday gaps
@@ -202,9 +231,9 @@ but plenty of people drop one that doesn't.
 - [x] Join by timeout and reduce, batch by time, split streaming
 - [x] MQTT v5 and last will
 - [x] TLS on TCP, cookies and multipart on HTTP
-- [ ] Editor: copy and paste, import and export a selection, subflow and group
+- [x] Editor: copy and paste, import and export a selection, subflow and group
       editing, search across flows, debug filtering
-- [ ] Browser tests for the editor in CI, and a click-through of every node
+- [x] Browser tests for the editor in CI, and a click-through of every node
       dialog
 - [x] Secrets by reference: a node reads a password from a mounted Kubernetes
       Secret or file, so it never lives in the flow file at all

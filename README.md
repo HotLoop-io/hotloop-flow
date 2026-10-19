@@ -42,7 +42,7 @@ because it's a feature, not the point.
 Current release is `2.1.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.1.0`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-36,000 lines of Go, more than a third of it tests, 51 node types, and the race
+36,000 lines of Go, more than a third of it tests, 60 node types, and the race
 detector comes back clean on every package. Apache 2.0, the same terms for a
 business as for anyone, and nothing to sign up for.
 
@@ -356,11 +356,60 @@ deploys it.
 theirs was. Now it says who deployed, when, their note, and their change node by
 node, then lets you load theirs, overwrite with yours, or keep editing.
 
+**Copy, cut and paste work like you'd expect, and they speak the flow file.**
+Select nodes, Ctrl+C, and what's on your clipboard is the same JSON every other
+flow tool reads, so you can paste it into a chat, a ticket, or another box. Paste
+puts it where your pointer is, with new ids every time, so pasting twice gives
+you two copies and never a collision. A wire to something you didn't copy is cut
+rather than left pointing at nothing, and a configuration node the nodes use
+comes along. If that configuration node is already in the flow you are pasting into, the copy
+shares it instead of opening a second connection to something that counts them.
+Credentials never go on the clipboard. A password in a paste buffer is how it ends
+up in a bug report.
+
+**Import and Export** do the same for a selection, one flow, or everything, with
+a box to copy from, a Download button, and a file picker on the way in. Garbage
+gets a reason ("the id a appears twice", "entry 1 has no id") and the dialog
+stays open. A node type this runtime doesn't have comes in grey and dashed, and
+the import tells you which ones, because a silently dropped node is worse than a
+loud one.
+
+**Subflows are edited on a canvas of their own.** Press *+ subflow*, and it opens
+with its input and output ports on it. Wire them to the nodes inside like
+anything else. *Subflow properties* sets the name, the colour, how many outputs
+it has, and the properties an instance can set. Instances on flows follow when
+the shape changes, and the palette lists every subflow so you can drop one.
+Double-click an instance to give it its own name and its own value for each
+property. A subflow can't be placed inside itself or inside one that holds it,
+and one still in use can't be deleted. The editor says so rather than letting the
+next deploy find out.
+
+**Groups.** Ctrl+G wraps the selection, Ctrl+Shift+G takes it apart. Double-click
+the title bar to name and colour it. Drag a group and everything in it goes with
+it. Drag a node into one and it joins, drag it out and it leaves. Groups nest.
+Deleting a group deletes what's in it, and Ctrl+Z puts it all back.
+
+**Search** (Ctrl+F, or the button) looks in every flow and subflow at once: names,
+types, ids, and every setting, including a line in the middle of a function body.
+A hit takes you to the right tab with the node selected and in the middle of the
+view. Configuration nodes show up too, and their hit opens their dialog, since
+they have no place on a canvas.
+
+**Debug filtering.** Narrow the sidebar to one flow, to the nodes you've got
+selected, to a word, or to just the errors. It applies to what's already in the
+log, not only to what arrives next, so narrowing it never makes the line you were
+looking at disappear.
+
 All of it is clicked through in a real browser on every pull request, against the
-real binary with the editor embedded. Playwright is a dev dependency of
-`web/e2e` only and never reaches the bundle. Writing those tests found that
-double-clicking a node to open its dialog had never worked in Chromium, which is
-about as embarrassing as a bug gets in a visual editor. Fixed.
+real binary with the editor embedded. That includes every node dialog the runtime
+offers: the list comes from `GET /nodes`, so a node added next month is in the
+test next month without anyone remembering to add it. Playwright is a dev
+dependency of `web/e2e` only and never reaches the bundle. Writing those tests
+found two things that had never worked in Chromium: double-clicking a node to open
+its dialog, and dragging a wire onto a node. The canvas holds the pointer for the
+whole drag, so the event's target was always the canvas and a wire let go over a
+node never found the node. Both about as embarrassing as bugs get in a visual
+editor. Both fixed.
 
 ### Flows as code
 
@@ -783,6 +832,159 @@ datagrams, no files written, nothing executed. A node that reaches outside and
 has no stand-in is refused by name before anything runs, and the palette test
 fails if anybody adds one.
 
+## Tracing and replay
+
+A value goes wrong at 2 AM and the debug sidebar tells you the value. It does
+not tell you which of the nine nodes it went through changed it, how long the
+slow one sat on it, or what it looked like going in. You find that out by
+sprinkling Debug nodes through the flow, deploying, waiting for it to happen
+again, and taking them out. I've done that on a live line. Never again.
+
+So every message that enters the flow gets a trace. Every debug message in the
+sidebar has a **Trace** button, and one click lights the path that message took
+on the canvas: the nodes it went through, the wires it travelled, and
+everything it never touched dimmed. Each node on the path says how long it had
+the message (`8.3 µs`, or `8.3 µs ×3` when it handled three pieces of it), and
+the Trace panel beside it lists every hop in order with the message as that
+node was handed it. Click a row and you're at the node. A hop that failed is
+red, with the error under it.
+
+It follows the message where it actually goes:
+
+- **Through a split.** One reading becomes three, and all three are on the
+  trace, each its own hop at every node after the split.
+- **Through a join.** The hop after a join has every message the join took in
+  for it as a parent, not just the one that happened to arrive last. The three
+  branches that fed it are all lit.
+- **Through a subflow.** The nodes inside run as copies with ids of their own,
+  and the hops are written down under those ids. The canvas lights the subflow
+  instance, because that's the node on the tab you're looking at.
+- **Into a Catch.** The node that failed has the error on its hop, and the Catch
+  that got it is the next hop, marked as reached by an error.
+
+The trace rides on the message but isn't in it. No flow can read it or break it
+with `msg = {...}`, and it never shows up in a Debug node, a test or a payload on
+the wire.
+
+### It can't grow
+
+This runs on the line it's watching, so every direction is bounded, and the
+limits are `trace:` in the [configuration](#configuration):
+
+| | Default |
+|---|---|
+| Traces kept, newest | 256 |
+| Hops one trace keeps, so a loop can't write itself down forever | 512 |
+| Biggest message a hop keeps a copy of | 16 KiB |
+| Everything together, roughly counted, oldest forgotten first | 16 MiB |
+| New traces started in a second | 1,000 |
+
+A message over 16 KiB keeps its timing and is marked as too big to show, and can't
+be replayed or turned into a test. Past 1,000 new traces a second the rest of
+that second's messages go untraced, because a sensor talking a hundred thousand
+times a second would otherwise pay for a trace on every one of them. A message
+that was skipped, or whose trace was pushed out while it was still on its way,
+stays untraced for the rest of its trip; starting a new trace halfway would only
+fill the buffer with the tails of journeys whose heads are gone. All of it is
+counted on `/metrics`, so you can see when it's happening.
+
+The soak: **a million messages through five nodes, 2026-10-18**, same machine as
+[the numbers above](#the-numbers). Heap after a forced GC, sampled every hundred
+thousand messages:
+
+| | Heap, every checkpoint | Messages a second |
+|---|---|---|
+| Tracing off | **1.3 MiB** | 192,596 |
+| Tracing every message (`perSecond: 0`) | **2.7 MiB** | 115,770 |
+| Default limits | **4.0 MiB** | 195,199 |
+
+It's the same number at all ten checkpoints. The tracer held 808,448 bytes in 256
+traces from the first checkpoint to the last, forgot 999,744 of the million as it
+went, and never went near its 16 MiB. Tracing every message does cost: it took
+this chain from 192k a second to 116k. That's why the default limit exists. At
+1,000 traces a second the cost is lost in the noise, and below that a trace is
+about 3 KB. If you want every message anyway, set `perSecond: 0` and
+read the first row of that table before you decide. Reproduce it with:
+
+```bash
+HOTLOOP_FLOW_SOAK_MESSAGES=1000000 go test ./internal/runtime/ \
+  -run TestTraceMemoryStaysFlatUnderASoak -v
+```
+
+It runs a smaller soak in every `go test`, and CI runs the full million on every
+pull request. If the heap stops being flat the test fails.
+
+### Replay it into a draft
+
+You found the bad value, you think you know the fix, and you've changed a node
+on the canvas. Don't deploy to find out. **Replay into draft** takes the message
+that started the trace, puts it into the flow as it is on your canvas right now,
+deployed or not, and tells you where it ends up compared with where it ended up
+the first time.
+
+"Ends up" means the places the message stopped: a Debug node, an MQTT Out, a
+Switch that matched nothing, a Join still waiting. For each one the comparison
+says it's the same, or which properties changed (`payload: "HIGH" -> "CRITICAL"`),
+or that the original ended there and the replay didn't, or the other way round.
+The replay's own path is lit on the canvas, so you can see where the draft
+sent it. **Back to the original trace** puts the first one back.
+
+It runs the way a [flow test](#tests-next-to-the-flows) runs, in a child process
+with the real runtime and the real nodes, and for the same reason: your draft
+starts every node in it and nothing in it can touch the plant. That means a node
+that would have called a web service answers with nothing, so a flow whose
+output depends on an answer shows up as a difference. That's the honest result.
+It will not pretend to have talked to a PLC it never talked to.
+
+### A trace becomes a test
+
+**Make test** in the Trace panel drafts a [flow test](#tests-from-the-editor)
+from the whole trace: the message that started it, put in at the source it came
+in at, and every place it ended that a test can watch, with what that node was
+handed expected there. It's the same two clicks as a test from a debug message,
+and it's better for the awkward flows, because a trace remembers every end a
+message reached. A split into three Debug nodes is three expectations, where one
+debug message was one.
+
+It says why when it can't. A trace that started inside a subflow, from a
+source's second output, or from a message too big to keep can't be put back in
+the way a test needs. And a message that was dropped by a Switch ends nowhere a
+test can watch, so it's refused rather than written as a test with nothing in it,
+because a test with nothing to check passes.
+
+### OpenTelemetry
+
+Point it at a collector and every hop goes out as a span:
+
+```yaml
+trace:
+  otlp:
+    endpoint: http://collector:4318   # OTLP over HTTP; /v1/traces is added
+    headers: {x-api-key: ...}         # if the collector wants one
+    serviceName: hotloop-flow
+```
+
+A trace is an OpenTelemetry trace and a hop is a span, with the hop that sent
+the message as its parent. A join's span has the first as its parent and the rest
+as links. Each span carries the node id, the node type, the message id, how many
+messages the node sent on, and the output port it was reached by, and an error
+is a span with an error status. **The messages never leave.** A payload is a
+plant's data and a collector is somebody else's server, so what goes out is the
+shape of the journey and its timing.
+
+It speaks OTLP/HTTP with the JSON encoding the spec defines, written out by hand
+in one file, rather than pulling in the OpenTelemetry SDK with its protobuf and
+gRPC to do the same single POST. The binary has a size budget and I'm not
+spending it on that. A hand-written client has to be proved the only way that
+counts, so CI
+starts the stock `otel/opentelemetry-collector` image, a pinned release, sends
+real traces through real splits, joins, subflows and a failing Function, and
+reads back what the collector says it received. Every span id, parent, link,
+name, attribute and error status has to match. There's no mock in that test
+anywhere. If the collector is down, the export drops spans and counts them and
+the flow never notices; `hotloop_flow_otlp_spans_failed_total` going above zero
+is how you find out.
+
 ---
 
 ## Security posture
@@ -924,29 +1126,98 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**51 node types.**
+**60 node types.**
 
 | Category | Nodes |
 |---|---|
 | Common | inject, debug, complete, catch, status, link in, link out, comment, junction |
 | Function | function, switch, change, range, template, delay, trigger, exec, rbe |
-| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out |
+| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, opcua read/write/subscribe |
 | Sequence | split, join, sort, batch |
 | Parser | csv, html, json, xml, yaml |
 | Storage | file, file in, watch, influxdb out, postgres |
 | Discover | scan, netinfo, for inventorying an OT segment |
-| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres |
+| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, opcua |
 
 `scan` sweeps a CIDR range and identifies Modbus and EtherNet/IP endpoints, and
 `netinfo` reports the interfaces the runtime can actually see, which in macvlan
-mode is how a flow discovers its own address on the OT VLAN. Nothing in the
-palette can talk to the PLC `scan` just found yet. Modbus, OPC UA, S7, Sparkplug
-B and EtherNet/IP nodes are Phase 5 of the [roadmap](docs/ROADMAP.md), and that's
-the biggest hole in a product built for plants.
+mode is how a flow discovers its own address on the OT VLAN. Modbus TCP and
+OPC UA nodes can talk to what `scan` finds now, and they're the next section. S7,
+Sparkplug B and EtherNet/IP are still Phase 5 of the [roadmap](docs/ROADMAP.md).
 
 One Go descriptor per node type declares its properties, ports, defaults and
 help text, and the editor renders the dialog from it, so a node can't ship with
 a dialog that disagrees with its runtime.
+
+---
+
+## The plant floor
+
+`scan` could find a PLC and nothing in the palette could talk to it, which is a
+funny thing to ship in a product for plants. Modbus TCP and OPC UA are in now.
+Each one is a config node that holds the connection to the device and action
+nodes that point at it, same shape as the InfluxDB node, and the editor builds
+every dialog from the descriptor like everything else.
+
+They sit on MIT-licensed libraries, [simonvetter/modbus](https://github.com/simonvetter/modbus)
+v1.6.4 and [gopcua/opcua](https://github.com/gopcua/opcua) v0.9.1. Nothing is
+copied out of HotLoop's drivers, which are a different license and stay that way.
+
+**Modbus TCP** is `modbus read` and `modbus write` on a `hotloop-flow-modbus`
+server. Holding registers, input registers, coils and discrete inputs. Registers
+read as uint16, int16, uint32, int32, float32, uint64, int64 or float64, with the
+byte order and word order as switches, because the two devices on your line will
+not agree on either and the manual will not say. A quantity is values, not
+registers, so two float32 is four registers on the wire. Addresses are zero
+based as they go on the wire, and the dialog and the error both say out loud that
+register 40001 in a manual is address 0.
+
+**OPC UA** is `opcua read`, `opcua write` and `opcua subscribe` on a
+`hotloop-flow-opcua` server. Security mode None, Sign or SignAndEncrypt with the
+Basic256Sha256 or Aes128_Sha256_RsaOaep policy, anonymous or a username and
+password. A client certificate comes from a `tls-config` (it needs an
+application URI in the subject alternative name), and without one the node makes
+a throwaway certificate each time the flow starts and logs a warning, because
+the server then has to be told to trust a new one every time. If you set a
+server thumbprint the node refuses any other certificate. If you don't, it
+accepts whatever the server shows, which encrypts the conversation and proves
+nothing about who you're talking to. Pin it.
+
+**When the device goes quiet.** This is what a plant floor does all day, so it
+is tested the ugly way, against the real simulators with a line in between that
+swallows the traffic (a hung PLC) or slams the door (a switched-off one). A
+read or write that gets no answer fails inside the timeout, says so in words
+(`no answer from 10.20.1.15:502 within 3s. The device is silent. Check that it
+is powered...`), drops the connection and opens a fresh one on the next message.
+An OPC UA subscription notices on its own, turns its badge red, raises one error
+for a Catch node per outage and not one per retry, waits 1 second and then
+longer up to 30, and picks the subscription back up when the server returns. No
+redeploy. Errors name the thing to change: the Modbus exception code and what it
+usually means, the OPC UA status code and which setting it points at, a refused
+connection versus a silent one.
+
+**Writes change equipment, and there is no ceremony.** I looked for a
+confirmation pattern in Flow to follow and there isn't one for equipment. The
+guards that exist bound what a node may reach (`discovery.allowedCIDRs` for
+`scan`, the file and secret scopes), and nothing asks "are you sure" before a
+message does something. So the write nodes don't either. A write node is a
+deliberate thing someone placed on a canvas and put through the same deploy
+record as everything else, and the message arriving at its output means the device acknowledged it.
+When HotLoop is on the network, equipment writes are supposed to go through its
+write gate instead of straight to the PLC. That is on the roadmap and it isn't
+built, but nothing here stands in its way.
+
+**Tested against** Microsoft's OPC PLC (`opc-plc` 2.15.11) with anonymous and
+username logins across None, Sign and SignAndEncrypt, and against pymodbus
+through `oitc/modbus-server` 2.3.0, with real exception codes coming back. CI
+starts both, and fails if a test skips instead of running. Not done:
+Aes256_Sha256_RsaPss fails against OPC PLC on the client's signature
+(`BadSecurityChecksFailed`), so it isn't in the dropdown. Basic256 and
+Basic128Rsa15 are deprecated and the simulator doesn't offer them, so they're
+out too. A setting I can't test doesn't get a dropdown entry. No Modbus RTU, no
+Modbus over TLS, no OPC UA events, history or method calls, no browse, and 64 bit
+integers past 2^53 come out as a string of their exact digits because a flow's
+numbers can't hold them.
 
 ---
 
@@ -1186,6 +1457,18 @@ audit:
 tests:
   gate: false               # refuse a deploy that fails data.dir/flows.test.yaml
   timeout: 2m               # wall clock for one run of the flow tests
+
+trace:                      # where every message went, kept in memory, bounded
+  enabled: true
+  traces: 256               # journeys kept, newest
+  maxHops: 512              # hops one journey keeps
+  maxMessageBytes: 16384    # the biggest message a hop keeps a copy of
+  maxBytes: 16777216        # everything together, oldest forgotten first
+  perSecond: 1000           # new traces a second; 0 traces every message
+  otlp:
+    endpoint: ""            # http://collector:4318 sends every hop as a span
+    serviceName: hotloop-flow
+    interval: 2s            # the longest a finished hop waits to be sent
 ```
 
 A typo in that file is a startup failure rather than a setting that silently does
@@ -1263,6 +1546,11 @@ timeouts.
 | `POST /tests/run` | `flows.read` | Runs the suite, or `"tests"` from the body, against `"flows"` from the body or what's running. Returns the report. Deploys nothing. |
 | `POST /tests/from-debug` | `flows.read` | Drafts a test from `{"node", "msgId"}`, a message a Debug node showed. Saves nothing. |
 | `POST /tests/cases` | `flows.write` | Adds the tests in the body, a test file of their own, to the end of the suite. |
+| `GET /traces` | `flows.read` | The traces kept, newest first, with what the buffer holds and its limits. `?limit=N`. 404 with `trace.enabled: false`. |
+| `GET /traces/find` | `flows.read` | The trace a message was in, from `?msgId=` and `?node=`, the id and Debug node the sidebar shows. Returns every hop and the path to the one asked about. |
+| `GET /traces/{id}` | `flows.read` | One trace, every hop with its timing and the message as the node was handed it. |
+| `POST /traces/{id}/test` | `flows.read` | Drafts a flow test from the trace. Saves nothing. |
+| `POST /traces/{id}/replay` | `flows.read` | Puts the message that started the trace into `"flows"` from the body, or what's running, in a child process, and returns where it ends up against where it ended up. Deploys nothing. |
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
 | `GET /comms` | `status.read` | The editor's status and debug websocket. Send the token as the subprotocol `hotloop-flow.bearer.<token>`, offered beside `hotloop-flow`. That is what the editor does. `?access_token=<token>` in the URL still works for scripts that already use it, and logs a warning for every connection that does, because a URL ends up in proxy and access logs. |
@@ -1346,6 +1634,15 @@ you should not need a second container to find out that your inbox is full.
 | `hotloop_flow_context_flushes_total`, `hotloop_flow_context_rows_written_total` | counter | Transactions that wrote context, and rows they actually changed. |
 | `hotloop_flow_context_flush_failures_total` | counter | Context flushes that failed. The changes are kept and tried again. Should be zero. |
 | `hotloop_flow_audit_write_failures_total` | counter | Audit entries that couldn't be written. Should be zero forever. |
+| `hotloop_flow_traces_kept` | gauge | Message traces in the buffer right now. |
+| `hotloop_flow_trace_bytes` | gauge | Roughly what they hold. Bounded by `trace.maxBytes`. |
+| `hotloop_flow_traces_started_total` | counter | Message traces started. |
+| `hotloop_flow_traces_forgotten_total` | counter | Traces pushed out to make room. |
+| `hotloop_flow_traces_skipped_total` | counter | Messages not traced because `trace.perSecond` was reached. |
+| `hotloop_flow_trace_hops_dropped_total` | counter | Hops not written down: their trace was full or already forgotten. |
+| `hotloop_flow_otlp_spans_exported_total` | counter | Spans the OpenTelemetry collector accepted. Only with an endpoint. |
+| `hotloop_flow_otlp_spans_dropped_total` | counter | Spans dropped because the export queue was full. |
+| `hotloop_flow_otlp_spans_failed_total` | counter | Spans the collector didn't take after a retry. Above zero means it isn't getting them. |
 
 The one to alert on is `hotloop_flow_node_queue_high_water` against
 `hotloop_flow_node_queue_capacity`. High water is the early warning that a flow is
@@ -1470,8 +1767,8 @@ file, so an instance never gets reported as "supported" while staying silent
 about what is inside it. That is the difference between finding out at your desk
 and finding out when a line stops.
 
-By compatibility level the 51 node types are 10 full, 26 partial, 9 deliberately
-divergent, and 6 of Flow's own. Every node declares how it relates to
+By compatibility level the 60 node types are 12 full, 21 partial, 14 deliberately
+divergent, and 13 of Flow's own. Every node declares how it relates to
 Node-RED's node of the same name, and **a test fails the build if a node claims
 partial compatibility without stating in writing what is missing.** A node
 that is 90% compatible and silent about the other 10% is more dangerous than one
@@ -1549,8 +1846,9 @@ the point. A flow that leans on one breaks the day it stops being there.
 
 **Not done yet**, roughly in the order it bothers me:
 
-- **No industrial protocol nodes.** `scan` finds a Modbus or EtherNet/IP device
-  and nothing in the palette can then talk to it. Phase 5.
+- **No S7, Sparkplug B or EtherNet/IP nodes yet.** Modbus TCP and OPC UA are
+  in. `scan` finds an EtherNet/IP device and nothing in the palette can talk to
+  it. Phase 5.
 - **No dead-letter queue on a durable wire.** A message its target fails forever
   holds the wire, with the ones behind it. Fine for a historian that's down, wrong
   for a message that's malformed. The retry counter shows it, nothing sets it
@@ -1560,9 +1858,6 @@ the point. A flow that leans on one breaks the day it stops being there.
   are still to do, and I won't print a card figure I didn't measure on a card.
 - **A node that uses the WASM host.** The host is built and tested. Nothing in
   the palette calls it, so WASM guests can't run in a flow today.
-- **Editor click-through for the newer nodes.** The dialogs are built from each
-  node's descriptor, so they render, but nobody has clicked through the HTTP,
-  WebSocket, TCP or UDP ones by hand yet.
 - **It has never run on a real plant floor.** Shepherd Boy Farms is the intended
   first site. Everything past the deploy line is unproven in the field, and I'm
   not calling it production-hardened until a plant has had a real go at
@@ -1594,7 +1889,8 @@ hotloop-flow/
     node/            what a node type is: Descriptor, registry, contracts
     nodes/           the built-in palette
     runtime/         the scheduler, delivery, error and status routing
-    flowtest/        flow tests: the YAML, the runner, JUnit
+    flowtest/        flow tests: the YAML, the runner, JUnit; replay and tests from a trace
+    otlp/            the OpenTelemetry export: spans over OTLP/HTTP
     store/           context (memory and SQLite), durable wire queues, flow file, credentials
     js/              goja host
     wasmhost/        wazero host, tested, not used by any node yet
@@ -1650,7 +1946,7 @@ tests genuinely ran rather than silently skipping, that the editor bundle is
 actually inside the binary, that the binary is under 40MiB and statically linked,
 a 60-second fuzz run against the property expression parser, a 30-second one
 proving a flow never differs from itself, a rollback against a real broker that
-refuses anonymous clients, and the editor clicked through in a real browser.
+refuses anonymous clients, and the editor clicked through in a real browser, every node dialog included.
 Every one of those exists because the alternative was a green checkmark over
 something broken, and a green checkmark is worse than a red one.
 

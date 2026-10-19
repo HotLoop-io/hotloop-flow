@@ -1,0 +1,12 @@
+{
+  "Folder": "FlowTest",
+  "NodeList": [
+    { "NodeId": "Int32Tag", "Name": "Int32Tag", "DataType": "Int32", "Description": "A signed 32 bit integer a test can write" },
+    { "NodeId": "DoubleTag", "Name": "DoubleTag", "DataType": "Double", "Description": "A double a test can write" },
+    { "NodeId": "StringTag", "Name": "StringTag", "DataType": "String", "Description": "A string a test can write" },
+    { "NodeId": "BoolTag", "Name": "BoolTag", "DataType": "Boolean", "Description": "A boolean a test can write" },
+    { "NodeId": "UIntTag", "Name": "UIntTag", "DataType": "UInt16", "Description": "An unsigned 16 bit integer a test can write" },
+    { "NodeId": "ReadOnlyTag", "Name": "ReadOnlyTag", "DataType": "Int32", "AccessLevel": "CurrentRead", "Description": "Refuses writes" },
+    { "NodeId": "SubTag", "Name": "SubTag", "DataType": "Int32", "Description": "What the subscribe test changes" }
+  ]
+}
