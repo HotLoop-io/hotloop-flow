@@ -96,14 +96,16 @@ LABEL org.opencontainers.image.title="HotLoop Flow" \
       org.opencontainers.image.description="A visual flow engine for the plant floor. One static Go binary." \
       org.opencontainers.image.vendor="HotLoop" \
       org.opencontainers.image.source="https://github.com/HotLoop-io/hotloop-flow" \
-      org.opencontainers.image.licenses="Apache-2.0"
+      org.opencontainers.image.licenses="BUSL-1.1"
 
 COPY --from=builder /out/hotloop-flow /usr/local/bin/hotloop-flow
 
 # The binary carries code ported from Node-RED, cronosjs and a handful of MIT
-# libraries. Apache 2.0 wants the NOTICE to go wherever the work goes, and the
+# libraries. Apache-2.0 wants its text and the NOTICE to go wherever the work
+# goes, and the
 # ISC and MIT licenses want their notices in every copy. The image is a copy.
 COPY --from=builder /src/LICENSE /src/NOTICE /out/THIRD_PARTY_LICENSES /usr/share/doc/hotloop-flow/
+COPY --from=builder /src/LICENSES/ /usr/share/doc/hotloop-flow/LICENSES/
 
 # 65532 is distroless's nonroot user, and it matches the chart's securityContext.
 # The chart's fsGroup makes the PVC writable by it.

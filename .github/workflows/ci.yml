@@ -528,7 +528,7 @@ jobs:
           docker cp "$id:/usr/share/doc/hotloop-flow" doc
           docker rm "$id" >/dev/null
           ls -l doc
-          for f in LICENSE NOTICE THIRD_PARTY_LICENSES; do
+          for f in LICENSE LICENSES/Apache-2.0.txt NOTICE THIRD_PARTY_LICENSES; do
             test -s "doc/$f" || { echo "::error::$f is missing from the image"; exit 1; }
           done
           grep -q '^github.com/dop251/goja ' doc/THIRD_PARTY_LICENSES || { echo "::error::the Go modules are not listed"; exit 1; }

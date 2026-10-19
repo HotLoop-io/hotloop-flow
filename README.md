@@ -8,7 +8,7 @@ wires in one static binary small enough for a Pi, with a scheduler that doesn't
 fall over when a sensor starts talking faster than the thing reading it.
 
 [![CI](https://github.com/HotLoop-io/hotloop-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/HotLoop-io/hotloop-flow/actions/workflows/ci.yml)
-[![Licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
+[![Licence](https://img.shields.io/badge/licence-BUSL--1.1-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8)](go.mod)
 
 What that means on a bad night:
@@ -43,8 +43,8 @@ Current release is `2.1.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.1.0`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
 36,000 lines of Go, more than a third of it tests, 64 node types, and the race
-detector comes back clean on every package. Apache 2.0, the same terms for a
-business as for anyone, and nothing to sign up for.
+detector comes back clean on every package. Home and lab use is free, and
+business use is free through EmberNET, under HotLoop's Business Source License.
 
 ---
 
@@ -2083,15 +2083,20 @@ and every command a flow sends goes through HotLoop's write gate and lands in it
 logbook, are Phase 5 of the [roadmap](docs/ROADMAP.md). Until then they run side
 by side and share nothing but a broker, if you give them one.
 
-Those four are under the HotLoop Community License, where business use goes
-through EmberNET. Flow isn't. It's Apache 2.0, the same for a business as for
-anyone else, with no EmberNET sign-up, and nothing about the lineup's license
-touches it. Run it at work, ship it in a product, fork it. That's what Apache
-2.0 is for.
+Flow is under the same license as those four: HotLoop's Business Source License
+1.1. Home and lab use is free. Business use is free when it runs through
+[EmberNET](https://embernet.ai), and there is no other business path. Hosting
+Flow as a service for other people, reselling it and embedding it in a product
+you sell are not granted. Unlike the others, Flow's source is public, so you can
+read every line you run.
 
 ## Licence
 
-Apache 2.0. A few pieces are ported from Node-RED and from the libraries its
+HotLoop's Business Source License 1.1 (`BUSL-1.1`). It is not an open source
+license, and we won't pretend it is. Each version converts to GPL-3.0 four years
+after it is first made publicly available. [LICENSE](LICENSE) is the legal text
+and the [Terms of Service](https://hotloop.io/terms) cover the rest. A few
+pieces are ported from Node-RED and from the libraries its
 nodes use, because an imported flow has to get exactly the answer it got before.
 [NOTICE](NOTICE) lists every one of them, with its copyright and license. See
 [docs/compatibility.md](docs/compatibility.md) for every deliberate divergence.
