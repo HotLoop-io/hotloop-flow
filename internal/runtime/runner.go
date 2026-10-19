@@ -146,7 +146,28 @@ type delivery struct {
 	// enqueued is when the message entered the inbox, used to report queue
 	// latency.
 	enqueued time.Time
+
+	// ack, set on a message a durable wire is delivering, is called exactly
+	// once with how it went: nil when the node's handler returned without
+	// error, the error otherwise, and an error too if the message is dropped
+	// before the node sees it. The wire marks the message done only on nil.
+	ack func(error)
+
+	// divert, set with ack on a message a durable wire sent straight from
+	// memory, is asked just before the node would handle it. True means the wire
+	// has started spilling to disk and this message must go there too, in order,
+	// so the node skips it and the ack gets an error.
+	divert func() bool
+
+	// retry marks a second or later attempt at a durable message. A failure
+	// then goes back to the wire to be tried again and is not raised to the
+	// Catch nodes a second time.
+	retry bool
 }
+
+// errDropped is what a durable message's ack gets when it never reached the
+// node.
+var errDropped = errors.New("the message was dropped before the node handled it")
 
 // runner owns one node instance: its goroutine, its inbox, and its wiring.
 type runner struct {
@@ -190,7 +211,7 @@ type runner struct {
 	// It is a pointer swapped atomically because a partial deploy rewires a
 	// node that is still running: the node keeps sending while its targets
 	// change underneath it, and a plain slice there is a data race.
-	wires atomic.Pointer[[][]*runner]
+	wires atomic.Pointer[[][]wireTarget]
 
 	// exited is set once the goroutine has gone and will never read the inbox
 	// again. Anything that lands in the inbox after that is salvaged by
@@ -230,7 +251,13 @@ type runner struct {
 // from identifies the sending node, so that an overflow error is attributed to
 // the sender's Catch scope rather than appearing from nowhere.
 func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
-	d := delivery{msg: msg, enqueued: r.rt.opts.Now()}
+	r.enqueueDelivery(ctx, delivery{msg: msg}, from)
+}
+
+// enqueueDelivery is enqueue for a delivery that may carry an ack.
+func (r *runner) enqueueDelivery(ctx context.Context, d delivery, from *runner) {
+	msg := d.msg
+	d.enqueued = r.rt.opts.Now()
 
 	// Counted before the node can see it, and taken back on every path below
 	// where it never reaches the inbox. See Runtime.outstanding.
@@ -260,6 +287,7 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 		r.rt.outstanding.Add(-1)
 		r.stats.Dropped.Add(1)
 		r.rt.onDropped(r, msg, "drop-newest")
+		d.reject()
 		return
 
 	case OverflowDropOldest:
@@ -271,6 +299,7 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 			r.rt.outstanding.Add(-1)
 			r.stats.Dropped.Add(1)
 			r.rt.onDropped(r, old.msg, "drop-oldest")
+			old.reject()
 		default:
 		}
 		select {
@@ -278,6 +307,7 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 			r.recordQueueDepth()
 		case <-ctx.Done():
 			r.rt.outstanding.Add(-1)
+			d.reject()
 		}
 		return
 
@@ -286,6 +316,7 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 		r.stats.Dropped.Add(1)
 		err := fmt.Errorf("%w: %s (%s) queue is at capacity %d", ErrInboxFull, r.id, r.typ, r.capacity)
 		r.rt.raiseError(from, err, msg)
+		d.reject()
 		return
 
 	default: // OverflowBlock
@@ -297,6 +328,7 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 			r.recordQueueDepth()
 		case <-ctx.Done():
 			r.rt.outstanding.Add(-1)
+			d.reject()
 		case <-timer.C:
 			// A cycle of saturated inboxes would otherwise deadlock here
 			// permanently. Report it and drop, so the flow keeps running and
@@ -305,6 +337,7 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 			r.stats.Dropped.Add(1)
 			err := fmt.Errorf("%w: %s (%s) after %s", ErrBlockTimeout, r.id, r.typ, r.rt.opts.BlockTimeout)
 			r.rt.raiseError(from, err, msg)
+			d.reject()
 		}
 	}
 }
@@ -319,6 +352,59 @@ func (r *runner) recordQueueDepth() {
 			return
 		}
 	}
+}
+
+// reject tells a durable message's wire that the node never got it.
+func (d delivery) reject() {
+	if d.ack != nil {
+		d.ack(errDropped)
+	}
+}
+
+// tryPush offers a durable wire's message to the inbox without waiting. False
+// means the node is not running or its inbox is full, which is the wire's cue to
+// start spilling to disk.
+func (r *runner) tryPush(d delivery) bool {
+	if r.exited.Load() {
+		return false
+	}
+	d.enqueued = r.rt.opts.Now()
+	r.rt.outstanding.Add(1)
+	select {
+	case r.inbox <- d:
+	default:
+		r.rt.outstanding.Add(-1)
+		return false
+	}
+	r.recordQueueDepth()
+	if r.exited.Load() {
+		// In its own goroutine: salvage acks what it finds, and the caller is
+		// holding the wire's lock.
+		go r.rt.salvage(r)
+	}
+	return true
+}
+
+// pushDurable puts a durable wire's message in the inbox and waits for room
+// instead of applying the overflow policy: the message is safe on disk, so
+// there is nothing to drop and nothing to hurry. It reports whether it went in.
+func (r *runner) pushDurable(ctx context.Context, d delivery) bool {
+	d.enqueued = r.rt.opts.Now()
+	r.rt.outstanding.Add(1)
+	select {
+	case r.inbox <- d:
+	case <-ctx.Done():
+		r.rt.outstanding.Add(-1)
+		return false
+	case <-r.done:
+		r.rt.outstanding.Add(-1)
+		return false
+	}
+	r.recordQueueDepth()
+	if r.exited.Load() {
+		r.rt.salvage(r)
+	}
+	return true
 }
 
 // loop is the node's goroutine. It handles exactly one message at a time, so a
@@ -354,6 +440,18 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 	// this message caused, including an error raised to a Catch node, has been
 	// queued and counted in its own right.
 	defer r.rt.outstanding.Add(-1)
+
+	// A durable message is acknowledged after the node is done with it and
+	// after anything it sent on has been handed over, which is why this sits
+	// above the recover below and runs after it.
+	var result error
+	if d.ack != nil {
+		defer func() { d.ack(result) }()
+	}
+	if d.divert != nil && d.divert() {
+		result = errDropped
+		return
+	}
 	if o := r.rt.observer; o != nil {
 		o.Received(r.id, d.msg.Clone())
 	}
@@ -373,7 +471,10 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 			// this pod alive.
 			r.stats.Errors.Add(1)
 			err := fmt.Errorf("node %s (%s) panicked: %v", r.id, r.typ, p)
-			r.rt.raiseError(r, err, d.msg)
+			result = err
+			if !d.retry {
+				r.rt.raiseError(r, err, d.msg)
+			}
 		}
 	}()
 
@@ -381,9 +482,12 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 	err := r.node.Receive(ctx, d.msg, r.emitter())
 	r.rt.observeExecTime(r, r.rt.opts.Now().Sub(start))
 
+	result = err
 	if err != nil {
 		r.stats.Errors.Add(1)
-		r.rt.raiseError(r, err, d.msg)
+		if !d.retry {
+			r.rt.raiseError(r, err, d.msg)
+		}
 	}
 }
 
@@ -465,6 +569,13 @@ func (r *runner) attach(inst node.Node) {
 	if d, ok := inst.(node.Deferrer); ok {
 		r.deferred = d
 	}
+}
+
+// wireTarget is where one wire leads: straight into a runner's inbox, or into a
+// durable wire's queue on disk.
+type wireTarget struct {
+	r *runner
+	d *durableWire
 }
 
 // emitter is the Emitter handed to a node. Every method is safe to call from any

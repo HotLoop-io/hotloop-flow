@@ -31,6 +31,7 @@ type Config struct {
 	Data      Data      `yaml:"data"`
 	Auth      Auth      `yaml:"auth"`
 	Runtime   Runtime   `yaml:"runtime"`
+	Store     Store     `yaml:"store"`
 	Discovery Discovery `yaml:"discovery"`
 	Exec      Exec      `yaml:"exec"`
 	Files     Files     `yaml:"files"`
@@ -228,6 +229,48 @@ type Runtime struct {
 	CloseTimeout  time.Duration `yaml:"closeTimeout"`
 }
 
+// Store is the one SQLite file behind persistent context and durable wires.
+type Store struct {
+	// Path is the database file. Empty means state.db in the data directory,
+	// which is the PVC; anywhere else has to be a path that survives a restart
+	// too, or the point is lost.
+	Path string `yaml:"path"`
+
+	// Synchronous is "normal" or "full". Normal does not fsync every commit: a
+	// commit survives the process being killed, and only a power cut can lose
+	// the last few. Full fsyncs every commit, and wears an SD card for it.
+	Synchronous string `yaml:"synchronous"`
+
+	Context StoreContext `yaml:"context"`
+	Durable StoreDurable `yaml:"durable"`
+}
+
+// StoreContext is persistent flow, global and node context.
+type StoreContext struct {
+	// Persist keeps context across restarts. Off, context is memory only, as in
+	// a fresh Node-RED.
+	Persist bool `yaml:"persist"`
+
+	// FlushInterval is how long a changed value waits before it is written. A
+	// kill -9 can lose this much. Zero writes every change before the call
+	// returns.
+	FlushInterval time.Duration `yaml:"flushInterval"`
+}
+
+// StoreDurable is the disk behind durable wires.
+type StoreDurable struct {
+	// MaxBytes is the disk quota for every durable wire together. When it is
+	// full the receiving node's overflow policy decides what gives.
+	MaxBytes int64 `yaml:"maxBytes"`
+
+	// AckFlush is how long a message a target has taken waits to be marked done
+	// on disk. Marks are written together, which saves writes. A kill -9 can send
+	// the messages inside the window a second time. Zero marks each message
+	// before the next is sent, so a kill can repeat at most the one in flight,
+	// at a write per message.
+	AckFlush time.Duration `yaml:"ackFlush"`
+}
+
 // Discovery gates the network discovery nodes.
 type Discovery struct {
 	Enabled bool `yaml:"enabled"`
@@ -357,6 +400,11 @@ func Default() Config {
 			BlockTimeout:  30 * time.Second,
 			CloseTimeout:  15 * time.Second,
 		},
+		Store: Store{
+			Synchronous: "normal",
+			Context:     StoreContext{Persist: true, FlushInterval: 30 * time.Second},
+			Durable:     StoreDurable{MaxBytes: 256 << 20, AckFlush: 100 * time.Millisecond},
+		},
 		Logging: Logging{Level: "info", Format: "text"},
 		Metrics: Metrics{Enabled: true, Path: "/metrics"},
 		History: History{Retain: 100},
@@ -411,6 +459,27 @@ func applyEnv(cfg *Config) {
 
 	envInt("HOTLOOP_FLOW_INBOX_CAPACITY", &cfg.Runtime.InboxCapacity)
 	envStr("HOTLOOP_FLOW_OVERFLOW", &cfg.Runtime.Overflow)
+
+	envStr("HOTLOOP_FLOW_STORE_PATH", &cfg.Store.Path)
+	envStr("HOTLOOP_FLOW_STORE_SYNCHRONOUS", &cfg.Store.Synchronous)
+	if v, ok := os.LookupEnv("HOTLOOP_FLOW_CONTEXT_PERSIST"); ok && v != "" {
+		cfg.Store.Context.Persist = envBool("HOTLOOP_FLOW_CONTEXT_PERSIST")
+	}
+	if v := os.Getenv("HOTLOOP_FLOW_CONTEXT_FLUSH_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Store.Context.FlushInterval = d
+		}
+	}
+	if v, ok := os.LookupEnv("HOTLOOP_FLOW_DURABLE_ACK_FLUSH"); ok && v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Store.Durable.AckFlush = d
+		}
+	}
+	if v := os.Getenv("HOTLOOP_FLOW_DURABLE_MAX_BYTES"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			cfg.Store.Durable.MaxBytes = n
+		}
+	}
 
 	envStr("HOTLOOP_FLOW_LOG_LEVEL", &cfg.Logging.Level)
 	envStr("HOTLOOP_FLOW_LOG_FORMAT", &cfg.Logging.Format)
@@ -556,6 +625,21 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("runtime.inboxCapacity must be at least 1")
 	}
 
+	switch c.Store.Synchronous {
+	case "normal", "full":
+	default:
+		return fmt.Errorf("store.synchronous %q is not normal or full", c.Store.Synchronous)
+	}
+	if c.Store.Context.FlushInterval < 0 {
+		return fmt.Errorf("store.context.flushInterval must not be negative; 0 writes every change at once")
+	}
+	if c.Store.Durable.AckFlush < 0 {
+		return fmt.Errorf("store.durable.ackFlush must not be negative; 0 marks each message before the next is sent")
+	}
+	if c.Store.Durable.MaxBytes < 1<<20 {
+		return fmt.Errorf("store.durable.maxBytes must be at least 1 MiB")
+	}
+
 	switch c.Logging.Level {
 	case "error", "warn", "info", "debug", "trace":
 	default:
@@ -652,6 +736,14 @@ func (c *Config) FlowPath() string { return filepath.Join(c.Data.Dir, c.Data.Flo
 // CredentialsPath is the absolute path to the credential store.
 func (c *Config) CredentialsPath() string {
 	return filepath.Join(c.Data.Dir, c.Data.CredentialsFile)
+}
+
+// StorePath is the state database: persistent context and durable wires.
+func (c *Config) StorePath() string {
+	if c.Store.Path != "" {
+		return c.Store.Path
+	}
+	return filepath.Join(c.Data.Dir, "state.db")
 }
 
 // AuditPath is where the audit trail lives.

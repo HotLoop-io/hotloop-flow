@@ -212,6 +212,33 @@ func cmdServe(args []string) error {
 		log.Error("deployment log", "detail", w)
 	}
 
+	// The state database: persistent context, and the disk durable wires queue
+	// on. Opened before anything runs, because a flow that was running when the
+	// process died resumes its queues the moment it starts.
+	stateDB, err := store.OpenSQLite(cfg.StorePath(), store.SQLiteOptions{Synchronous: cfg.Store.Synchronous})
+	if err != nil {
+		return fmt.Errorf("opening the state database: %w", err)
+	}
+	defer stateDB.Close()
+	spool, err := store.OpenSpool(stateDB, store.SpoolOptions{
+		MaxBytes: cfg.Store.Durable.MaxBytes,
+		AckFlush: cfg.Store.Durable.AckFlush,
+		SyncAcks: cfg.Store.Durable.AckFlush == 0,
+	})
+	if err != nil {
+		return fmt.Errorf("opening the durable wire queues: %w", err)
+	}
+	defer spool.Close()
+	contexts := store.NewScopedContexts()
+	var extraMetrics []metrics.Family
+	extraMetrics = append(extraMetrics, spool.Families()...)
+	if cfg.Store.Context.Persist {
+		pc := store.NewPersistentContexts(stateDB, cfg.Store.Context.FlushInterval)
+		defer pc.Close()
+		contexts = pc.Scoped()
+		extraMetrics = append(extraMetrics, pc.Families()...)
+	}
+
 	app := &application{
 		cfg:       cfg,
 		log:       log,
@@ -219,7 +246,8 @@ func cmdServe(args []string) error {
 		creds:     creds,
 		history:   deployments,
 		registry:  node.Default,
-		contexts:  store.NewScopedContexts(),
+		contexts:  contexts,
+		spool:     spool,
 		tests:     newTestSuite(cfg),
 		capture:   runtime.NewCapture(runtime.DefaultCaptureSize, runtime.DefaultCaptureMaxBytes),
 	}
@@ -227,7 +255,6 @@ func cmdServe(args []string) error {
 	// The git mirror, if one is configured. Built before the server so a
 	// mirror that can't work refuses at startup, not at the first deploy.
 	var mirrorStatus func() any
-	var extraMetrics []metrics.Family
 	if g := cfg.History.Git; g.URL != "" {
 		m, err := gitmirror.New(gitmirror.Config{
 			URL: g.URL, Branch: g.Branch, Path: g.Path, EmailDomain: g.EmailDomain,
@@ -366,6 +393,7 @@ type application struct {
 	mirror    *gitmirror.Mirror
 	registry  *node.Registry
 	contexts  *store.ScopedContexts
+	spool     *store.Spool
 	hub       interface{ Broadcast(runtime.Event) }
 	// tests is the flow test suite kept beside the flow file, and the deploy
 	// gate's way of running it.
@@ -405,6 +433,7 @@ func (a *application) runtimeOptions() runtime.Options {
 func (a *application) start(ctx context.Context, flows *engine.Flows) []runtime.StartError {
 	rt := runtime.New(a.registry, flows, a.runtimeOptions())
 	rt.SetContexts(a.contexts)
+	rt.SetSpool(a.spool)
 	rt.SetCapture(a.capture)
 	rt.SetCredentials(func(nodeID string) map[string]string {
 		return a.creds.Get(nodeID)

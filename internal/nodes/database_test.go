@@ -376,3 +376,72 @@ func TestNormalisePGRow(t *testing.T) {
 		t.Errorf("value = %#v (%T), want float64 21.5", got["value"], got["value"])
 	}
 }
+
+// A message that waited on a durable wire is stamped with when it entered the
+// wire, and the point is written at that time, in the server's precision. The
+// alternative is every reading held through an outage landing in the minute the
+// historian came back, and a redelivery landing as a second row.
+func TestInfluxUsesWhenADurableWireQueuedTheMessage(t *testing.T) {
+	const cfg = `{
+        "server":"srv","measurement":"m","measurementType":"str",
+        "fields":[{"column":"value","value":"payload","valueType":"msg"}]
+    }`
+	n, fake, _ := influxHarness(t, cfg)
+	if _, err := send(t, n, msg(t, `{"payload":1,"_queuedAt":"2023-11-14T22:13:20.000000123Z"}`)); err != nil {
+		t.Fatalf("Receive: %v", err)
+	}
+	if !strings.HasSuffix(fake.writes[0], " 1700000000000000123") {
+		t.Errorf("line = %q, want it to end with the queue time in nanoseconds", fake.writes[0])
+	}
+
+	// The same message twice is the same point twice.
+	if _, err := send(t, n, msg(t, `{"payload":1,"_queuedAt":"2023-11-14T22:13:20.000000123Z"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if fake.writes[0] != fake.writes[1] {
+		t.Errorf("a redelivered message wrote a different line:\n%q\n%q", fake.writes[0], fake.writes[1])
+	}
+
+	// No queue time, no timestamp: InfluxDB stamps it, as it always did.
+	if _, err := send(t, n, msg(t, `{"payload":1}`)); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(fake.writes[2], " ") != 1 {
+		t.Errorf("line = %q, want no timestamp", fake.writes[2])
+	}
+
+	// A timestamp the node was told to use wins over the queue time.
+	n, fake, _ = influxHarness(t, `{
+        "server":"srv","measurement":"m","measurementType":"str",
+        "fields":[{"column":"value","value":"payload","valueType":"msg"}],
+        "timestamp":"ts","timestampType":"msg"
+    }`)
+	if _, err := send(t, n, msg(t, `{"payload":1,"ts":42,"_queuedAt":"2023-11-14T22:13:20Z"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(fake.writes[0], " 42") {
+		t.Errorf("line = %q, want the configured timestamp", fake.writes[0])
+	}
+}
+
+type fakeInfluxMs struct{ fakeInflux }
+
+func (*fakeInfluxMs) Precision() string { return "ms" }
+
+func TestInfluxQueueTimeFollowsTheServerPrecision(t *testing.T) {
+	fake := &fakeInfluxMs{}
+	svc := &servicesWithConfig{
+		testServices: newTestServices(),
+		configs:      map[string]node.Node{"srv": fake},
+	}
+	n := build(t, "influxdb out", `{
+        "server":"srv","measurement":"m","measurementType":"str",
+        "fields":[{"column":"value","value":"payload","valueType":"msg"}]
+    }`, svc)
+	if _, err := send(t, n, msg(t, `{"payload":1,"_queuedAt":"2023-11-14T22:13:20.123456789Z"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(fake.writes[0], " 1700000000123") {
+		t.Errorf("line = %q, want it to end with the queue time in milliseconds", fake.writes[0])
+	}
+}

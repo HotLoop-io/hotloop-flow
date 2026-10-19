@@ -195,6 +195,39 @@ persistence:
   mountPath: /data
   annotations: {}
 
+# ── State database ───────────────────────────────────────────────────────────
+# One SQLite file on the data volume holds persistent context and the queues
+# behind durable wires. It lives on the persistence volume above, so with
+# persistence.enabled false it survives a container restart and not a pod
+# replacement.
+#
+# Every write is a write to an SD card or an SSD, so the defaults batch: context
+# changes are held for flushInterval and written together, and a value set to
+# what it already was writes nothing. docs/durable/README.md has the measured
+# numbers.
+store:
+  path: ""              # "" is state.db in persistence.mountPath
+  # normal: a commit survives the process being killed, and a power cut can lose
+  # the last few. full: fsync on every commit, which is the stronger promise and
+  # the one that wears the card.
+  synchronous: normal   # normal | full
+  context:
+    # Flow, global and node context survive a restart. false is memory only.
+    persist: true
+    # A changed value waits this long before it is written, so a kill -9 can
+    # lose this much. 0s writes every change before the flow moves on.
+    flushInterval: 30s
+  durable:
+    # Disk quota for every durable wire together. When it is full, the node the
+    # wire goes to decides what gives, by the same overflow policy it uses for
+    # its inbox.
+    maxBytes: 268435456
+    # How long a message the target has taken waits to be marked done. Marks
+    # share writes. A kill -9 can send the messages inside the window again.
+    # 0s marks each one before the next is sent: at most one repeats, at a write
+    # per message.
+    ackFlush: 100ms
+
 # ── Authentication ───────────────────────────────────────────────────────────
 # HotLoop Flow refuses to start without this. Leave passwordHash empty and the
 # chart generates a password on first install and keeps it across upgrades.
