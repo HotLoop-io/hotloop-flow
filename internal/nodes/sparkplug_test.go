@@ -586,6 +586,13 @@ func (r *spRig) start(typ, cfg string) started {
 			_ = c.Close(context.Background(), false)
 		}
 	})
+	// Births are QoS 0 and not retained, and a host that subscribes after one has
+	// gone by never sees it and has nothing to ask a rebirth about. Under load
+	// the host connects slower than the edge node, so a host is waited for until
+	// it is subscribed and has published its STATE, before anything is born.
+	if in, ok := n.(*spInNode); ok && in.srv != nil && in.srv.role == spRoleHost {
+		r.eventually("the host to be online", 20*time.Second, in.srv.isReady)
+	}
 	return started{n, e}
 }
 
@@ -726,7 +733,7 @@ func TestSparkplugEdgeNodeAndHostTalkThroughARealBroker(t *testing.T) {
 	}
 	if md := os.Getenv("HOTLOOP_FLOW_SPARKPLUG_PROTO"); md != "" {
 		schema := sparkplugSchema(t)
-		m, _ := tap.find(onTopic("/NBIRTH/line3"))
+		m := tap.await(t, "the message on the wire", 10*time.Second, onTopic("/NBIRTH/line3"))
 		j := schemaJSON(t, schema, m.Payload)
 		names := map[string]bool{}
 		for _, e := range j["metrics"].([]any) {
@@ -1130,7 +1137,7 @@ func TestSparkplugAliasesBothWays(t *testing.T) {
 	r.eventually("the births", 20*time.Second, func() bool { return spFind(host.e, "DBIRTH", nil) != nil })
 
 	// The births carry names and numbers, and not a number for the rebirth metric.
-	nb, _ := tap.find(onTopic("/NBIRTH/line9"))
+	nb := tap.await(t, "the message on the wire", 10*time.Second, onTopic("/NBIRTH/line9"))
 	nj := schemaJSON(t, md, nb.Payload)
 	aliases := map[string]any{}
 	for _, e := range nj["metrics"].([]any) {
@@ -1140,7 +1147,7 @@ func TestSparkplugAliasesBothWays(t *testing.T) {
 	if aliases["Uptime"] != "1" || aliases["Node Control/Rebirth"] != nil {
 		t.Errorf("NBIRTH aliases = %v. Uptime should be 1 and the rebirth metric has none", aliases)
 	}
-	db, _ := tap.find(onTopic("/DBIRTH/line9/d1"))
+	db := tap.await(t, "the message on the wire", 10*time.Second, onTopic("/DBIRTH/line9/d1"))
 	dj := schemaJSON(t, md, db.Payload)
 	for _, e := range dj["metrics"].([]any) {
 		m := e.(map[string]any)
@@ -1160,7 +1167,7 @@ func TestSparkplugAliasesBothWays(t *testing.T) {
 	if got := spFind(host.e, "DDATA", nil).Payload(); !reflect.DeepEqual(got, map[string]any{"Temp": 55.5}) {
 		t.Errorf("the host should have the name back: %v", got)
 	}
-	dd, _ := tap.find(onTopic("/DDATA/line9/d1"))
+	dd := tap.await(t, "the message on the wire", 10*time.Second, onTopic("/DDATA/line9/d1"))
 	first := schemaJSON(t, md, dd.Payload)["metrics"].([]any)[0].(map[string]any)
 	if first["name"] != nil || first["alias"] != "2" || first["datatype"] != nil || first["doubleValue"] != 55.5 {
 		t.Errorf("a data metric is an alias and a value: %v", first)
@@ -1174,7 +1181,7 @@ func TestSparkplugAliasesBothWays(t *testing.T) {
 	if got := spMsgs(edgeIn.e)[0].Payload(); !reflect.DeepEqual(got, map[string]any{"SP": 88.5}) {
 		t.Errorf("the edge node should have the name back: %v", got)
 	}
-	cm, _ := tap.find(onTopic("/DCMD/line9/d1"))
+	cm := tap.await(t, "the message on the wire", 10*time.Second, onTopic("/DCMD/line9/d1"))
 	cj := schemaJSON(t, md, cm.Payload)["metrics"].([]any)[0].(map[string]any)
 	if cj["name"] != nil || cj["alias"] != "3" || cj["doubleValue"] != 88.5 {
 		t.Errorf("a command on the wire is an alias and a value: %v", cj)

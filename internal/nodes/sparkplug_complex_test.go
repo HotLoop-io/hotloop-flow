@@ -507,14 +507,14 @@ func TestSparkplugEdgeNodePublishesArraysDataSetsTemplatesAndPropertiesToAHost(t
 		t.Errorf("DDATA = %#v", dd)
 	}
 	// The data message for a metric names no datatype on the wire, and the host still read the array.
-	ndWire, _ := tap.find(onTopic("/NDATA/line5"))
+	ndWire := tap.await(t, "the message on the wire", 10*time.Second, onTopic("/NDATA/line5"))
 	if !strings.Contains(string(ndWire.Payload), "Level") {
 		t.Errorf("NDATA on the wire: %q", ndWire.Payload)
 	}
 
 	if os.Getenv("HOTLOOP_FLOW_SPARKPLUG_PROTO") != "" {
 		schema := sparkplugSchema(t)
-		nbWire, _ := tap.find(onTopic("/NBIRTH/line5"))
+		nbWire := tap.await(t, "the message on the wire", 10*time.Second, onTopic("/NBIRTH/line5"))
 		j := schemaJSON(t, schema, nbWire.Payload)
 		kinds := map[string]float64{}
 		for _, e := range j["metrics"].([]any) {
