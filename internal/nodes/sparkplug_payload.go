@@ -20,9 +20,9 @@ import (
 // the real schema compiled at test time and a protobuf implementation that is
 // not this one, which is what keeps a hand-written encoder honest.
 //
-// Not carried: DataSet, Template and PropertySet values, and metric metadata.
-// A metric of one of those types comes out with its name and datatype and no
-// value, marked as unsupported, rather than as a value that is wrong.
+// The array types, DataSet, Template and a metric's PropertySet are in
+// sparkplug_complex.go. Not carried: a metric's metadata (the MetaData message
+// for files and multi-part bytes). It is skipped over, not misread.
 
 // Sparkplug datatypes, the enum in the schema.
 const (
@@ -68,6 +68,11 @@ var spTypeNames = map[string]uint32{
 	"UInt8": spUInt8, "UInt16": spUInt16, "UInt32": spUInt32, "UInt64": spUInt64,
 	"Float": spFloat, "Double": spDouble, "Boolean": spBoolean, "String": spString,
 	"DateTime": spDateTime, "Text": spText, "UUID": spUUID, "Bytes": spBytes,
+	"DataSet": spDataSet, "Template": spTemplate,
+	"Int8Array": spInt8Array, "Int16Array": spInt16Array, "Int32Array": spInt32Array, "Int64Array": spInt64Array,
+	"UInt8Array": spUInt8Array, "UInt16Array": spUInt16Array, "UInt32Array": spUInt32Array,
+	"UInt64Array": spUInt64Array, "FloatArray": spFloatArray, "DoubleArray": spDoubleArray,
+	"BooleanArray": spBooleanArray, "StringArray": spStringArray, "DateTimeArray": spDateTimeArray,
 }
 
 // spTypeName is the name of any datatype in the enum, for messages and for what
@@ -124,7 +129,7 @@ func spTypeName(dt uint32) string {
 // spRaw is the one value a metric carries on the wire, before its datatype says
 // what it means.
 type spRaw struct {
-	kind byte // 0 none, 'u' integer, 'f' float, 'd' double, 'b' bool, 's' string, 'x' bytes
+	kind byte // 0 none, 'u' integer, 'f' float, 'd' double, 'b' bool, 's' string, 'x' bytes, 'D' a DataSet, 'T' a Template (those two hold the message, still encoded, in x)
 	u    uint64
 	f    float64
 	s    string
@@ -144,6 +149,16 @@ type spMetric struct {
 	IsHistorical bool
 	IsTransient  bool
 	IsNull       bool
+
+	// tplRef and tplDef are what a Template metric says it is, so that a birth
+	// can be checked for an instance whose definition isn't in it.
+	tplRef string
+	tplDef bool
+
+	// PropsBytes is the metric's PropertySet as it is written, and Properties is
+	// what it decoded to, each value saying its own type.
+	PropsBytes []byte
+	Properties map[string]any
 
 	raw spRaw
 	// Value is the Flow-side value, nil when there is none.
@@ -198,6 +213,12 @@ func (m *spMetric) encode() ([]byte, error) {
 	if m.IsNull {
 		b = protowire.AppendTag(b, 7, protowire.VarintType)
 		b = protowire.AppendVarint(b, 1)
+	}
+	if m.PropsBytes != nil {
+		b = protowire.AppendTag(b, 9, protowire.BytesType)
+		b = protowire.AppendBytes(b, m.PropsBytes)
+	}
+	if m.IsNull {
 		return b, nil
 	}
 	switch m.raw.kind {
@@ -224,6 +245,12 @@ func (m *spMetric) encode() ([]byte, error) {
 		b = protowire.AppendString(b, m.raw.s)
 	case 'x':
 		b = protowire.AppendTag(b, 16, protowire.BytesType)
+		b = protowire.AppendBytes(b, m.raw.x)
+	case 'D':
+		b = protowire.AppendTag(b, 17, protowire.BytesType)
+		b = protowire.AppendBytes(b, m.raw.x)
+	case 'T':
+		b = protowire.AppendTag(b, 18, protowire.BytesType)
 		b = protowire.AppendBytes(b, m.raw.x)
 	}
 	return b, nil
@@ -271,6 +298,12 @@ func spValueToRaw(dt uint32, v any) (spRaw, error) {
 		return f, nil
 	}
 	switch dt {
+	case spDataSet:
+		x, err := spDataSetBytes(v)
+		return spRaw{kind: 'D', x: x}, err
+	case spTemplate:
+		x, err := spTemplateBytes(v)
+		return spRaw{kind: 'T', x: x}, err
 	case spInt8:
 		f, err := whole(math.MinInt8, math.MaxInt8)
 		return spRaw{kind: 'u', u: uint64(uint32(int32(f)))}, err
@@ -370,6 +403,10 @@ func spValueToRaw(dt uint32, v any) (spRaw, error) {
 		}
 		return spRaw{}, fmt.Errorf("%v (%s) isn't bytes or a string", v, describeType(v))
 	}
+	if _, ok := spArrayElem[dt]; ok {
+		x, err := spEncodeArray(dt, v)
+		return spRaw{kind: 'x', x: x}, err
+	}
 	return spRaw{}, fmt.Errorf("data type %s can't be written by this node", spTypeName(dt))
 }
 
@@ -399,7 +436,25 @@ func spMetricFor(name string, dt uint32, v any, birth bool, ts uint64) (*spMetri
 		m.DataType = dt
 	}
 	m.Value = v
+	if dt == spTemplate {
+		tm, _ := v.(map[string]any)
+		m.tplRef, _ = tm["templateRef"].(string)
+		m.tplDef, _ = tm["isDefinition"].(bool)
+	}
 	return m, nil
+}
+
+// setProps gives the metric a PropertySet, or none.
+func (m *spMetric) setProps(props map[string]any) error {
+	if len(props) == 0 {
+		return nil
+	}
+	b, err := spPropsBytes(props)
+	if err != nil {
+		return err
+	}
+	m.PropsBytes = b
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -556,18 +611,26 @@ func decodeSPMetric(b []byte) (*spMetric, error) {
 				return nil, bad("bytes", n)
 			}
 			m.raw, b = spRaw{kind: 'x', x: append([]byte(nil), v...)}, b[n:]
+		case num == 9 && typ == protowire.BytesType:
+			v, n := protowire.ConsumeBytes(b)
+			if n < 0 {
+				return nil, bad("properties", n)
+			}
+			props, err := spPropsValue(v)
+			if err != nil {
+				return nil, err
+			}
+			m.PropsBytes, m.Properties, b = append([]byte{}, v...), props, b[n:]
 		case (num == 17 || num == 18) && typ == protowire.BytesType:
-			// A DataSet or a Template. Skipped over, and marked.
-			n := protowire.ConsumeFieldValue(num, typ, b)
+			v, n := protowire.ConsumeBytes(b)
 			if n < 0 {
 				return nil, bad("value", n)
 			}
-			b = b[n:]
-			if num == 17 {
-				m.Unsupported = "DataSet"
-			} else {
-				m.Unsupported = "Template"
+			kind := byte('D')
+			if num == 18 {
+				kind = 'T'
 			}
+			m.raw, b = spRaw{kind: kind, x: append([]byte{}, v...)}, b[n:]
 		default:
 			n := protowire.ConsumeFieldValue(num, typ, b)
 			if n < 0 {
@@ -622,8 +685,24 @@ func (m *spMetric) resolve(dt uint32) error {
 		m.Value = r.s
 	case spBytes, spFile:
 		m.Value = r.x
-	case spDataSet, spTemplate:
-		m.Value, m.Unsupported = nil, spTypeName(dt)
+	case spDataSet:
+		if r.kind != 'D' {
+			return fmt.Errorf("metric %q is a DataSet and carries none", m.Name)
+		}
+		v, err := spDataSetValue(r.x)
+		if err != nil {
+			return fmt.Errorf("metric %q: %w", m.Name, err)
+		}
+		m.Value = v
+	case spTemplate:
+		if r.kind != 'T' {
+			return fmt.Errorf("metric %q is a Template and carries none", m.Name)
+		}
+		v, err := spTemplateValue(r.x)
+		if err != nil {
+			return fmt.Errorf("metric %q: %w", m.Name, err)
+		}
+		m.Value = v
 	case spInt8Array, spInt16Array, spInt32Array, spInt64Array, spUInt8Array, spUInt16Array, spUInt32Array,
 		spUInt64Array, spFloatArray, spDoubleArray, spBooleanArray, spStringArray, spDateTimeArray:
 		v, err := spDecodeArray(dt, r.x)
