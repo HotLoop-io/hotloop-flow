@@ -139,7 +139,7 @@ func TestEtherNetIPChecksTheRequestBeforeItBothersTheController(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // The server is ab_server from libplctag 2.7.2, the simulator libplctag's own
-// tests run against, built by testdata/plant/ethernetip/Dockerfile and started
+// tests run against, built by testdata/plant/ethernetip/Containerfile and started
 // with the tags in the CI workflow. It answers as a ControlLogix over CIP. It
 // is a different implementation from the gologix client under test. Its tags
 // start at zero, so what these tests read back is what they wrote. It matches

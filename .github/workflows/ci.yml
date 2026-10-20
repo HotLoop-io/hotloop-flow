@@ -171,7 +171,7 @@ jobs:
 
       - name: Test with race detector
         # The race detector needs cgo. This is the test build only — the shipped
-        # binary is built CGO_ENABLED=0 in the Dockerfile so it stays static and
+        # binary is built CGO_ENABLED=0 in the Containerfile so it stays static and
         # runs on distroless.
         env:
           CGO_ENABLED: "1"
@@ -389,6 +389,16 @@ jobs:
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 
+      - name: What the simulators were doing
+        # If a test says a simulator refused the connection, this says whether
+        # the container was still up and what it last printed.
+        if: failure()
+        run: |
+          sudo podman ps -a
+          for c in mosquitto mosquitto-auth mosquitto2 otel modbus opcplc s7sim enipsim; do
+            echo "== $c"; sudo podman logs --tail 30 "$c" 2>&1 || true
+          done
+
   chart:
     name: Chart
     runs-on: ubuntu-latest
@@ -593,7 +603,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build the image
-        # The license gate lives in the Dockerfile, so the only way to know a
+        # The license gate lives in the Containerfile, so the only way to know a
         # PR didn't pull in a GPL module or an unlicensed npm package is to
         # build the image. Before this job the first build was the release.
         run: podman build -t localhost/hotloop-flow:ci .

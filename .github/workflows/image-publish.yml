@@ -54,7 +54,7 @@ jobs:
           fi
 
       - name: Teach the runner to run arm64
-        # What docker/setup-qemu-action does, with Podman: tonistiigi/binfmt
+        # What the usual qemu setup action does, with Podman: tonistiigi/binfmt
         # registers qemu-user for arm64 with the kernel, and the F flag lets it
         # work inside a build container. Pinned to a release.
         run: |
@@ -112,7 +112,7 @@ jobs:
           done
 
       - name: Push X.Y.Z, X.Y and X
-        # The tags docker/metadata-action's semver patterns made: the full
+        # The tags the old metadata action's semver patterns made: the full
         # version always, X.Y and X only for a release and not a prerelease, and
         # no bare X for a 0.x. No branch tag and no bare sha tag: both produce
         # images that are not a released version.
