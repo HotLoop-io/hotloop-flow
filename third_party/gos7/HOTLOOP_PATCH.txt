@@ -32,7 +32,7 @@ captures the global logger, and fails if anything lands in it.
 Dropping it: when upstream stops writing that line (open issue 78 asks for a
 way to turn the library's logging off; no fix is merged, checked 2026-10-19),
 delete this directory, delete the replace line in go.mod, take the new commit
-with go get, remove the COPY third_party line from the Dockerfile, remove the
+with go get, remove the COPY third_party line from the Containerfile, remove the
 gos7 section from NOTICE, and keep TestS7TimeoutDoesNotWriteToTheGlobalLogger:
 it is what proves the new release is quiet. Check with:
 gh issue view 78 -R robinson/gos7

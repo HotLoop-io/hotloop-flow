@@ -177,7 +177,7 @@ below. It doesn't survive a power cut on every filesystem. `full` does, and
 
 Measured 2026-10-19 on Linux under WSL2, with the native binary built from this
 branch and a real InfluxDB 2.9.1 (`docker.io/library/influxdb:2.9.1`, the newest
-2.x on Docker Hub that day) in Podman. Nothing is mocked. The script is
+2.x on docker.io that day) in Podman. Nothing is mocked. The script is
 [store-and-forward.sh](store-and-forward.sh), and it is the whole experiment:
 
 ```bash

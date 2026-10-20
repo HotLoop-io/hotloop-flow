@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # HotLoop Flow.
 #
 # Mirrors the industrial-dashboard build: a Go builder producing a static binary,
