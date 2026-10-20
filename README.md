@@ -8,7 +8,7 @@ wires in one static binary small enough for a Pi, with a scheduler that doesn't
 fall over when a sensor starts talking faster than the thing reading it.
 
 [![CI](https://github.com/HotLoop-io/hotloop-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/HotLoop-io/hotloop-flow/actions/workflows/ci.yml)
-[![Licence](https://img.shields.io/badge/licence-BUSL--1.1-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8)](go.mod)
 
 What that means on a bad night:
@@ -1133,7 +1133,7 @@ be written never stops the action it was recording: it's logged and counted in
 
 **The `exec` node ships disabled.** An operator names the commands a flow may
 run, and an enabled node with an empty allowlist is a startup error, not a
-licence to run anything. The allowlist matches the **resolved absolute path**,
+license to run anything. The allowlist matches the **resolved absolute path**,
 not the string the flow typed. Match on strings and a flow asks for `curl` and
 gets whichever `curl` sits first on a `PATH` that a Function node can read and a
 sidecar can influence. And there's no shell. The command line is split on
@@ -2181,7 +2181,7 @@ Flow as a service for other people, reselling it and embedding it in a product
 you sell are not granted. Unlike the others, Flow's source is public, so you can
 read every line you run.
 
-## Licence
+## License
 
 HotLoop's Business Source License 1.1 (`BUSL-1.1`). It is not an open source
 license, and we won't pretend it is. Each version converts to GPL-3.0 or later four years
