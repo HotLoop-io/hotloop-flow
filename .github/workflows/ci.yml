@@ -48,10 +48,10 @@ jobs:
         # the broker's birth messages to prove a deploy kept the session up,
         # which a fake broker could only pretend to answer.
         run: |
-          docker run -d --name mosquitto -p 1883:1883 \
-            eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
+          sudo podman run -d --name mosquitto -p 1883:1883 \
+            docker.io/library/eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
           for i in $(seq 1 30); do nc -z localhost 1883 && exit 0; sleep 1; done
-          docker logs mosquitto; exit 1
+          sudo podman logs mosquitto; exit 1
 
       - name: Fetch the published JSONata test suite
         # The suite is jsonata-js's own, cloned at the pinned tag and checked
@@ -94,9 +94,9 @@ jobs:
         # it accepts into a file the test reads back. The image is pinned to a
         # release, so a collector change shows up as a version bump in a PR.
         run: |
-          docker run -d --name otel -p 4318:4318             -v "$PWD/testdata/otel/collector.yaml:/etc/otelcol/config.yaml:ro"             otel/opentelemetry-collector:0.163.1 --config /etc/otelcol/config.yaml
+          sudo podman run -d --name otel -p 4318:4318             -v "$PWD/testdata/otel/collector.yaml:/etc/otelcol/config.yaml:ro"             docker.io/otel/opentelemetry-collector:0.163.1 --config /etc/otelcol/config.yaml
           : > "$RUNNER_TEMP/otel.log"
-          nohup docker logs -f otel > "$RUNNER_TEMP/otel.log" 2>&1 &
+          nohup sudo podman logs -f otel > "$RUNNER_TEMP/otel.log" 2>&1 &
           for _ in $(seq 1 30); do grep -q "Everything is ready" "$RUNNER_TEMP/otel.log" && exit 0; sleep 1; done
           cat "$RUNNER_TEMP/otel.log"; exit 1
 
@@ -108,10 +108,10 @@ jobs:
         # of flowuser/flowpass. Both versions are pinned: a simulator that
         # changes under the tests is a failure nobody can read.
         run: |
-          docker run -d --name modbus -p 5020:5020 \
+          sudo podman run -d --name modbus -p 5020:5020 \
             -v "$PWD/testdata/plant/modbus_server.json:/app/modbus_server.json:ro" \
             docker.io/oitc/modbus-server:2.3.0
-          docker run -d --name opcplc -p 50000:50000 \
+          sudo podman run -d --name opcplc -p 50000:50000 \
             -v "$PWD/testdata/plant/opcplc_nodes.json:/cfg/nodes.json:ro" \
             mcr.microsoft.com/iotedge/opc-plc:2.15.11 \
             --pn=50000 --autoaccept --unsecuretransport \
@@ -120,7 +120,7 @@ jobs:
             --fastnodes=1 --fastrate=1 --fasttype=UInt --slownodes=1 --slowrate=1 --slowtype=UInt
           for p in 5020 50000; do
             for i in $(seq 1 60); do nc -z localhost $p && break; sleep 1; done
-            nc -z localhost $p || { docker logs modbus; docker logs opcplc; echo "::error::nothing on $p"; exit 1; }
+            nc -z localhost $p || { sudo podman logs modbus; sudo podman logs opcplc; echo "::error::nothing on $p"; exit 1; }
           done
           sleep 5
 
@@ -128,10 +128,10 @@ jobs:
         # The Sparkplug test that moves an edge node from one broker to the
         # next needs a second broker, with no password, on its own port.
         run: |
-          docker run -d --name mosquitto2 -p 1885:1883 \
-            eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
+          sudo podman run -d --name mosquitto2 -p 1885:1883 \
+            docker.io/library/eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
           for i in $(seq 1 30); do nc -z localhost 1885 && exit 0; sleep 1; done
-          docker logs mosquitto2; exit 1
+          sudo podman logs mosquitto2; exit 1
 
       - name: Start a real S7 server and a real EtherNet/IP server
         # The S7 and EtherNet/IP tests talk to real servers or they skip, and a
@@ -144,17 +144,17 @@ jobs:
         # because ab_server matches them with their case and the client sends
         # them lower case.
         run: |
-          docker build -q -t flow-s7sim testdata/plant/s7
-          docker build -q -t flow-enipsim testdata/plant/ethernetip
-          docker run -d --name s7sim -p 1102:102 flow-s7sim
-          docker run -d --name enipsim -p 44818:44818 flow-enipsim \
+          sudo podman build -q -t localhost/flow-s7sim testdata/plant/s7
+          sudo podman build -q -t localhost/flow-enipsim testdata/plant/ethernetip
+          sudo podman run -d --name s7sim -p 1102:102 localhost/flow-s7sim
+          sudo podman run -d --name enipsim -p 44818:44818 localhost/flow-enipsim \
             --plc=ControlLogix --path=1,0 \
             --tag=testsint:SINT[1] --tag=testint:INT[1] --tag=testdint:DINT[1] --tag=testlint:LINT[1] \
             --tag=testreal:REAL[1] --tag=testlreal:LREAL[1] --tag=testbool:BOOL[1] --tag=teststring:STRING[1] \
             --tag=testdintarr:DINT[10] --tag=testrealarr:REAL[5]
           for p in 1102 44818; do
             for i in $(seq 1 60); do nc -z localhost $p && break; sleep 1; done
-            nc -z localhost $p || { docker logs s7sim; docker logs enipsim; echo "::error::nothing on $p"; exit 1; }
+            nc -z localhost $p || { sudo podman logs s7sim; sudo podman logs enipsim; echo "::error::nothing on $p"; exit 1; }
           done
           sleep 3
 
@@ -596,13 +596,13 @@ jobs:
         # The license gate lives in the Dockerfile, so the only way to know a
         # PR didn't pull in a GPL module or an unlicensed npm package is to
         # build the image. Before this job the first build was the release.
-        run: docker build -t hotloop-flow:ci .
+        run: podman build -t localhost/hotloop-flow:ci .
 
       - name: THIRD_PARTY_LICENSES is in the image and covers both halves
         run: |
-          id=$(docker create hotloop-flow:ci)
-          docker cp "$id:/usr/share/doc/hotloop-flow" doc
-          docker rm "$id" >/dev/null
+          id=$(podman create localhost/hotloop-flow:ci)
+          podman cp "$id:/usr/share/doc/hotloop-flow" doc
+          podman rm "$id" >/dev/null
           ls -l doc
           for f in LICENSE LICENSES/Apache-2.0.txt NOTICE THIRD_PARTY_LICENSES; do
             test -s "doc/$f" || { echo "::error::$f is missing from the image"; exit 1; }

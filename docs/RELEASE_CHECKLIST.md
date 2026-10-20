@@ -14,7 +14,7 @@ only on a tag, side by side, neither waiting for the other:
 
 | Workflow | What it does | Where it lands |
 |---|---|---|
-| `docker-publish.yml` | Builds the one `Dockerfile` for linux/amd64 and linux/arm64 and pushes `X.Y.Z`, `X.Y` and `X` | `ghcr.io/hotloop-io/hotloop-flow` |
+| `image-publish.yml` | Builds the one `Dockerfile` with Podman, one platform at a time into one manifest list for linux/amd64 and linux/arm64, checks the list and each binary, and pushes `X.Y.Z`, `X.Y` and `X` | `ghcr.io/hotloop-io/hotloop-flow` |
 | `helm-publish.yml` | Lints the chart, packages it at the tag's version, rebuilds `index.yaml` from that version alone | gh-pages, served at `https://hotloop.io/hotloop-flow/` |
 
 They share nothing to race on: one writes ghcr, the other writes gh-pages.
@@ -67,7 +67,7 @@ grep -E '^(version|appVersion):' charts/hotloop-flow/Chart.yaml   # 0.1.0 both
 
 ### The image carries it from the tag
 
-`docker-publish.yml` passes `VERSION=<tag>` as a build argument and the
+`image-publish.yml` passes `VERSION=<tag>` as a build argument and the
 `Dockerfile` stamps it with `-X main.version=`. `cmd/hotloop-flow/main.go` has
 `var version = "dev"`, which is what a `go build` from a checkout reports. Leave
 that too.
@@ -248,7 +248,7 @@ license, which is how a PR finds out. A release is not the first build.
 actionlint .github/workflows/*.yml
 ```
 
-A typo in `docker-publish.yml` doesn't fail until a tag runs it.
+A typo in `image-publish.yml` doesn't fail until a tag runs it.
 
 ## 5. The release PR
 
