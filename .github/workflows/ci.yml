@@ -183,7 +183,10 @@ jobs:
           HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
           HOTLOOP_FLOW_TEST_MQTT2: localhost:1885
           HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
-          HOTLOOP_FLOW_TEST_OPCUA: localhost:50000
+          # 127.0.0.1 and not localhost: the runner resolves localhost to ::1
+          # first, Podman publishes the port on IPv4 only, and with localhost
+          # the OPC UA client was refused on [::1].
+          HOTLOOP_FLOW_TEST_OPCUA: 127.0.0.1:50000
           HOTLOOP_FLOW_TEST_S7: localhost:1102
           HOTLOOP_FLOW_TEST_ENIP: localhost:44818
         run: go test -race -count=1 -coverprofile=coverage.out ./...
@@ -250,7 +253,7 @@ jobs:
         # turns every one of these into a skip, and a skip reads as a pass.
         env:
           HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
-          HOTLOOP_FLOW_TEST_OPCUA: localhost:50000
+          HOTLOOP_FLOW_TEST_OPCUA: 127.0.0.1:50000
         run: |
           OUT=$(go test ./internal/nodes/ -count=1 -v -run 'Modbus|OPCUA' 2>&1)
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
