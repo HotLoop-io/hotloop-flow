@@ -2164,9 +2164,9 @@ Flow is its own product, and it stays that way. The rest of HotLoop is one
 codebase shipped as four more: **IoT** (the automation base, built for OT),
 **Edge** (IoT plus the machine layer), the **Gateway** (everything, plus fleet,
 multi-site and reports) and the **Edge Relay** (headless, forwards over Sparkplug
-B). Gateway and Edge Relay 4.16.0 are out and pull with no login. IoT and Edge
-arrive in an upcoming release. [hotloop.io/products](https://hotloop.io/products/)
-has the lineup.
+B). All four are out as 4.18.10, each with its own image and chart, and they pull
+with no login. [hotloop.io/products](https://hotloop.io/products/) has the
+lineup.
 
 Flow doesn't talk to any of them yet, and it will never be built into them. It
 runs next to them. HotLoop nodes, where Flow calls HotLoop's API from the outside
