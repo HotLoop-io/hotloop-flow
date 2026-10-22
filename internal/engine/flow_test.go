@@ -626,3 +626,47 @@ func TestRoundTripCarriesDurableWires(t *testing.T) {
 		t.Fatalf("ew_durable parsed as %#v", raw)
 	}
 }
+
+// Port schemas are keys on the node that other tools ignore, so a flow that
+// carries them comes back byte for byte, in the order it was written.
+func TestRoundTripCarriesPortSchemas(t *testing.T) {
+	src := `[
+    {"id":"t1","type":"tab","label":"Line 3"},
+    {"id":"a","type":"function","z":"t1","name":"count","func":"return msg;","outputs":2,"x":290,"y":100,"ew_inSchema":{"type":"object","required":["topic"]},"ew_outSchemas":[{"type":"object","properties":{"payload":{"type":"number"}}},null],"wires":[["b"],[]]},
+    {"id":"b","type":"debug","z":"t1","x":470,"y":60,"wires":[]}
+]`
+	f, err := ParseFlows([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := f.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := ParseFlows(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := g.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again) != string(saved) {
+		w, got := firstDiffContext(string(saved), string(again))
+		t.Fatalf("round trip changed the file\n--- want ---\n%s\n--- got ---\n%s", w, got)
+	}
+	f = g
+	f.Touch("b")
+	out, err := f.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nodes []map[string]any
+	if err := json.Unmarshal(out, &nodes); err != nil {
+		t.Fatal(err)
+	}
+	outs, _ := nodes[1]["ew_outSchemas"].([]any)
+	if _, hasIn := nodes[1]["ew_inSchema"]; !hasIn || len(outs) != 2 || outs[1] != nil {
+		t.Fatalf("a node lost its schemas when a neighbor was touched:\n%s", out)
+	}
+}

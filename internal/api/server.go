@@ -24,6 +24,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
+	"github.com/HotLoop-io/hotloop-flow/internal/wiretype"
 	"github.com/HotLoop-io/hotloop-flow/web"
 )
 
@@ -229,7 +230,7 @@ func (s *Server) routes() {
 					NodeID: sn.NodeID, Type: sn.Type,
 					Received: sn.Received, Sent: sn.Sent, Errors: sn.Errors,
 					Dropped: sn.Dropped, Blocked: sn.Blocked,
-					QueueLen: sn.QueueLen, QueueCap: sn.QueueCap, QueueHigh: sn.QueueHigh,
+					QueueLen: sn.QueueLen, QueueCap: sn.QueueCap, QueueHigh: sn.QueueHigh, SchemaMismatches: sn.SchemaMismatches,
 				})
 			}
 			return out
@@ -686,6 +687,7 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var failed *TestsFailedError
+	var wires *wiretype.RefusedError
 	res, err := s.deps.Deploy(r.Context(), DeployRequest{
 		Flows:       flows,
 		ExpectedRev: expectedRev,
@@ -700,6 +702,14 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 		// the editor shows a merge prompt.
 		s.record(r, audit.DeployRefused, requestUser(r), map[string]any{"reason": "stale revision", "rev": expectedRev})
 		writeError(w, http.StatusConflict, err.Error())
+		return
+	case errors.As(err, &wires):
+		// 422: the flow document is fine; two ends of a wire disagree about
+		// what travels on it. Every problem comes back, with the nodes, so the
+		// editor can mark them.
+		s.record(r, audit.DeployRefused, requestUser(r), map[string]any{
+			"reason": "typed wires", "problems": len(wires.Problems)})
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error(), "wires": wires.Problems})
 		return
 	case errors.As(err, &failed):
 		// 422: the flow document is fine and the server is fine; the flows

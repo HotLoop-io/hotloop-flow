@@ -170,3 +170,16 @@ func TestFormatIsAsserted(t *testing.T) {
 		t.Fatalf("a bad date-time should be refused, got %v", err)
 	}
 }
+
+func TestEmptyRootIsTheWholeMessage(t *testing.T) {
+	s := mustCompile(t, `{"type":"object","required":["topic"],"properties":{"payload":{"type":"object","properties":{"temp":{"type":"number"}}}}}`)
+	v := s.Validate("", decode(t, `{"payload":{"temp":"x"}}`)).(*Violations)
+	got := strings.Join(v.Paths(), ",")
+	if got != "payload.temp,topic" {
+		t.Fatalf("paths %s", got)
+	}
+	whole := mustCompile(t, `{"type":"string"}`).Validate("", 1.0).(*Violations)
+	if whole.List[0].Path != "msg" {
+		t.Fatalf("path %q", whole.List[0].Path)
+	}
+}

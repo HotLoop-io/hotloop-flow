@@ -25,6 +25,7 @@ import (
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
+	"github.com/HotLoop-io/hotloop-flow/internal/wiretype"
 )
 
 // OverflowPolicy decides what happens when a node's inbox is full.
@@ -123,6 +124,10 @@ type Stats struct {
 	Dropped   atomic.Int64
 	Blocked   atomic.Int64
 	QueueHigh atomic.Int64
+
+	// SchemaMismatches counts messages that failed a JSON Schema, on a port or
+	// in a json node.
+	SchemaMismatches atomic.Int64
 }
 
 // Snapshot is a point-in-time copy of a node's counters.
@@ -137,6 +142,8 @@ type Snapshot struct {
 	QueueLen  int    `json:"queueLen"`
 	QueueCap  int    `json:"queueCap"`
 	QueueHigh int64  `json:"queueHigh"`
+
+	SchemaMismatches int64 `json:"schemaMismatches"`
 }
 
 // delivery is one message queued for a node, carrying the port it arrived on so
@@ -188,6 +195,10 @@ type runner struct {
 
 	node node.Node
 	rt   *Runtime
+
+	// ports holds the node's optional port schemas. nil, which is nearly every
+	// node, costs a pointer comparison and nothing else.
+	ports *wiretype.Ports
 
 	// deferred is set when the node holds messages on a timer. It is read
 	// during quiesce so that a redeploy waits for a Delay node's queue rather
@@ -481,7 +492,13 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 		}
 	}()
 
-	err := r.node.Receive(ctx, d.msg, r.emitterIn(tr, hop))
+	// A schema on the input is checked before the node sees the message. A
+	// message that fails it never reaches the node; it is raised as an error
+	// with the path of each bad field, the same as any error the node raises.
+	err := r.ports.CheckIn(d.msg)
+	if err == nil {
+		err = r.node.Receive(ctx, d.msg, r.emitterIn(tr, hop))
+	}
 	took := r.rt.opts.Now().Sub(start)
 	r.rt.observeExecTime(r, took)
 	tr.Finish(hop, took, err)
@@ -530,6 +547,8 @@ func (r *runner) Snapshot() Snapshot {
 		QueueLen:  len(r.inbox),
 		QueueCap:  r.capacity,
 		QueueHigh: r.stats.QueueHigh.Load(),
+
+		SchemaMismatches: r.stats.SchemaMismatches.Load(),
 	}
 }
 

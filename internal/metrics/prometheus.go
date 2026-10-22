@@ -35,6 +35,8 @@ type NodeStat struct {
 	QueueLen  int
 	QueueCap  int
 	QueueHigh int64
+
+	SchemaMismatches int64
 }
 
 // Source supplies the current counters.
@@ -111,6 +113,11 @@ func (h *Handler) Write(w io.Writer) {
 		{"hotloop_flow_node_errors_total",
 			"Errors raised by a node since it started.",
 			func(s NodeStat) float64 { return float64(s.Errors) }},
+		{"hotloop_flow_node_schema_mismatches_total",
+			"Messages that did not match a JSON Schema at a node: on its input port, " +
+				"on one of its output ports, or in a json node. Each one went to a Catch " +
+				"node with the path of every bad field.",
+			func(s NodeStat) float64 { return float64(s.SchemaMismatches) }},
 		{"hotloop_flow_node_messages_dropped_total",
 			"Messages discarded because a node's inbox was full. Node-RED cannot " +
 				"report this because its queue is unbounded.",
