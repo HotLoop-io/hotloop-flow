@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A well-formed bcrypt hash, so Validate's bcrypt.Cost check passes.
@@ -516,5 +517,42 @@ func TestTraceHeadersCanComeFromTheEnvironment(t *testing.T) {
 	}
 	if len(h) != 3 {
 		t.Errorf("headers = %v, want the junk entry with no = left out", h)
+	}
+}
+
+// An API token's MCP rate limit is read from the file, defaults its window to a
+// minute, is off when it isn't set, and refuses what limits nothing or nothing
+// sensible.
+func TestATokensRateLimit(t *testing.T) {
+	tok, _, _ := NewToken()
+	h := HashToken(tok)
+	head := "auth:\n  tokens:\n    - name: agent\n      hash: " + h + "\n      permissions: [mcp.call]\n"
+	clearEnv(t)
+	withAdmin(t)
+
+	cfg, err := Load(writeConfig(t, head+"      rateLimit: {calls: 30, per: 10s}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rl := cfg.Auth.Tokens[0].RateLimit
+	if rl.Calls != 30 || rl.Window() != 10*time.Second {
+		t.Errorf("rateLimit = %+v, window %s", rl, rl.Window())
+	}
+	cfg, err = Load(writeConfig(t, head+"      rateLimit: {calls: 5}\n"))
+	if err != nil || cfg.Auth.Tokens[0].RateLimit.Window() != time.Minute {
+		t.Errorf("the default window: %v %+v", err, cfg.Auth.Tokens)
+	}
+	cfg, err = Load(writeConfig(t, head))
+	if err != nil || cfg.Auth.Tokens[0].RateLimit.Calls != 0 {
+		t.Errorf("a token with no rateLimit: %v %+v", err, cfg.Auth.Tokens)
+	}
+	for name, extra := range map[string]string{
+		"negative calls":  "      rateLimit: {calls: -1}\n",
+		"negative window": "      rateLimit: {calls: 1, per: -1s}\n",
+		"a window alone":  "      rateLimit: {per: 1m}\n",
+	} {
+		if _, err := Load(writeConfig(t, head+extra)); err == nil {
+			t.Errorf("accepted %s", name)
+		}
 	}
 }

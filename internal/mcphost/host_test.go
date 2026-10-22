@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -67,6 +68,8 @@ func identities() map[string]Identity {
 		"admin":   {Name: "ryan", Allows: allow("*")},
 		"nomcp":   {Name: "token:deploy", Allows: allow("flows.read", "flows.write")},
 		"special": {Name: "token:line3", Allows: allow("mcp.call", "mcp.line3")},
+		"limited": {Name: "token:slow", Allows: allow("mcp.call"), Limit: Limit{Calls: 2, Per: time.Minute}},
+		"other":   {Name: "token:slow2", Allows: allow("mcp.call"), Limit: Limit{Calls: 2, Per: time.Minute}},
 	}
 }
 
@@ -522,5 +525,102 @@ func TestCompileRefusesWhatCannotBeServed(t *testing.T) {
 	}
 	if _, err := Compile(ToolSpec{Name: "ok.name-1_x", InputSchema: obj, Permission: "mcp.line3"}); err != nil {
 		t.Fatalf("a good spec was refused: %v", err)
+	}
+}
+
+// A fake clock, so a window can pass without the test waiting for it.
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *fakeClock) Now() time.Time { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.t = c.t.Add(d)
+	c.mu.Unlock()
+}
+
+func callEcho(t *testing.T, s *mcp.ClientSession) *mcp.CallToolResult {
+	t.Helper()
+	res, err := s.CallTool(context.Background(), &mcp.CallToolParams{Name: "echo_line", Arguments: map[string]any{"line": "L3"}})
+	if err != nil {
+		t.Fatalf("call: %v", err)
+	}
+	return res
+}
+
+func TestARateLimitedTokenIsRefusedOverItsLimitAndTheWindowResets(t *testing.T) {
+	for _, era := range eras {
+		t.Run(era.name, func(t *testing.T) {
+			f := newFixture(t)
+			clock := &fakeClock{t: time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)}
+			f.reg.now = clock.Now
+			s := f.connect(t, "limited", era.version)
+
+			// Under the limit passes.
+			for i := 1; i <= 2; i++ {
+				if res := callEcho(t, s); res.IsError {
+					t.Fatalf("call %d of 2 was refused: %s", i, text(t, res))
+				}
+			}
+			<-f.calls
+			<-f.calls
+
+			// Over it is refused, with the way back, and the flow never runs.
+			clock.Advance(20 * time.Second)
+			res := callEcho(t, s)
+			if !res.IsError || !strings.Contains(text(t, res), "rate limit exceeded") || !strings.Contains(text(t, res), "2 calls per 1m0s") ||
+				!strings.Contains(text(t, res), "Try again in 40 seconds") {
+				t.Fatalf("third call: isError=%v %q", res.IsError, text(t, res))
+			}
+			select {
+			case c := <-f.calls:
+				t.Fatalf("the function ran for a call over the limit: %#v", c)
+			default:
+			}
+			refused := f.audit.named(EventRefused)
+			if len(refused) != 1 || refused[0].User != "token:slow" ||
+				refused[0].Detail["reason"] != "rate limit exceeded: 2 calls per 1m0s" || refused[0].Detail["tool"] != "echo_line" {
+				t.Fatalf("audit rows: %#v", refused)
+			}
+			if n := len(f.audit.named(EventCall)); n != 2 {
+				t.Errorf("%d mcp.call rows, want only the 2 that ran", n)
+			}
+
+			// Another limited token has a count of its own.
+			if res := callEcho(t, f.connect(t, "other", era.version)); res.IsError {
+				t.Fatalf("a different token was throttled by the first one's calls: %s", text(t, res))
+			}
+			<-f.calls
+
+			// The window ends and the count starts again.
+			clock.Advance(41 * time.Second)
+			if res := callEcho(t, s); res.IsError {
+				t.Fatalf("still refused after the window passed: %s", text(t, res))
+			}
+			<-f.calls
+			if res := callEcho(t, s); res.IsError {
+				t.Fatalf("second call of the new window refused: %s", text(t, res))
+			}
+			<-f.calls
+			if res := callEcho(t, s); !res.IsError {
+				t.Fatalf("the new window let a third call through")
+			}
+		})
+	}
+}
+
+func TestATokenWithNoLimitIsNeverThrottled(t *testing.T) {
+	f := newFixture(t)
+	s := f.connect(t, "caller", "2026-07-28")
+	for i := 0; i < 50; i++ {
+		if res := callEcho(t, s); res.IsError {
+			t.Fatalf("call %d was refused: %s", i+1, text(t, res))
+		}
+		<-f.calls
+	}
+	if n := len(f.audit.named(EventRefused)); n != 0 {
+		t.Fatalf("%d refusals for a token with no limit", n)
 	}
 }

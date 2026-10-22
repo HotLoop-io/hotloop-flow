@@ -55,7 +55,7 @@ func newMCPFixture(t *testing.T, mutate ...func(*config.Config)) *mcpFixture {
 	}
 	t.Cleanup(func() { trail.Close() })
 
-	f := &mcpFixture{trail: trail, agent: agent, deploy: deploy, reg: mcphost.New("test"), handled: make(chan mcphost.Call, 8)}
+	f := &mcpFixture{trail: trail, agent: agent, deploy: deploy, reg: mcphost.New("test"), handled: make(chan mcphost.Call, 64)}
 	_, err = f.reg.Register("node-line", mcphost.ToolSpec{
 		Name: "line_status", Description: "Status of a line.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"line":{"type":"string"}},"required":["line"]}`),
@@ -260,4 +260,52 @@ func TestMCPAdminRootMovesTheEndpoint(t *testing.T) {
 		t.Fatalf("connect under the admin root: %v", err)
 	}
 	_ = s.Close()
+}
+
+func TestMCPATokenWithARateLimitInTheConfigIsHeldToIt(t *testing.T) {
+	var limited, free string
+	f := newMCPFixture(t, func(c *config.Config) {
+		var lh, fh string
+		limited, lh, _ = config.NewToken()
+		free, fh, _ = config.NewToken()
+		c.Auth.Tokens = append(c.Auth.Tokens,
+			config.Token{Name: "metered", Hash: lh, Permissions: []string{"mcp.call"}, RateLimit: config.TokenRateLimit{Calls: 2}},
+			config.Token{Name: "open", Hash: fh, Permissions: []string{"mcp.call"}})
+	})
+	call := func(token string) *mcp.CallToolResult {
+		t.Helper()
+		s, err := f.client(t, token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := s.CallTool(context.Background(), &mcp.CallToolParams{Name: "line_status", Arguments: map[string]any{"line": "L3"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+	for i := 0; i < 2; i++ {
+		if res := call(limited); res.IsError {
+			t.Fatalf("call %d of 2: %+v", i+1, res)
+		}
+	}
+	res := call(limited)
+	if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "rate limit exceeded: this token may make 2 calls per 1m0s") {
+		t.Fatalf("third call: %+v", res)
+	}
+	for i := 0; i < 10; i++ {
+		if res := call(free); res.IsError {
+			t.Fatalf("a token with no limit was refused: %+v", res)
+		}
+	}
+	// The agent token from the fixture has no rateLimit either.
+	for i := 0; i < 5; i++ {
+		if res := call(f.agent); res.IsError {
+			t.Fatalf("agent refused: %+v", res)
+		}
+	}
+	rows := f.rows(t, "mcp.refused")
+	if len(rows) != 1 || rows[0].User != "token:metered" || rows[0].Detail["reason"] != "rate limit exceeded: 2 calls per 1m0s" {
+		t.Fatalf("audit rows: %+v", rows)
+	}
 }

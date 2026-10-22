@@ -1562,12 +1562,26 @@ auth:
     - name: agent
       hash: sha256:...          # from: hotloop-flow token -name agent
       permissions: ["mcp.call"]
+      rateLimit: {calls: 60, per: 1m}   # optional; no rateLimit, no limit
 ```
 
 The call runs with that identity's rights. Every caller needs `mcp.call` (or
 `mcp.*`, or `*`). Put another permission in a tool's "Extra permission" box, say
 `mcp.line3`, and a caller also needs that one, and doesn't see the tool in the
 list without it. Two agents can share a Flow and see different tools.
+
+**A token can be held to a number of calls.** `rateLimit` on an API token in
+`auth.tokens` is `calls` in a window, `per`, one minute if you leave it out. The
+window starts with the token's first call, a call over the number is refused
+until it ends, and then the count starts again. A call that is refused never
+reaches the flow, and is answered as a tool error that says how many seconds to
+wait, so an agent in a loop is told to slow down in words it reads. The
+specification names no error for this, so it is the tool error it already
+defines for a call that can't be done. A token with no `rateLimit` is never
+throttled, and a session token isn't limited either, because it is a person's.
+Each token counts on its own, and the count lives in memory, so a restart
+starts it over. A refusal is an `mcp.refused` row with the reason `rate limit
+exceeded`, which means a flood is in the audit log too.
 
 **Every call is in the audit log, under the caller's name.** `mcp.call` is
 written before the flow runs, with the tool, the node and a call id, and
@@ -1645,9 +1659,9 @@ notifications, and a tool's output schema. HotLoop 4.18.10 speaks the handshake
 revisions, so the node meets it that way; against a server of the current
 revision it is tested only with Flow's own. A handshake server that forgets a
 session (a restart) fails the first call after it, once, and the next one
-connects again. Flow doesn't rate limit tool calls, though the specification
-says a server must: what bounds a flood is the queues, which already have a
-ceiling, and the request size, 4 MiB.
+connects again. Rate limiting is per API token and off until you set it, so a token
+with no `rateLimit` is bounded only by the queues, which already have a ceiling,
+and by the request size, 4 MiB.
 
 ---
 
@@ -1971,6 +1985,7 @@ auth:
     - name: ci
       hash: "sha256:..."
       permissions: ["flows.read", "flows.write"]
+      # rateLimit: {calls: 60, per: 1m}   # MCP tool calls per window; unset is no limit
 
 runtime:
   inboxCapacity: 1024
