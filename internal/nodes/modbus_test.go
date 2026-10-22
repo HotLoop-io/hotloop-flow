@@ -260,7 +260,11 @@ func TestModbusReadChecksTheRequestBeforeItBothersTheDevice(t *testing.T) {
 // mock of one: the node frames real requests and the server answers with real
 // responses and real exception codes.
 //
-//	HOTLOOP_FLOW_TEST_MODBUS=localhost:5020 go test ./internal/nodes/ -run Modbus -v
+//	HOTLOOP_FLOW_TEST_MODBUS=127.0.0.1:5020 go test ./internal/nodes/ -run Modbus -v
+//
+// 127.0.0.1 and not localhost: a rootless podman publishes the port on every
+// address but the server in the container listens on IPv4 only, so a client
+// that resolves localhost to ::1 is accepted and then reset.
 
 func modbusLive(t *testing.T, addr, extra string) (*credServices, func()) {
 	t.Helper()
