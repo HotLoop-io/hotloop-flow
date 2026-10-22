@@ -14,11 +14,13 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/recolabs/gnata v0.5.0
 	github.com/robinson/gos7 v0.0.0-20260924061028-c54e650665ba
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/simonvetter/modbus v1.6.4
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.56.0
+	golang.org/x/text v0.40.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
@@ -63,7 +65,6 @@ require (
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

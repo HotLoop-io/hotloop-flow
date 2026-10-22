@@ -8,9 +8,11 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
+	"github.com/HotLoop-io/hotloop-flow/internal/schema"
 )
 
 const colorParser = "#DEBD5C"
@@ -28,6 +30,17 @@ type jsonNode struct {
 	action string // toggle, str, obj
 	prop   string
 	indent int
+
+	// schema is the schema from the node's own settings. When it is set it is
+	// the schema, and msg.schema is left alone. When it is not, a message that
+	// carries msg.schema is validated against that, the way Node-RED does.
+	schema *schema.Schema
+
+	// msgSchema is the last msg.schema compiled, keyed by its JSON text, so a
+	// flow that sets the same schema on every message compiles it once.
+	mu        sync.Mutex
+	msgText   string
+	msgSchema *schema.Schema
 }
 
 func registerJSONNode() {
@@ -42,9 +55,11 @@ func registerJSONNode() {
 		LabelProp:    "name",
 		Compatibility: node.Compatibility{
 			Level: node.CompatPartial,
-			Notes: "Conversion in both directions is supported. Schema validation " +
-				"against msg.schema is not implemented in this build.",
-			UnsupportedProps: []string{"schema"},
+			Notes: "Conversion in both directions is supported. Schema validation is " +
+				"supported, against msg.schema as in Node-RED and against a schema in the " +
+				"node's settings. The validator is not Ajv: it reads draft 2020-12 unless " +
+				"the schema names another draft, it refuses a $ref to anything outside the " +
+				"schema, and format keywords it does not know are ignored.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -55,9 +70,20 @@ func registerJSONNode() {
 				{Value: "str", Label: "Always render to JSON text"},
 			}},
 			{Name: "pretty", Kind: node.PropBool, Label: "Format the JSON text"},
+			{Name: "schema", Kind: node.PropJSON, Label: "Schema",
+				Help: "A JSON Schema the value has to match. Leave it empty to validate " +
+					"against msg.schema when a message carries one."},
 		},
 		Help: "Converts a property between JSON text and a parsed object. With no " +
-			"action set it toggles: text becomes an object and an object becomes text.",
+			"action set it toggles: text becomes an object and an object becomes text.\n\n" +
+			"With a schema, the value is checked against it, and a value that does not " +
+			"match goes to a Catch node with the path of every bad field and does not " +
+			"continue. The schema is the one in the node's settings, or `msg.schema` when " +
+			"the settings have none. The schema is draft 2020-12 unless it names another " +
+			"draft, and an invalid schema in the settings fails the deploy. A message that " +
+			"matches continues, with `msg.schema` removed if that is where the schema " +
+			"came from. A message that does not has `msg.schemaError` set to the list of " +
+			"violations.",
 	}, newJSONNode)
 }
 
@@ -74,7 +100,60 @@ func newJSONNode(def *node.Definition) (node.Node, error) {
 	default:
 		return nil, fmt.Errorf("unknown action %q", n.action)
 	}
+	if text := strings.TrimSpace(def.Node.PropString("schema", "")); text != "" {
+		sc, err := schema.Compile([]byte(text))
+		if err != nil {
+			return nil, err
+		}
+		n.schema = sc
+	}
 	return n, nil
+}
+
+// activeSchema is the schema this message is checked against, if any. fromMsg
+// reports that it came from msg.schema, which is removed once the message
+// passes.
+func (n *jsonNode) activeSchema(m *engine.Msg) (sc *schema.Schema, fromMsg bool, err error) {
+	if n.schema != nil {
+		return n.schema, false, nil
+	}
+	raw, ok, _ := m.Get("schema")
+	if !ok || raw == nil {
+		return nil, false, nil
+	}
+	text, merr := json.Marshal(raw)
+	if merr != nil {
+		return nil, true, fmt.Errorf("msg.schema is not JSON: %w", merr)
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.msgSchema != nil && n.msgText == string(text) {
+		return n.msgSchema, true, nil
+	}
+	sc, cerr := schema.CompileValue(raw)
+	if cerr != nil {
+		n.msgSchema, n.msgText = nil, ""
+		return nil, true, fmt.Errorf("msg.schema: %w", cerr)
+	}
+	n.msgSchema, n.msgText = sc, string(text)
+	return sc, true, nil
+}
+
+// check validates value against sc. On a mismatch it puts the violations on
+// msg.schemaError and returns the error the node raises.
+func (n *jsonNode) check(m *engine.Msg, sc *schema.Schema, value any) error {
+	err := sc.Validate(n.prop, value)
+	if err == nil {
+		return nil
+	}
+	if v, ok := err.(*schema.Violations); ok {
+		list := make([]any, len(v.List))
+		for i, x := range v.List {
+			list[i] = map[string]any{"path": x.Path, "keyword": x.Keyword, "message": x.Message}
+		}
+		_ = m.Set("schemaError", list)
+	}
+	return fmt.Errorf("does not match the schema: %w", err)
 }
 
 func (n *jsonNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) error {
@@ -84,6 +163,19 @@ func (n *jsonNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) e
 	}
 	if !ok {
 		return fmt.Errorf("message has no property %q", n.prop)
+	}
+
+	sc, fromMsg, err := n.activeSchema(m)
+	if err != nil {
+		return err
+	}
+	// pass finishes a message that matched: msg.schema is spent, so it does not
+	// travel on into a node that would validate against it again.
+	pass := func() {
+		if fromMsg {
+			_ = m.Delete("schema")
+		}
+		out.Send(0, m)
 	}
 
 	action := n.action
@@ -111,7 +203,12 @@ func (n *jsonNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) e
 			// Already an object. Node-RED passes it through rather than
 			// erroring, so a flow with a JSON node in front of a database node
 			// works whether the source produced text or an object.
-			out.Send(0, m)
+			if sc != nil {
+				if err := n.check(m, sc, value); err != nil {
+					return err
+				}
+			}
+			pass()
 			return nil
 		}
 		var parsed any
@@ -121,13 +218,32 @@ func (n *jsonNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) e
 		if err := m.Set(n.prop, parsed); err != nil {
 			return err
 		}
+		if sc != nil {
+			if err := n.check(m, sc, parsed); err != nil {
+				return err
+			}
+		}
 
 	case "str":
 		if s, isStr := value.(string); isStr {
-			// Already text; do not double-encode it into a quoted string.
-			_ = s
-			out.Send(0, m)
+			// Already text; do not double-encode it into a quoted string. With a
+			// schema the text is parsed to be checked and stays text.
+			if sc != nil {
+				var parsed any
+				if err := json.Unmarshal([]byte(s), &parsed); err != nil {
+					return fmt.Errorf("parsing %s as JSON: %w", n.prop, err)
+				}
+				if err := n.check(m, sc, parsed); err != nil {
+					return err
+				}
+			}
+			pass()
 			return nil
+		}
+		if sc != nil {
+			if err := n.check(m, sc, value); err != nil {
+				return err
+			}
 		}
 		var (
 			b   []byte
@@ -146,7 +262,7 @@ func (n *jsonNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) e
 		}
 	}
 
-	out.Send(0, m)
+	pass()
 	return nil
 }
 
