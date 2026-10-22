@@ -1598,8 +1598,66 @@ The validator is `internal/schema`, a thin wrapper over
 (Apache-2.0, pure Go). Anything else in Flow that needs to check a value against
 a schema uses the same package.
 
-Schemas on ports, refused at deploy when the editor can see the mismatch, and
-types drawn on the wires, are next on the [roadmap](docs/ROADMAP.md#phase-7-typed-wires-and-mcp).
+### Schemas on ports
+
+Any node can declare what it accepts and what each output port promises. Two
+optional keys on the node, both in the flow file, both ignored by every other
+tool that reads one, so a flow that carries them still round-trips byte for
+byte:
+
+```json
+{"id":"sensor","type":"function","outputs":2,"wires":[["limit"],[]],
+ "ew_outSchemas":[{"type":"object","properties":{"payload":{"type":"object",
+   "required":["temp"],"properties":{"temp":{"type":"number"}}}}}, null]},
+{"id":"limit","type":"switch","wires":[[],[]],
+ "ew_inSchema":{"type":"object","required":["topic"]}}
+```
+
+`ew_inSchema` is what the node takes. `ew_outSchemas` is a list with one schema
+or `null` for each output port. A schema describes the whole message, so the
+payload is `properties.payload`. Keys that start with an underscore, `_msgid`
+and the runtime's other bookkeeping, are left out of what it sees, so a closed
+schema doesn't have to name them. They're JSON Schema like the `json` node's,
+and the same package checks them.
+
+**A mismatch the editor can see is refused at deploy.** When both ends of a wire
+declare a schema and no message could satisfy both, the deploy is refused before
+a byte is written, the same as the test gate: a 422, nothing restarted, nothing
+saved, and a record in the audit trail as `deploy.refused` with the reason
+`typed wires`.
+
+```
+the deploy was refused because of 1 typed wire problem, and the flows already running are untouched; junction "sensor" (sensor) output 1 -> "limit" (limit): payload.temp: the sender sends string and the receiver takes number
+```
+
+It only refuses what it can prove. Different types on the same field, a value
+outside the other end's `enum` or range, a field the receiver requires that the
+sender's closed schema rules out, a field the sender always sends that the
+receiver's closed schema refuses. A sender that just doesn't mention a field the
+receiver requires is not refused, because the message might well carry it, and
+a schema that uses `$ref`, `allOf`, `anyOf`, `oneOf`, `not` or `if` isn't
+second-guessed in that part. A false refusal stops a deploy for nothing, and
+anything it can't prove is still caught at run time. A schema that doesn't
+compile, or an `ew_outSchemas` longer than the node has outputs, is refused the
+same way. Rollbacks aren't checked, for the reason they aren't gated by tests.
+
+**One it can't see goes to a Catch node and to a metric.** A message arriving at
+a node that breaks its `ew_inSchema` never reaches the node. A message leaving a
+port that breaks its schema is stopped at the sender and never delivered. Either
+way it's raised as an error from the node that held the schema, and the Catch
+node gets it with the path of every bad field in `msg.error.message` and as a
+list in `msg.error.violations`, `{path, keyword, message}` each:
+
+```
+the message does not match the schema of output 1: payload.temp: got string, want number
+```
+
+`hotloop_flow_node_schema_mismatches_total` counts them per node, and counts the
+`json` node's mismatches too. A node with no schemas costs one nil check, and a
+flow with none behaves exactly as it did before.
+
+Types drawn on the wires in the editor are next on the
+[roadmap](docs/ROADMAP.md#phase-7-typed-wires-and-mcp).
 
 ---
 
@@ -1935,6 +1993,7 @@ you should not need a second container to find out that your inbox is full.
 | `hotloop_flow_node_messages_received_total` | counter | Messages delivered to a node. |
 | `hotloop_flow_node_messages_sent_total` | counter | Messages a node has emitted. |
 | `hotloop_flow_node_errors_total` | counter | Errors a node raised. |
+| `hotloop_flow_node_schema_mismatches_total` | counter | Messages that broke a JSON Schema at a node: on its input port, on an output port, or in a `json` node. Each one went to a Catch node with the path of every bad field. |
 | `hotloop_flow_node_messages_dropped_total` | counter | Messages discarded because an inbox was full. |
 | `hotloop_flow_node_sends_blocked_total` | counter | Times a sender waited for space. Sustained back-pressure, which is the real signal that a flow cannot keep up. |
 | `hotloop_flow_node_queue_length` | gauge | Messages waiting right now. |

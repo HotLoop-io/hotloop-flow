@@ -37,6 +37,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
 	"github.com/HotLoop-io/hotloop-flow/internal/shell"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
+	"github.com/HotLoop-io/hotloop-flow/internal/wiretype"
 )
 
 // version is stamped at build time with -ldflags "-X main.version=...".
@@ -624,6 +625,11 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 
 	flows := req.Flows
 	incoming := flows.StripCredentials()
+	// Typed wires first: two ends of a wire that can never agree is known from
+	// the document alone, so it is refused before the tests are even started.
+	if problems := wiretype.Check(flows); len(problems) > 0 {
+		return api.DeployResult{}, &wiretype.RefusedError{Problems: problems}
+	}
 	// The gate goes first, before a byte is written: a refused deploy must
 	// leave everything exactly as it was, and the flows that are running
 	// must never notice it was tried. Credentials are already out of the

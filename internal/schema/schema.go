@@ -15,6 +15,7 @@ package schema
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -80,7 +81,8 @@ func CompileValue(doc any) (*Schema, error) {
 }
 
 // Validate checks value against the schema. root names the value in paths, so
-// a bad field comes back as "payload.temp" rather than "/temp". The error is a
+// a bad field comes back as "payload.temp" rather than "/temp". An empty root
+// is for a value that is the whole message: its fields come back as "payload". The error is a
 // *Violations, nil when the value conforms.
 func (s *Schema) Validate(root string, value any) error {
 	v, err := normalize(value)
@@ -134,6 +136,15 @@ func (v *Violations) Error() string {
 	return strings.Join(parts, "; ")
 }
 
+// ViolationsOf finds the *Violations in an error chain, or nil.
+func ViolationsOf(err error) *Violations {
+	var v *Violations
+	if errors.As(err, &v) {
+		return v
+	}
+	return nil
+}
+
 // Paths lists the bad fields.
 func (v *Violations) Paths() []string {
 	out := make([]string, len(v.List))
@@ -172,20 +183,31 @@ func collect(e *jsonschema.ValidationError, root string, out *Violations) {
 	out.List = append(out.List, Violation{Path: path, Keyword: kw, Message: e.ErrorKind.LocalizedString(printer)})
 }
 
-func formatPath(root string, tokens []string) string {
+// Path renders a place in a value the way a Change node writes a property:
+// "payload.sensors[2].temp". root is the first segment; when it is empty the
+// tokens start the path, and a path with no tokens at all reads "msg".
+func Path(root string, tokens ...string) string {
 	var b strings.Builder
 	b.WriteString(root)
 	for _, t := range tokens {
 		if _, err := strconv.Atoi(t); err == nil {
 			b.WriteString("[" + t + "]")
 		} else if isIdent(t) {
-			b.WriteString("." + t)
+			if b.Len() > 0 {
+				b.WriteString(".")
+			}
+			b.WriteString(t)
 		} else {
 			b.WriteString("[" + strconv.Quote(t) + "]")
 		}
 	}
+	if b.Len() == 0 {
+		return "msg"
+	}
 	return b.String()
 }
+
+func formatPath(root string, tokens []string) string { return Path(root, tokens...) }
 
 func isIdent(s string) bool {
 	if s == "" {

@@ -12,6 +12,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
+	"github.com/HotLoop-io/hotloop-flow/internal/wiretype"
 )
 
 // Node types with runtime-wide routing behaviour rather than ordinary wiring.
@@ -487,6 +488,16 @@ func (rt *Runtime) attachNew(g *graph, r *runner, n *engine.Node) (StartError, b
 		g.failures[n.ID] = f
 		return f, false
 	}
+	// A deploy has already refused a schema that doesn't compile. This is for a
+	// flow file that reached the runtime another way, and it fails the one node
+	// the way any node that can't be built does.
+	ports, err := wiretype.Parse(n)
+	if err != nil {
+		f := StartError{NodeID: n.ID, Type: n.Type, Err: err}
+		g.failures[n.ID] = f
+		return f, false
+	}
+	r.ports = ports
 	r.attach(inst)
 	return StartError{}, true
 }
@@ -851,6 +862,14 @@ func (rt *Runtime) deliver(from *runner, port int, msg *engine.Msg, ec *engine.T
 		msg.EnsureID()
 		rt.capture.add(from.id, port, msg, rt.opts.Now())
 	}
+	// What leaves a port is checked against that port's schema after the capture
+	// and the observer have seen it, so a trace and a test still show what the
+	// node sent, and before anything downstream does.
+	if err := from.ports.CheckOut(port, msg); err != nil {
+		from.stats.Errors.Add(1)
+		rt.raiseError(from, err, msg)
+		return
+	}
 	wp := from.wires.Load()
 	if wp == nil || port < 0 || port >= len(*wp) {
 		return
@@ -890,6 +909,10 @@ func (rt *Runtime) Inject(nodeID string, msg *engine.Msg) error {
 // hierarchy wins, so a Catch inside a group beats a Catch on the tab. Catch
 // nodes marked "uncaught" fire only when nothing else did.
 func (rt *Runtime) raiseError(from *runner, err error, msg *engine.Msg) {
+	violations := wiretype.Violations(err)
+	if from != nil && violations != nil {
+		from.stats.SchemaMismatches.Add(1)
+	}
 	if from == nil {
 		rt.emit(Event{Topic: TopicError, At: rt.opts.Now(), Data: map[string]any{
 			"error": err.Error(),
@@ -935,7 +958,7 @@ func (rt *Runtime) raiseError(from *runner, err error, msg *engine.Msg) {
 		} else {
 			out = engine.NewMsg()
 		}
-		out.Data["error"] = map[string]any{
+		errInfo := map[string]any{
 			"message": err.Error(),
 			"source": map[string]any{
 				"id":   from.id,
@@ -946,6 +969,11 @@ func (rt *Runtime) raiseError(from *runner, err error, msg *engine.Msg) {
 				}(),
 			},
 		}
+		if violations != nil {
+			// The path of every bad field, so a Catch node can route on it.
+			errInfo["violations"] = violations
+		}
+		out.Data["error"] = errInfo
 		out.Data["_errorDepth"] = float64(depth + 1)
 		if msg != nil {
 			rt.tracer.Outgoing(out, from.id, from.typ, -1, "error", nil, -1, rt.opts.Now())
