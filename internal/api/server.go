@@ -486,7 +486,15 @@ func (s *Server) mcpIdentify(r *http.Request) (mcphost.Identity, *mcphost.Refusa
 		hadToken := r.Header.Get("Authorization") != "" || sent
 		return mcphost.Identity{}, &mcphost.Refusal{Status: status, Message: msg, Audit: hadToken && msg != "no bearer token"}
 	}
-	return mcphost.Identity{Name: user.Username, Allows: user.Allows}, nil
+	id := mcphost.Identity{Name: user.Username, Allows: user.Allows}
+	if name, ok := strings.CutPrefix(user.Username, "token:"); ok {
+		for _, t := range s.deps.Config.Auth.Tokens {
+			if t.Name == name && t.RateLimit.Calls > 0 {
+				id.Limit = mcphost.Limit{Calls: t.RateLimit.Calls, Per: t.RateLimit.Window()}
+			}
+		}
+	}
+	return id, nil
 }
 
 func (s *Server) mcpAudit(ev mcphost.Event) {

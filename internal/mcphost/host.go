@@ -65,6 +65,20 @@ type Identity struct {
 	Name string
 	// Allows reports whether the caller holds a permission.
 	Allows func(perm string) bool
+	// Limit bounds this caller's tool calls. The zero value is no limit.
+	Limit Limit
+}
+
+// Limit is a number of tool calls in a window. The window starts with the
+// caller's first call and, once it has passed, the count starts again.
+type Limit struct {
+	Calls int
+	Per   time.Duration
+}
+
+type window struct {
+	start time.Time
+	n     int
 }
 
 // Refusal is why a request was turned away before it reached the protocol.
@@ -210,11 +224,37 @@ type Registry struct {
 	server *mcp.Server
 	tools  map[string]*tool
 	opts   Options
+
+	// windows is each limited caller's count, by name, and now is the clock it
+	// is read against, swapped only by tests.
+	windows map[string]*window
+	now     func() time.Time
+}
+
+// allow counts a call against the caller's limit. It reports whether the call
+// may go ahead and, when it may not, how long until the window ends.
+func (r *Registry) allow(id Identity) (bool, time.Duration) {
+	if id.Limit.Calls <= 0 {
+		return true, 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := r.now()
+	w := r.windows[id.Name]
+	if w == nil || now.Sub(w.start) >= id.Limit.Per {
+		w = &window{start: now}
+		r.windows[id.Name] = w
+	}
+	if w.n >= id.Limit.Calls {
+		return false, w.start.Add(id.Limit.Per).Sub(now)
+	}
+	w.n++
+	return true, 0
 }
 
 // New makes an empty registry. version is what the server reports as its own.
 func New(version string) *Registry {
-	r := &Registry{version: version, tools: map[string]*tool{}}
+	r := &Registry{version: version, tools: map[string]*tool{}, windows: map[string]*window{}, now: time.Now}
 	r.server = r.newServer()
 	return r
 }
@@ -404,6 +444,17 @@ func (r *Registry) handle(t *tool) mcp.ToolHandler {
 		if perm, ok := permitted(ci.id, t); !ok {
 			r.audit(ci.event(EventRefused, map[string]any{"tool": t.spec.Name, "node": t.owner, "reason": "missing permission " + perm}))
 			return errorResult("the token lacks the " + perm + " permission"), nil
+		}
+
+		if ok, wait := r.allow(ci.id); !ok {
+			secs := int(wait.Round(time.Second).Seconds())
+			if secs < 1 {
+				secs = 1
+			}
+			r.audit(ci.event(EventRefused, map[string]any{"tool": t.spec.Name, "node": t.owner,
+				"reason": fmt.Sprintf("rate limit exceeded: %d calls per %s", ci.id.Limit.Calls, ci.id.Limit.Per)}))
+			return errorResult(fmt.Sprintf("rate limit exceeded: this token may make %d calls per %s. Try again in %d seconds.",
+				ci.id.Limit.Calls, ci.id.Limit.Per, secs)), nil
 		}
 
 		var args map[string]any

@@ -230,6 +230,27 @@ type Token struct {
 	Hash string `yaml:"hash"`
 	// Permissions, as for a user. A deploy token is ["flows.read", "flows.write"].
 	Permissions []string `yaml:"permissions"`
+	// RateLimit bounds how many MCP tool calls this token may make. Zero calls,
+	// the default, is no limit at all.
+	RateLimit TokenRateLimit `yaml:"rateLimit"`
+}
+
+// TokenRateLimit is a number of MCP tool calls a token may make in a window.
+// The window starts with the token's first call and a call over the number is
+// refused until it has passed, when the count starts again.
+type TokenRateLimit struct {
+	// Calls is how many calls fit in a window. Zero means no limit.
+	Calls int `yaml:"calls"`
+	// Per is the window, one minute when Calls is set and this is not.
+	Per time.Duration `yaml:"per"`
+}
+
+// Window is the length of the window, with the default filled in.
+func (r TokenRateLimit) Window() time.Duration {
+	if r.Per <= 0 {
+		return time.Minute
+	}
+	return r.Per
 }
 
 // DeployTokenName is the token HOTLOOP_FLOW_DEPLOY_TOKEN_HASH configures.
@@ -827,6 +848,12 @@ func (c *Config) Validate() error {
 		}
 		if len(t.Permissions) == 0 {
 			return fmt.Errorf("auth.tokens[%d] (%s) has no permissions; a deploy token is [flows.read, flows.write]", i, t.Name)
+		}
+		if t.RateLimit.Calls < 0 || t.RateLimit.Per < 0 {
+			return fmt.Errorf("auth.tokens[%d] (%s): rateLimit can't be negative", i, t.Name)
+		}
+		if t.RateLimit.Calls == 0 && t.RateLimit.Per != 0 {
+			return fmt.Errorf("auth.tokens[%d] (%s): rateLimit has a window and no calls, which limits nothing. Set rateLimit.calls, or take rateLimit out", i, t.Name)
 		}
 	}
 
