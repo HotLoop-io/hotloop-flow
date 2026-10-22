@@ -1800,6 +1800,25 @@ anything it can't prove is still caught at run time. A schema that doesn't
 compile, or an `ew_outSchemas` longer than the node has outputs, is refused the
 same way. Rollbacks aren't checked, for the reason they aren't gated by tests.
 
+**An Inject node's literals count as a type.** An Inject has no schema of its
+own, but what it sets for certain is as good as one. When an Inject is wired
+straight to a node with an `ew_inSchema`, the literal payload, and any other
+literal property it sets, is checked against that schema at deploy, and a
+literal the receiver can never take is refused the same way, with the same 422
+and the same `deploy.refused` in the audit trail:
+
+```
+inject "reading" (i1) output 1 -> "limit" (l1): payload: the inject sets "hot", which the receiver does not take: got string, want number
+```
+
+Only a literal is checked: a string, a number, a boolean or JSON. A timestamp,
+an environment variable, flow or global context, another message property,
+JSONata, a buffer or a regular expression isn't known until the node fires, so it
+is skipped, never guessed. A required property the Inject doesn't set isn't a
+clash either, because a value that isn't static may set it. Only the wire from
+the Inject to the node is judged: a literal that goes through another node first
+is left to the run-time check. The editor draws the same clash on that wire.
+
 **One it can't see goes to a Catch node and to a metric.** A message arriving at
 a node that breaks its `ew_inSchema` never reaches the node. A message leaving a
 port that breaks its schema is stopped at the sender and never delivered. Either

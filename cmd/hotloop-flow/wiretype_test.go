@@ -121,3 +121,73 @@ func TestTheEditorCanAskWhichWiresClash(t *testing.T) {
 		t.Fatal("asking deployed the flow")
 	}
 }
+
+// injectFlow is an Inject node that sets payload from a literal, wired to a limit
+// check whose input schema takes a payload between 0 and 100.
+func injectFlow(v, vt string) string {
+	return `[
+  {"id":"t1","type":"tab","label":"Line 3"},
+  {"id":"reading","type":"inject","z":"t1","name":"reading","props":[{"p":"payload","v":"` + v + `","vt":"` + vt + `"}],"x":1,"y":1,"wires":[["limit"]]},
+  {"id":"limit","type":"junction","z":"t1","name":"limit","x":2,"y":1,"wires":[[]],
+   "ew_inSchema":{"type":"object","properties":{"payload":{"type":"number","minimum":0,"maximum":100}}}}
+]`
+}
+
+func TestAnInjectLiteralTheReceiverCanNeverTakeIsRefusedAndNothingNotices(t *testing.T) {
+	app, _ := newApp(t)
+	e := serveAppWith(t, app, map[string][]string{"dana": {"flows.read", "flows.write"}}, nil)
+	dana := e.login(t, "dana")
+
+	// A literal that matches deploys, and so does one that isn't known until it fires.
+	for _, ok := range []string{injectFlow("42.5", "num"), injectFlow("", "date"), injectFlow("LIMIT", "env"), injectFlow("flow.limit", "jsonata")} {
+		if code, out := e.call(t, "POST", "/flows", dana, []byte(ok)); code != http.StatusOK {
+			t.Fatalf("a flow that should deploy: %d %s", code, out)
+		}
+	}
+	if _, err := deployDoc(t, app, injectFlow("42.5", "num")); err != nil {
+		t.Fatal(err)
+	}
+	running := app.currentRuntime()
+	file := append([]byte(nil), app.flowStore.Bytes()...)
+	rev := app.flowStore.Rev()
+	latest, _ := app.history.Latest()
+
+	// A literal outside the receiver's range, and one of the wrong type, are refused.
+	for _, bad := range []struct{ doc, want string }{
+		{injectFlow("250", "num"), `payload: the inject sets 250, which the receiver does not take: maximum`},
+		{injectFlow("hot", "str"), `payload: the inject sets "hot", which the receiver does not take: got string, want number`},
+	} {
+		code, out := e.call(t, "POST", "/flows", dana, []byte(bad.doc))
+		var body struct {
+			Error string `json:"error"`
+			Wires []struct {
+				NodeID  string `json:"nodeId"`
+				Type    string `json:"type"`
+				To      string `json:"to"`
+				Message string `json:"message"`
+			} `json:"wires"`
+		}
+		if code != http.StatusUnprocessableEntity || json.Unmarshal(out, &body) != nil || len(body.Wires) != 1 {
+			t.Fatalf("POST /flows: %d %s", code, out)
+		}
+		w := body.Wires[0]
+		if w.NodeID != "reading" || w.Type != "inject" || w.To != "limit" || !strings.Contains(w.Message, bad.want) ||
+			!strings.Contains(body.Error, `inject "reading" (reading) output 1 -> "limit" (limit)`) ||
+			!strings.Contains(body.Error, "the flows already running are untouched") {
+			t.Fatalf("the refusal: %s", out)
+		}
+		t.Log(body.Error)
+	}
+	trail, _ := os.ReadFile(app.cfg.AuditPath())
+	if !strings.Contains(string(trail), `"typed wires"`) {
+		t.Errorf("the audit trail has no typed wires refusal:\n%s", trail)
+	}
+
+	// What was running before is still running, and nothing was written or recorded.
+	if app.currentRuntime() != running || string(app.flowStore.Bytes()) != string(file) || app.flowStore.Rev() != rev {
+		t.Error("a refused deploy changed what was running")
+	}
+	if got, _ := app.history.Latest(); got.Seq != latest.Seq {
+		t.Errorf("a refused deploy was recorded as deployment %d", got.Seq)
+	}
+}
