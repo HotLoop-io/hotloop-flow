@@ -42,7 +42,7 @@ because it's a feature, not the point.
 Current release is `2.2.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.2.0`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-36,000 lines of Go, more than a third of it tests, 64 node types, and the race
+36,000 lines of Go, more than a third of it tests, 75 node types, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
 business use is free through EmberNET, under HotLoop's Business Source License.
 
@@ -1195,18 +1195,18 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**70 node types.**
+**75 node types.**
 
 | Category | Nodes |
 |---|---|
 | Common | inject, debug, complete, catch, status, link in, link out, comment, junction |
 | Function | function, switch, change, range, template, delay, trigger, exec, rbe |
-| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, s7 read/write, ethernetip read/write, opcua read/write/subscribe, sparkplug in/out/command |
+| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, s7 read/write, ethernetip read/write, opcua read/write/subscribe, sparkplug in/out/command, hotloop in/state/script/recipe |
 | Sequence | split, join, sort, batch |
 | Parser | csv, html, json, xml, yaml |
 | Storage | file, file in, watch, influxdb out, postgres |
 | Discover | scan, netinfo, for inventorying an OT segment |
-| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug |
+| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug, hotloop |
 
 `scan` sweeps a CIDR range and identifies Modbus and EtherNet/IP endpoints, and
 `netinfo` reports the interfaces the runtime can actually see, which in macvlan
@@ -1343,16 +1343,97 @@ OPC UA server that takes the connection and never answers endpoint discovery cos
 the node that asked its timeout and nobody else anything: the other nodes on that
 server, and a flow that is being stopped, don't queue behind it.
 
-**Writes change equipment, and there is no ceremony.** I looked for a
-confirmation pattern in Flow to follow and there isn't one for equipment. The
-guards that exist bound what a node may reach (`discovery.allowedCIDRs` for
-`scan`, the file and secret scopes), and nothing asks "are you sure" before a
-message does something. So the write nodes don't either. A write node is a
-deliberate thing someone placed on a canvas and put through the same deploy
-record as everything else, and the message arriving at its output means the device acknowledged it.
-When HotLoop is on the network, equipment writes are supposed to go through its
-write gate instead of straight to the PLC. That is on the roadmap and it isn't
-built, but nothing here stands in its way.
+**HotLoop** is `hotloop in`, `hotloop state`, `hotloop script` and `hotloop
+recipe` on a `hotloop-flow-hotloop` connection, which is a URL and an account.
+Flow runs next to HotLoop and calls its HTTP API from the outside, nothing
+else, and a flow that never picks a HotLoop never makes a call. The connection
+signs in with `POST /api/auth/login`, sends the bearer token HotLoop hands back,
+and signs in again when HotLoop says the session is gone. An operator account
+is enough for all four nodes and for the gated write below. Leave the username
+empty only for a HotLoop that runs with no login at all.
+
+`hotloop in` follows HotLoop's live feed (`GET /api/stream`) and sends a message
+for each entity that changes state: `msg.topic` is the entity id, `msg.payload`
+the new state, and `msg.hotloop` the entity id, the state it had before, its
+attributes, its quality and its timestamps. It follows the entity ids and
+patterns you list (`sensor.tank_*`, or `*`). The picture HotLoop sends when the
+node connects isn't a change, so it isn't sent, unless you turn on "Send the
+current state when it connects". An attribute that moved without the state
+changing isn't a change either. If the link drops, the badge goes red, one error
+reaches a Catch node for the outage and not one per retry, the wait grows from 1
+second to 30, and when it is back an entity that changed in the meantime is sent
+and one that didn't isn't. HotLoop sends every state as text, so "Numbers as
+numbers" turns `12.5` into a number and leaves `on` and `unknown` alone.
+
+`hotloop state` reads one entity when a message arrives
+(`GET /api/states/{entity_id}`) and sends the message on with the same fields.
+An entity that doesn't exist, or is disabled, raises an error with HotLoop's own
+words, which say which.
+
+`hotloop script` runs a script (`POST /api/scripts/{id}/run`) with the fields
+you give it, and `hotloop recipe` applies a recipe
+(`POST /api/recipes/{id}/apply`) with its parameters and, if you want one, an
+older version on purpose. Both are HotLoop's own: it checks every field and
+parameter and never moves a value to fit, runs every write through its write
+gate, and keeps the record. Flow sends the reason `flow:<node id>`, with your
+own words after it if the node has a reason, and HotLoop records that beside the
+run or the application, in its write audit and in its logbook, under the account
+Flow signed in as. A script waits for its run to end unless you turn that off,
+and the message goes on with the run, trace included, only if it succeeded. A
+recipe goes on only when every target was written, with each value's
+`verification`. Anything else arrives at a Catch node with HotLoop's reason and
+its status: a script that is busy, a field out of range, a run that failed at
+step 2, a recipe refused whole because one target isn't armed, or one that
+stopped halfway, which says how many targets were written. Nothing that was
+written is undone, because that is HotLoop's rule too.
+
+**Writes change equipment, and there is no ceremony, unless HotLoop is there.**
+I looked for a confirmation pattern in Flow to follow and there isn't one for
+equipment. The guards that exist bound what a node may reach
+(`discovery.allowedCIDRs` for `scan`, the file and secret scopes), and nothing
+asks "are you sure" before a message does something. So the write nodes don't
+either. A write node is a deliberate thing someone placed on a canvas and put
+through the same deploy record as everything else, and the message arriving at
+its output means the device acknowledged it.
+
+When HotLoop is on the network, the equipment is its to guard. Every equipment
+write node (`modbus write`, `opcua write`, `s7 write` and `ethernetip write`)
+has **Write through HotLoop**, empty by default, and **HotLoop tag**, the tag in
+HotLoop this write is for, written `device/tag`. With a HotLoop picked, the
+value goes to `POST /api/write` and not to the PLC. HotLoop's write gate decides,
+in its order: that writes are switched on, that the tag is armed, that the value
+is in the tag's range. HotLoop's own address, data type and scale for that tag
+apply, so the address and data type on the Flow node are not used. The node's
+equipment connection stays picked, so clearing the HotLoop puts the node back
+exactly as it was. A write the gate refuses never reaches the equipment and
+arrives at a Catch node with the gate's words (`HotLoop's gate refused the write
+to plc-1/sp: value is outside the tag's configured range: 120 is outside 0..95
+(HTTP 422)`). A HotLoop that can't be reached fails the write too. It never falls
+back to writing directly, because that would be a write the gate never saw. The
+gate takes one bool, number or text per write, so a list of registers is
+refused, with a message saying so.
+
+**HotLoop is tested against the real thing.** The published HotLoop IoT 4.18.10
+image runs in CI with a login and writes on, next to the Modbus server below.
+The tests make a device, tags, a script, a recipe and an operator account
+through HotLoop's own API, then check both ends: what HotLoop said, and what
+the simulated PLC holds afterwards. A write through the gate lands in the
+register. One outside the tag's range, one to a tag that isn't armed, one to a
+tag HotLoop doesn't have, and one with HotLoop unreachable all fail with the
+gate's words and leave the register where it was. The script and the recipe run
+and write through the gate, a field out of range is refused, `hotloop state`
+reads what HotLoop holds, and `hotloop in` sends the change a gated write made,
+with the state it had before. HotLoop's write audit and logbook were checked for
+the account and the reason. Signing in again after HotLoop forgets the session is
+tested, and so is a refused login. The reconnect and the diffing of the feed are
+tested against a small stand-in for HotLoop that answers in the documented
+shapes, because dropping a real HotLoop's connection on cue isn't something I
+can do. Not done: HotLoop records the account Flow signs in as, and `flow:<node
+id>` goes in as the reason, because the API gives a client no way to name its own
+actor. The connection trusts the system's certificate roots and nothing else, so
+an `https` HotLoop with a private CA isn't covered. No node calls a HotLoop
+service directly, like `switch.turn_on`: a script or a recipe does that, with
+HotLoop's checks.
 
 **Tested against** Microsoft's OPC PLC (`opc-plc` 2.15.11) with anonymous and
 username logins across None, Sign and SignAndEncrypt, and against pymodbus
@@ -1958,8 +2039,8 @@ id actually is and which kind the setting wants. The editor only offers you the
 right kind, so this only comes from a hand edit or a pasted id, which is
 exactly where it bites.
 
-By compatibility level the 64 node types are 12 full, 21 partial, 14 deliberately
-divergent, and 17 of Flow's own. Every node declares how it relates to
+By compatibility level the 75 node types are 12 full, 21 partial, 14 deliberately
+divergent, and 28 of Flow's own. Every node declares how it relates to
 Node-RED's node of the same name, and **a test fails the build if a node claims
 partial compatibility without stating in writing what is missing.** A node
 that is 90% compatible and silent about the other 10% is more dangerous than one
@@ -2168,11 +2249,12 @@ B). All four are out as 4.18.10, each with its own image and chart, and they pul
 with no login. [hotloop.io/products](https://hotloop.io/products/) has the
 lineup.
 
-Flow doesn't talk to any of them yet, and it will never be built into them. It
-runs next to them. HotLoop nodes, where Flow calls HotLoop's API from the outside
-and every command a flow sends goes through HotLoop's write gate and lands in its
-logbook, are Phase 5 of the [roadmap](docs/ROADMAP.md). Until then they run side
-by side and share nothing but a broker, if you give them one.
+Flow talks to them, and it will never be built into them. It runs next to them
+and calls HotLoop's API from the outside: the HotLoop nodes read entity states
+and changes, run scripts and apply recipes, and the equipment write nodes can
+send their writes through HotLoop's write gate. All of that is under
+[The plant floor](#the-plant-floor). A Flow with no HotLoop picked shares nothing
+with them but a broker, if you give them one.
 
 Flow is under the same license as those four: HotLoop's Business Source License
 1.1. Home and lab use is free, and so is use by accredited schools and educational institutions, nonprofit organizations and government bodies. Business use is free when it runs through

@@ -43,14 +43,14 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 ## Summary
 
-70 node types registered.
+75 node types registered.
 
 | Level | Count |
 |---|---|
 | full | 12 |
 | partial | 21 |
 | divergent | 14 |
-| hotloop-flow-only | 23 |
+| hotloop-flow-only | 28 |
 
 ## Common
 
@@ -72,6 +72,7 @@ stopped with D1012 instead of stalling the node's whole queue.
 | Type | Level | Notes |
 |---|---|---|
 | `hotloop-flow-ethernetip` | hotloop-flow-only | HotLoop Flow's own EtherNet/IP connection, for tag access on ControlLogix, CompactLogix and Micro800 controllers. It connects on the first request, drops the connection on any failure that makes it untrustworthy, and reconnects on the next one. |
+| `hotloop-flow-hotloop` | hotloop-flow-only | HotLoop Flow's own connection to a HotLoop. Logs in with an account and sends the bearer token HotLoop hands back, and logs in again when it expires. |
 | `hotloop-flow-influxdb` | hotloop-flow-only | HotLoop Flow's own InfluxDB connection, targeting the App Store's influxdb-app. |
 | `hotloop-flow-modbus` | hotloop-flow-only | HotLoop Flow's own Modbus TCP connection. It connects on the first request, drops the connection on any failure that makes it untrustworthy, and reconnects on the next one. |
 | `hotloop-flow-opcua` | hotloop-flow-only | HotLoop Flow's own OPC UA connection. It connects on first use, notices when the server goes away, and opens a new session on the next request or, for a subscription, by itself with a growing wait between tries. |
@@ -110,6 +111,10 @@ stopped with D1012 instead of stalling the node's whole queue.
 |---|---|---|
 | `ethernetip read` | hotloop-flow-only | HotLoop Flow's own EtherNet/IP tag read. Not the same configuration as the community node-red-contrib-cip-ethernet-ip, which does not run here. |
 | `ethernetip write` | hotloop-flow-only | HotLoop Flow's own EtherNet/IP tag write. Not the same configuration as the community node-red-contrib-cip-ethernet-ip, which does not run here. |
+| `hotloop in` | hotloop-flow-only | HotLoop Flow's own node. It follows HotLoop's live feed (GET /api/stream), which has no Node-RED counterpart. |
+| `hotloop recipe` | hotloop-flow-only | HotLoop Flow's own node. It applies a HotLoop recipe (POST /api/recipes/{id}/apply). |
+| `hotloop script` | hotloop-flow-only | HotLoop Flow's own node. It runs a HotLoop script (POST /api/scripts/{id}/run). |
+| `hotloop state` | hotloop-flow-only | HotLoop Flow's own node. It reads one entity's state from HotLoop (GET /api/states/{entity_id}). |
 | `http in` | divergent | Serves a path, with Express-style :params and a trailing *, and builds the same msg.req / msg.res / msg.payload shape Node-RED does, including JSON, form-encoded and raw bodies. Three deliberate differences. A request that no HTTP Response node answers is closed with 504 after a timeout instead of being held open forever, because Node-RED's version leaks a connection per request until the process runs out of sockets and stops answering with nothing in the log. Two nodes claiming the same method and path is refused at deploy time rather than one of them silently never firing. And a path that would shadow the editor or the admin API is refused for the same reason. Uploads parse the way multer does in Node-RED: text fields into msg.payload, files into msg.req.files, a broken upload answered with 500. One bound multer lacks: an array index over 10,000 in a field name, a[99999999], is refused instead of building a sparse array that long. msg.req.cookies is cookie-parser's, j: values included. Ignored properties: `swaggerDoc`. |
 | `http request` | partial | Method, URL, headers, basic authentication, redirects and the three return types, with msg.url, msg.method and msg.headers overriding the node. The response body is size-capped and the call is bounded by a timeout, neither of which Node-RED does. TLS comes from a tls-config, or without one msg.rejectUnauthorized = false skips the certificate check for that one message, as in Node-RED. msg.cookies and a cookie header go out through a cookie jar, cookies a redirect sets follow the redirect, and msg.responseCookies and msg.redirectList come back, all as in Node-RED. A multipart/form-data content type with an object payload sends it as a form. Proxy settings and connection persistence are not implemented in this build. There is no egress allowlist: this node can reach anything the pod can, exactly as Node-RED's can, and the place to bound that is a NetworkPolicy rather than an edit dialog nobody outside the cluster can trust. Ignored properties: `proxy`, `persist`. |
 | `http response` | partial | Status code and headers from the node or from msg.statusCode and msg.headers, with the payload as the body. msg.cookies sets and clears cookies exactly as Express does for Node-RED, options and all; with more than one, they go out in name order rather than the order the object was built in. |

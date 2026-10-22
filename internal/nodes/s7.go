@@ -865,6 +865,7 @@ type s7WriteNode struct {
 	dtype   s7Type
 	svc     node.Services
 	target  s7Target
+	gate    *hotloopGate
 }
 
 func registerS7Write() {
@@ -897,13 +898,14 @@ func registerS7Write() {
 					node.TypeBool, node.TypeStr, node.TypeJSON, node.TypeEnv, node.TypeJSONata},
 				Help: "A list writes consecutive values, or consecutive bits, starting at the address."},
 			{Name: "dataType", Kind: node.PropSelect, Label: "Data type", Default: "int16", Options: s7TypeOptions()},
+			hotloopGateProps()[0], hotloopGateProps()[1],
 		},
 		Help: "Writes to a Siemens S7 CPU when a message arrives, then passes the message on. " +
 			"This changes the machine. There is no confirmation step and no read back: the message " +
 			"that arrives at the output means the CPU acknowledged the write.\n\n" +
 			"A bit is written with the protocol's own bit write, which changes that bit and no other in " +
 			"its byte. A string is written into an S7 STRING that is already there: the node reads its " +
-			"maximum length, refuses text that is longer, and writes the length and the characters.",
+			"maximum length, refuses text that is longer, and writes the length and the characters." + hotloopGateHelp,
 	}, newS7Write)
 }
 
@@ -941,6 +943,11 @@ func newS7Write(def *node.Definition) (node.Node, error) {
 			return nil, err
 		}
 	}
+	g, gerr := newHotloopGate(def)
+	if gerr != nil {
+		return nil, gerr
+	}
+	n.gate = g
 	return n, nil
 }
 
@@ -965,6 +972,9 @@ func (n *s7WriteNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitt
 	if !ok || raw == nil {
 		return n.fail(out, fmt.Errorf("value resolved to nothing, so there is nothing to write. "+
 			"Check the Value field, which reads %s %q", n.value.Type, n.value.Value))
+	}
+	if n.gate != nil {
+		return n.gate.write(ctx, m, raw, out, n.fail)
 	}
 	items, isList := raw.([]any)
 	if !isList {

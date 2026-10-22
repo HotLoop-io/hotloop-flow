@@ -905,6 +905,7 @@ type modbusWriteNode struct {
 	unit     *uint8
 	svc      node.Services
 	target   modbusTarget
+	gate     *hotloopGate
 }
 
 func registerModbusWrite() {
@@ -946,12 +947,13 @@ func registerModbusWrite() {
 		}.withOrder(
 			node.Prop{Name: "unitId", Kind: node.PropString, Label: "Unit ID",
 				Help: "Empty uses the server's."},
+			hotloopGateProps()[0], hotloopGateProps()[1],
 		),
 		Help: "Writes to a Modbus TCP device when a message arrives, then passes the message on. " +
 			"This changes the device. There is no confirmation step and no read back: the message " +
 			"that arrives at the output means the device acknowledged the write.\n\n" +
 			"One register is written with function 6 and more than one with function 16. One coil " +
-			"is function 5 and more than one is function 15.",
+			"is function 5 and more than one is function 15." + hotloopGateHelp,
 	}, newModbusWrite)
 }
 
@@ -994,6 +996,11 @@ func newModbusWrite(def *node.Definition) (node.Node, error) {
 		return nil, err
 	}
 	n.unit = u
+	g, gerr := newHotloopGate(def)
+	if gerr != nil {
+		return nil, gerr
+	}
+	n.gate = g
 	return n, nil
 }
 
@@ -1015,6 +1022,9 @@ func (n *modbusWriteNode) Receive(ctx context.Context, m *engine.Msg, out node.E
 	if !ok || raw == nil {
 		return n.fail(out, fmt.Errorf("value resolved to nothing, so there is nothing to write. "+
 			"Check the Value field, which reads %s %q", n.value.Type, n.value.Value))
+	}
+	if n.gate != nil {
+		return n.gate.write(ctx, m, raw, out, n.fail)
 	}
 	items, isList := raw.([]any)
 	if !isList {

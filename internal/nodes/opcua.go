@@ -1296,6 +1296,7 @@ type opcuaWriteNode struct {
 	dataType string
 	svc      node.Services
 	target   opcuaTarget
+	gate     *hotloopGate
 }
 
 func registerOPCUAWrite() {
@@ -1332,10 +1333,11 @@ func registerOPCUAWrite() {
 				Options: opcuaTypeOptions(),
 				Help: "OPC UA servers refuse a write of the wrong type. Same as the node reads the node's own type " +
 					"first, which costs one extra request."},
+			hotloopGateProps()[0], hotloopGateProps()[1],
 		},
 		Help: "Writes a value to a node when a message arrives, then passes the message on. This changes " +
 			"the equipment. There is no confirmation step and no read back: the message that arrives at " +
-			"the output means the server accepted the write.",
+			"the output means the server accepted the write." + hotloopGateHelp,
 	}, newOPCUAWrite)
 }
 
@@ -1372,6 +1374,11 @@ func newOPCUAWrite(def *node.Definition) (node.Node, error) {
 			return nil, err
 		}
 	}
+	g, gerr := newHotloopGate(def)
+	if gerr != nil {
+		return nil, gerr
+	}
+	n.gate = g
 	return n, nil
 }
 
@@ -1397,6 +1404,9 @@ func (n *opcuaWriteNode) Receive(ctx context.Context, m *engine.Msg, out node.Em
 	if !ok || value == nil {
 		return n.fail(out, fmt.Errorf("value resolved to nothing, so there is nothing to write. "+
 			"Check the Value field, which reads %s %q", n.value.Type, n.value.Value))
+	}
+	if n.gate != nil {
+		return n.gate.write(ctx, m, value, out, n.fail)
 	}
 	what := "writing " + nid
 	endpoint := "stand-in"
