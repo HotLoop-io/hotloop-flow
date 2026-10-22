@@ -42,7 +42,7 @@ because it's a feature, not the point.
 Current release is `2.2.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.2.0`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-36,000 lines of Go, more than a third of it tests, 75 node types, and the race
+36,000 lines of Go, more than a third of it tests, 79 node types, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
 business use is free through EmberNET, under HotLoop's Business Source License.
 
@@ -1141,8 +1141,8 @@ log or the audit trail.
 
 **Everything that matters leaves a trail.** Logins, failed logins (with whether
 the name even exists, which a client never gets told but an operator should),
-logouts, deploys, refused deploys, rollbacks, injects and saves of the flow
-tests go to
+logouts, deploys, refused deploys, rollbacks, injects, MCP tool calls and saves
+of the flow tests go to
 `data/audit.log`, one JSON line each, synced to disk before the request is
 answered. Each says who, from which address, and what: a deploy points at its
 deployment record, an inject names the node. `X-Forwarded-For` is kept beside
@@ -1219,18 +1219,18 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**75 node types.**
+**79 node types.**
 
 | Category | Nodes |
 |---|---|
 | Common | inject, debug, complete, catch, status, link in, link out, comment, junction |
 | Function | function, switch, change, range, template, delay, trigger, exec, rbe |
-| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, s7 read/write, ethernetip read/write, opcua read/write/subscribe, sparkplug in/out/command, hotloop in/state/script/recipe |
+| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, s7 read/write, ethernetip read/write, opcua read/write/subscribe, sparkplug in/out/command, hotloop in/state/script/recipe, mcp tool/result/client |
 | Sequence | split, join, sort, batch |
 | Parser | csv, html, json, xml, yaml |
 | Storage | file, file in, watch, influxdb out, postgres |
 | Discover | scan, netinfo, for inventorying an OT segment |
-| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug, hotloop |
+| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug, hotloop, mcp-server |
 
 `scan` sweeps a CIDR range and identifies Modbus and EtherNet/IP endpoints, and
 `netinfo` reports the interfaces the runtime can actually see, which in macvlan
@@ -1492,6 +1492,162 @@ Not done: no Modbus RTU, no Modbus over TLS, no OPC UA events, history or method
 calls, no browse, no S7 timers or counters, no PCCC controllers, and 64 bit
 integers past 2^53 come out as a string of their exact digits because a flow's
 numbers can't hold them.
+
+---
+
+## MCP, in both directions
+
+An agent that speaks the Model Context Protocol can call a flow as a tool, and a
+flow can call a tool on any MCP server, HotLoop's own included. Three nodes and
+one config node do it: `mcp tool` and `mcp result` serve a flow, `mcp client` on
+an `hotloop-flow-mcp-server` connection calls out. If you only ever wire
+sensors to dashboards you can skip all of this: a flow that uses none of these
+nodes never makes an MCP call, and Flow serves no tools it wasn't given.
+
+The protocol is the Go SDK's (`github.com/modelcontextprotocol/go-sdk` v1.8.0,
+Apache-2.0 with some files still MIT while the project finishes relicensing,
+maintained by the MCP project). It speaks the current revision of the
+specification, 2026-07-28, which has no handshake and carries the version on
+every request, and the handshake revisions through 2025-11-25, on the same
+endpoint. A client gets whichever it opens with, so nothing needs configuring.
+
+### Flows as tools
+
+An `mcp tool` node declares a tool: a name, a description for the model that
+reads it, and an input schema. While the flow is deployed Flow serves it at
+`/mcp` (under the admin root, if you moved it). A call becomes a message out of
+the node, `msg.payload` is the call's arguments, `msg.topic` is the tool name,
+and `msg.mcp` holds `tool`, `caller` and `callId`. An `mcp result` node
+somewhere downstream sends the answer back, the way `http response` answers
+`http in`. Everything between them is a flow like any other.
+
+```json
+[
+  {"id": "t1", "type": "tab", "label": "Line"},
+  {"id": "tool", "type": "mcp tool", "z": "t1", "toolName": "line_status",
+   "description": "Status of a production line: its state and speed.",
+   "schema": "{\"type\":\"object\",\"properties\":{\"line\":{\"type\":\"string\",\"enum\":[\"L1\",\"L2\",\"L3\"]}},\"required\":[\"line\"],\"additionalProperties\":false}",
+   "x": 100, "y": 100, "wires": [["status"]]},
+  {"id": "status", "type": "function", "z": "t1", "name": "status", "outputs": 1,
+   "func": "msg.payload = {line: msg.payload.line, state: 'running', askedBy: msg.mcp.caller};\nreturn msg;",
+   "x": 300, "y": 100, "wires": [["answer"]]},
+  {"id": "answer", "type": "mcp result", "z": "t1", "x": 500, "y": 100, "wires": []}
+]
+```
+
+**The schema is checked before the flow runs.** It is JSON Schema, read the way
+the `json` node reads one (draft 2020-12 unless the schema names another, and a
+`$ref` to another URL is an error). A schema that is not valid, a root that is
+not an object, a tool name MCP doesn't allow, or two nodes serving the same name
+fail that node's deploy, with the reason. A call whose arguments don't fit is
+answered as a tool error that names the bad field, `arguments.line: value must
+be one of "L1", "L2", "L3"`, so the model can fix it and try again, and the flow
+never sees it. An object payload goes back as an object and as its JSON text,
+text goes back as text, and an `mcp result` fed by a Catch node, or with "The
+work failed" ticked, answers as a tool error with the error's own words. A call
+nothing answers is told so after the reply timeout, 30 seconds unless you set
+it, and the error goes to a Catch node. A redeploy waits for calls in flight.
+
+**An agent is a caller like any other.** `/mcp` takes the same tokens the admin
+API takes, a session token or an API token, and nothing else. There is no
+anonymous call: no token is a 401, a token Flow doesn't know is a 401, and a
+token with no `mcp.call` permission is a 403, before the protocol sees the
+request. An instance running with `HOTLOOP_FLOW_INSECURE` answers 403 to every
+`/mcp` request, because a tool call has to have a caller to put in the audit
+log. A token for an agent is a token like any other:
+
+```yaml
+auth:
+  tokens:
+    - name: agent
+      hash: sha256:...          # from: hotloop-flow token -name agent
+      permissions: ["mcp.call"]
+```
+
+The call runs with that identity's rights. Every caller needs `mcp.call` (or
+`mcp.*`, or `*`). Put another permission in a tool's "Extra permission" box, say
+`mcp.line3`, and a caller also needs that one, and doesn't see the tool in the
+list without it. Two agents can share a Flow and see different tools.
+
+**Every call is in the audit log, under the caller's name.** `mcp.call` is
+written before the flow runs, with the tool, the node and a call id, and
+`mcp.result` after it, with the outcome and the milliseconds. `mcp.refused` is a
+token that is wrong, one that lacks the permission, a tool it may not call, or
+arguments that didn't fit. The arguments themselves are never written. A
+request with no token at all isn't written either, because nobody is on the
+other end to name. `GET /audit?event=mcp.` reads all of it, and `?user=token:agent`
+narrows it to one agent.
+
+Try it with the MCP project's own inspector, which needs nothing from Flow:
+
+```bash
+npx @modelcontextprotocol/inspector@2.12.0 --cli http://localhost:1880/mcp \
+  --transport http --header "Authorization: Bearer $TOKEN" \
+  --method tools/call --tool-name line_status --tool-arg line=L3
+```
+
+A flow test puts the message a call would have made where the `mcp tool` node
+sits, and `mcp result` hands what it would have answered to the test as
+`{isError, text, structuredContent}`, so the flow is tested without a server.
+
+### Calling tools on other servers
+
+An `mcp client` node calls a tool when a message arrives, on an
+`hotloop-flow-mcp-server` connection: the server's MCP address, a bearer token
+if it takes one, and a timeout. The tool and its arguments are typed inputs, so
+either can come from the message. `msg.payload` is the tool's structured answer
+when it has one, the text when everything it said was text, and the content as
+it came when it was anything else, and `msg.mcp` has the server, the tool and
+the whole answer. The other operation, "List the tools", puts every tool the
+server has in `msg.payload` with its description and input schema.
+
+A tool that reports an error raises one, with the server's words, so a Catch
+node sees what the model would have seen. **A call is never sent twice.** A tool
+may move equipment, and a dropped connection doesn't say whether the server ran
+it, so the error says the connection failed and the next message connects
+again. The token goes to the address you gave and nowhere else, a redirect isn't
+followed, and an error never repeats it. The connection trusts the system's
+certificate roots and nothing else.
+
+For HotLoop it is the address of its `/mcp` and the `mcp-token` from its release
+Secret, and every tool in HotLoop's MCP docs is there:
+
+```json
+{"id": "plant", "type": "mcp client", "z": "t1", "server": "hotloop",
+ "tool": "get_plant_status", "toolType": "str", "arguments": "{}", "argumentsType": "json",
+ "x": 300, "y": 100, "wires": [["use"]]}
+```
+
+HotLoop sees the call as an MCP client's, under its own rules: writes from MCP
+are off unless HotLoop was told otherwise, and a `write_tag` it refuses comes
+back as the node's error in HotLoop's words. To write through HotLoop's gate
+from a flow without MCP, use the HotLoop nodes above.
+
+### What it was tested against
+
+**The server** is tested with the Go SDK's own client over real HTTP, in both
+eras: list, call, arguments refused, a permission refused, a token refused, the
+audit rows, a tool that goes away when its node stops, and the whole admin
+server in front of it with real API and session tokens and the audit log on
+disk. The MCP project's Inspector CLI 2.12.0 listed a running Flow's tools,
+called them, and was refused without a token and with a made-up one. The
+`mcp client` node was run against a real HotLoop 4.18.10 (the published IoT
+image): it listed all 27 of its tools, called `get_plant_status`, `list_devices`
+and `get_states` and used the answers, was refused with a wrong token and with
+none, got HotLoop's own error for a tool that doesn't exist and for a write MCP
+isn't allowed to make, and a Flow tool called by the Inspector ran a flow that
+called HotLoop's MCP and answered with what it said. CI starts that HotLoop and
+runs all of it, and fails if any of it skips.
+
+**Not done:** OAuth (a bearer token is the only way in, either direction),
+stdio servers, resources, prompts, sampling, elicitation and progress
+notifications, and a tool's output schema. HotLoop 4.18.10 speaks the handshake
+revisions, so the node meets it that way; against a server of the current
+revision it is tested only with Flow's own. A handshake server that forgets a
+session (a restart) fails the first call after it, once, and the next one
+connects again. Flow doesn't rate limit tool calls, though the specification
+says a server must: what bounds a flood is the queues, which already have a
+ceiling, and the request size, 4 MiB.
 
 ---
 
@@ -1934,6 +2090,7 @@ timeouts.
 | `GET /runtime/stats` | `status.read` | |
 | `POST /inject/{id}` | `inject.write` | Fire an Inject node. |
 | `GET /comms` | `status.read` | The editor's status and debug websocket. Send the token as the subprotocol `hotloop-flow.bearer.<token>`, offered beside `hotloop-flow`. That is what the editor does. `?access_token=<token>` in the URL still works for scripts that already use it, and logs a warning for every connection that does, because a URL ends up in proxy and access logs. |
+| `POST /mcp` (and `GET` and `DELETE`, for the older revisions of the protocol) | `mcp.call` | The [MCP endpoint](#mcp-in-both-directions), where flows are served as tools. A session or API token like any other. The tools a caller is offered, and may call, are the ones its permissions reach. 403 with authentication switched off. |
 
 `/metrics` and `/health` being unauthenticated is a decision rather than an
 oversight. A Prometheus scraper carries no bearer token, so requiring one means
@@ -1944,7 +2101,7 @@ A user with two-factor sign-in on sends `"code"` with the username and password
 to `POST /auth/token`. Without it the answer is a 401 with `"mfa": "required"`.
 
 Permissions are `"*"` for everything, an exact string such as `flows.read`, or a
-prefix grant such as `flows.*`. A read-only account for a dashboard that just
+prefix grant such as `flows.*`. An agent calling flows as MCP tools needs `mcp.call`. A read-only account for a dashboard that just
 wants to render flow status is `["flows.read", "status.read"]` and nothing more.
 
 Deploys take an optional `HotLoop-Flow-Deployment-Rev` header. Send the revision you
@@ -2169,8 +2326,8 @@ id actually is and which kind the setting wants. The editor only offers you the
 right kind, so this only comes from a hand edit or a pasted id, which is
 exactly where it bites.
 
-By compatibility level the 75 node types are 12 full, 21 partial, 14 deliberately
-divergent, and 28 of Flow's own. Every node declares how it relates to
+By compatibility level the 79 node types are 12 full, 21 partial, 14 deliberately
+divergent, and 32 of Flow's own. Every node declares how it relates to
 Node-RED's node of the same name, and **a test fails the build if a node claims
 partial compatibility without stating in writing what is missing.** A node
 that is 90% compatible and silent about the other 10% is more dangerous than one

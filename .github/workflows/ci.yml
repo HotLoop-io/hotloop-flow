@@ -165,24 +165,28 @@ jobs:
         # the host's network so it reaches the Modbus server above on
         # 127.0.0.1:5020, and the tests make the device, tags, script, recipe and
         # operator account they need through HotLoop's own API. The admin
-        # password is made here, for this run, and masked.
+        # password is made here, for this run, and masked, and so is the token
+        # HotLoop's MCP endpoint takes, which the MCP client node tests send.
         run: |
           IMG=ghcr.io/hotloop-io/hotloop-iot:4.18.10
           PW=$(openssl rand -hex 16)
           echo "::add-mask::$PW"
+          MCPTOK=$(openssl rand -hex 24)
+          echo "::add-mask::$MCPTOK"
           HASH=$(printf '%s' "$PW" | sudo podman run --rm -i "$IMG" hash-password)
           sudo podman run -d --name hotloop --network host --tmpfs /tmp \
             -e HOTLOOP_LISTEN_ADDR=127.0.0.1:18480 \
             -e HOTLOOP_DB_TYPE=sqlite -e HOTLOOP_DB_PATH=/tmp/hotloop.db \
             -e HOTLOOP_AUTH_ENABLED=true -e HOTLOOP_ADMIN_USER=admin \
             -e "HOTLOOP_ADMIN_PASSWORD_HASH=$HASH" \
-            -e HOTLOOP_ALLOW_WRITES=true "$IMG"
+            -e HOTLOOP_ALLOW_WRITES=true -e "HOTLOOP_MCP_TOKEN=$MCPTOK" "$IMG"
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:18480/readyz >/dev/null 2>&1 && break; sleep 1; done
           curl -fsS http://127.0.0.1:18480/readyz >/dev/null || { sudo podman logs hotloop; echo "::error::HotLoop never became ready"; exit 1; }
           {
             echo "HOTLOOP_FLOW_TEST_HOTLOOP=http://127.0.0.1:18480"
             echo "HOTLOOP_FLOW_TEST_HOTLOOP_ADMIN=admin"
             echo "HOTLOOP_FLOW_TEST_HOTLOOP_ADMIN_PASSWORD=$PW"
+            echo "HOTLOOP_FLOW_TEST_HOTLOOP_MCP_TOKEN=$MCPTOK"
             echo "HOTLOOP_FLOW_TEST_HOTLOOP_MODBUS=127.0.0.1:5020"
           } >> "$GITHUB_ENV"
 
@@ -436,7 +440,27 @@ jobs:
             TestHotloopGatedWriteNeverFallsBackToTheEquipment \
             TestHotloopStateScriptAndRecipeAgainstTheRealHotloop \
             TestHotloopSignsInAgainWhenTheSessionIsGone \
-            TestHotloopInSendsEachChangeFromTheRealFeed; do
+            TestHotloopInSendsEachChangeFromTheRealFeed \
+            TestHotloopMCPClientNodeAgainstTheRealHotloop; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
+
+      - name: The MCP tests actually ran
+        # The MCP server and client are tested with the Go SDK's own client and
+        # server over real HTTP, in both eras of the protocol. None of these
+        # needs a service, so none should ever skip, and a rename that drops one
+        # from the run should fail here and not pass quietly.
+        run: |
+          OUT=$(go test ./internal/mcphost/ -count=1 -v 2>&1; go test ./internal/api/ ./internal/nodes/ ./internal/flowtest/ -count=1 -v -run 'MCP' 2>&1)
+          echo "$OUT" | grep -E '^(---|ok|FAIL)' | grep -v -- '--- PASS' || true
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::an MCP test skipped"
+            exit 1
+          fi
+          for t in TestListShowsOnlyWhatTheCallerMayCall TestCallRunsTheFunctionAndAnswersWithItsResult \
+            TestNoTokenAndABadTokenAreRefusedBeforeTheProtocolSeesThem \
+            TestMCPAnAPITokenWithMCPCallListsAndCallsAndIsAudited TestMCPToolServesAFlowAndTheResultNodeAnswersIt \
+            TestMCPClientCallsAToolAndTheAnswerIsThePayload TestMCPNodesUnderAFlowTest; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 

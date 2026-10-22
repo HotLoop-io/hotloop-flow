@@ -29,6 +29,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
 	"github.com/HotLoop-io/hotloop-flow/internal/gitmirror"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
+	"github.com/HotLoop-io/hotloop-flow/internal/mcphost"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
 	"github.com/HotLoop-io/hotloop-flow/internal/mfa"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
@@ -184,11 +185,14 @@ func cmdServe(args []string) error {
 		adminRoot + "/settings", adminRoot + "/nodes", adminRoot + "/flows",
 		adminRoot + "/runtime", adminRoot + "/inject", adminRoot + "/comms",
 		adminRoot + "/deployments", adminRoot + "/audit", adminRoot + "/tests",
+		adminRoot + "/mcp",
 	}
 	if cfg.Metrics.Enabled {
 		reserved = append(reserved, adminRoot+cfg.Metrics.Path)
 	}
 	nodes.Routes = flowhttp.NewRouter(cfg.Server.HTTPRoot, reserved)
+	// The tools the flows serve over MCP, at <admin root>/mcp.
+	nodes.MCPTools = mcphost.New(version)
 
 	flowStore := store.NewFlowStore(cfg.FlowPath())
 	flowStore.SetBackupGenerations(cfg.Data.BackupGenerations)
@@ -338,6 +342,7 @@ func cmdServe(args []string) error {
 		Tracer:       app.tracer,
 		Replay:       app.tests.Replay,
 		FlowRoutes:   nodes.Routes,
+		MCP:          nodes.MCPTools,
 		Version:      version,
 	})
 	app.hub = srv.Hub()
@@ -572,6 +577,7 @@ func (a *application) stop(ctx context.Context) {
 	// not run.
 	nodes.Links.Reset()
 	nodes.Routes.Reset()
+	nodes.MCPTools.Reset()
 	nodes.TCPReplies.Reset()
 }
 
