@@ -123,3 +123,34 @@ test('the Types section keeps what was written, refuses what is not a schema, an
   expect('ew_outSchemas' in d1).toBe(false);
   void notice;
 });
+
+test('an Inject literal the next node can never take is drawn as a clash and refused at deploy', async ({ page, request }) => {
+  const takes = (t: string) => ({ type: 'object', properties: { payload: { type: t } } });
+  await seed(request, [
+    { id: 't1', type: 'tab', label: 'Line 3' },
+    {
+      id: 'i1', type: 'inject', z: 't1', name: 'reading',
+      props: [{ p: 'payload', v: '42', vt: 'num' }], x: 140, y: 120, wires: [['l1']],
+    },
+    { id: 'l1', type: 'change', z: 't1', name: 'limit', rules: [], x: 420, y: 120, wires: [['d1']], ew_inSchema: takes('number') },
+    { id: 'd1', type: 'debug', z: 't1', name: 'out', complete: 'payload', x: 680, y: 120, wires: [] },
+  ]);
+  await signIn(page, 'd1');
+  await expect(chip(page, 'i1', 'l1')).toHaveClass(/half/);
+
+  // The receiver now takes text. The Inject sets the number 42, which it can never take.
+  await canvasNode(page, 'l1').locator('.node-body').dblclick();
+  await dialog(page).locator('[data-test="schema-in"]').fill(JSON.stringify(takes('string')));
+  await dialog(page).locator('button', { hasText: 'Done' }).click();
+  await expect(chip(page, 'i1', 'l1')).toHaveClass(/clash/);
+  await expect(chip(page, 'i1', 'l1')).toContainText('≠ payload');
+  await expect(page.locator('path.wire[data-from="i1"][data-to="l1"] title')).toContainText(
+    'the inject sets 42, which the receiver does not take: got number, want string');
+  if (process.env.TYPED_WIRES_SHOT) await page.screenshot({ path: `${process.env.TYPED_WIRES_SHOT}-inject-clash.png` });
+
+  const alerted = new Promise<string>((resolve) => page.once('dialog', (d) => { resolve(d.message()); void d.dismiss(); }));
+  await topDeploy(page).click();
+  await page.locator('[data-test="deploy-confirm"]').click();
+  expect(await alerted).toContain('inject "reading" (i1) output 1 -> "limit" (l1): payload: the inject sets 42');
+  expect((await deployed(request)).find((e) => e.id === 'l1')!.ew_inSchema).toEqual(takes('number'));
+});

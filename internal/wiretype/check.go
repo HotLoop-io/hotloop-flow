@@ -67,6 +67,10 @@ func (e *RefusedError) Error() string {
 // wire where the sending end promises something the receiving end can never
 // accept. nil means nothing is wrong.
 //
+// An Inject node has no schema of its own, so its static values stand in for
+// one: a literal payload or property that the node it feeds can never accept is
+// refused the same way. See LiteralConflicts.
+//
 // A wire is only judged when both ends declare a schema, and only refused when
 // the two cannot agree on a field however the rest of the message turns out:
 // different types, values outside the other end's enum or range, a field the
@@ -114,6 +118,37 @@ func Check(flows *engine.Flows) []Problem {
 						To: tn.ID, ToName: tn.Name, Message: c,
 					})
 				}
+			}
+		}
+	}
+	problems = append(problems, injectProblems(flows, ports)...)
+	return problems
+}
+
+// injectProblems checks what each Inject node sets for certain against the
+// input schema of every node it is wired to.
+func injectProblems(flows *engine.Flows, ports map[string]*Ports) []Problem {
+	var problems []Problem
+	for _, id := range flows.Order {
+		n, ok := flows.Nodes[id]
+		if !ok || n.Type != "inject" || n.Disabled || len(n.Wires) == 0 {
+			continue
+		}
+		var lits []literal
+		for _, tid := range n.Wires[0] {
+			to, ok := ports[tid]
+			if !ok || to.In == nil {
+				continue
+			}
+			if lits == nil {
+				lits = injectLiterals(n)
+			}
+			tn := flows.Nodes[tid]
+			for _, c := range LiteralConflicts(lits, to.inDoc) {
+				problems = append(problems, Problem{
+					NodeID: n.ID, Name: n.Name, Type: n.Type, Port: 1,
+					To: tn.ID, ToName: tn.Name, Message: c,
+				})
 			}
 		}
 	}
