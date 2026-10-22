@@ -1532,6 +1532,53 @@ and the distroless image go with it, and CI fails the build to tell you so.
 
 ---
 
+## Typed wires
+
+A message with the wrong shape is the failure I least want on a live line. A
+temperature that arrives as the string `"hot"`, a missing `id`, a number where a
+list was supposed to be: nothing crashes, the flow keeps going, and something
+downstream quietly does the wrong thing. Flow takes JSON Schema to that problem
+in three steps, and the first is in.
+
+### Schema on the `json` node
+
+Give the `json` node a schema in its settings and every value it handles is
+checked against it. A value that matches goes on. A value that doesn't goes to a
+Catch node, doesn't continue down the wire, and the error names every bad field:
+
+```
+does not match the schema: payload.temp: got string, want number; payload.id: missing property "id"
+```
+
+`msg.schemaError` carries the same thing as a list of `{path, keyword, message}`
+objects, for a Catch node that wants to route on it. Paths read the way a Change
+node writes them: `payload.sensors[2].temp`.
+
+If the node has no schema in its settings and a message carries `msg.schema`, the
+node validates against that instead, the way Node-RED's `json` node does. A
+message that passes has `msg.schema` removed. One that fails keeps it. The
+schema in the settings wins when both are there.
+
+- The schema is JSON Schema draft 2020-12 unless it names another draft with
+  `$schema`. Drafts 4, 6, 7 and 2019-09 are accepted.
+- An invalid schema in the settings fails the deploy with the validator's reason.
+  An invalid `msg.schema` is an error on that message.
+- A schema is self-contained. A `$ref` to another URL or a file is refused, not
+  fetched, so an edge box with no route out behaves like any other.
+- `format` is checked for the formats the validator knows and ignored for the
+  rest, the same as most validators.
+- A flow with no schema anywhere behaves exactly as it did before.
+
+The validator is `internal/schema`, a thin wrapper over
+[santhosh-tekuri/jsonschema](https://github.com/santhosh-tekuri/jsonschema) v6
+(Apache-2.0, pure Go). Anything else in Flow that needs to check a value against
+a schema uses the same package.
+
+Schemas on ports, refused at deploy when the editor can see the mismatch, and
+types drawn on the wires, are next on the [roadmap](docs/ROADMAP.md#phase-7-typed-wires-and-mcp).
+
+---
+
 ## Subflows
 
 Each instance gets its own copy of the template's nodes, its own flow context,
