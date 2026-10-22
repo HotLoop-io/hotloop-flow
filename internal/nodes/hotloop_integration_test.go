@@ -29,7 +29,7 @@ import (
 //	HOTLOOP_FLOW_TEST_HOTLOOP=http://localhost:18480 \
 //	HOTLOOP_FLOW_TEST_HOTLOOP_ADMIN=admin \
 //	HOTLOOP_FLOW_TEST_HOTLOOP_ADMIN_PASSWORD=... \
-//	HOTLOOP_FLOW_TEST_MODBUS=localhost:5020 \
+//	HOTLOOP_FLOW_TEST_MODBUS=127.0.0.1:5020 \
 //	go test ./internal/nodes/ -run Hotloop -v
 //
 // HOTLOOP_FLOW_TEST_HOTLOOP_MODBUS is where HotLoop reaches the simulator when

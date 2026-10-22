@@ -308,17 +308,32 @@ func quotaRig(t *testing.T, overflow string, opts Options) (*durableRig, *flakyS
 	return rig, sink
 }
 
-// processed waits until node a has handled every injected message.
+// processed waits until node a has handled every injected message, and has
+// finished handing each one to its wire. Received is counted as a handler
+// starts and the message is only on disk, or refused, when the handler returns,
+// so Received with an empty inbox says the last message has begun, not that it
+// has landed. A test that read the quota or the drop count on that word read it
+// with the 200th message still on its way, and when the gate opened the
+// freed room let that message in after the reading. Sent is counted inside the
+// handler, so Sent == n means the last handler is running and idle means it
+// has returned.
 func processed(t *testing.T, rt *Runtime, n int64) {
 	t.Helper()
 	waitFor(t, "node a to handle every message", func() bool {
-		for _, s := range rt.Snapshots() {
-			if s.NodeID == "a" {
-				return s.Received == n && s.QueueLen == 0
-			}
-		}
-		return false
+		r := rt.graph().runners["a"]
+		s := r.Snapshot()
+		return s.Received == n && s.Sent == n && s.QueueLen == 0 && r.idle()
 	})
+}
+
+// quotaSlack is how far past the quota the spool may sit. A message already
+// accepted into memory that the wire then diverts to disk goes in over the
+// quota, because refusing it would drop an older message and keep newer ones
+// (store.AppendSeqOver, and durableWire.memDone). The overshoot is bounded by
+// what the target holds: its inbox, plus the one its goroutine has taken and
+// not yet started.
+func quotaSlack(q *store.WireQueue, sp *store.Spool, inbox int) int64 {
+	return int64(inbox+1) * (sp.Bytes() / q.Depth())
 }
 
 func TestDurableQuotaDropNewest(t *testing.T) {
@@ -330,8 +345,8 @@ func TestDurableQuotaDropNewest(t *testing.T) {
 	if q.Dropped() == 0 {
 		t.Fatal("the quota was never reached; the test proves nothing")
 	}
-	if rig.sp.Bytes() > rig.sp.MaxBytes() {
-		t.Fatalf("quota used %d of %d", rig.sp.Bytes(), rig.sp.MaxBytes())
+	if limit := rig.sp.MaxBytes() + quotaSlack(q, rig.sp, 1); rig.sp.Bytes() > limit {
+		t.Fatalf("quota used %d of %d, and the most it may run over is %d", rig.sp.Bytes(), rig.sp.MaxBytes(), limit-rig.sp.MaxBytes())
 	}
 	kept := 200 - int(q.Dropped())
 	close(sink.gate)
@@ -349,8 +364,8 @@ func TestDurableQuotaDropOldest(t *testing.T) {
 	if q.Dropped() == 0 {
 		t.Fatal("the quota was never reached; the test proves nothing")
 	}
-	if rig.sp.Bytes() > rig.sp.MaxBytes() {
-		t.Fatalf("quota used %d of %d", rig.sp.Bytes(), rig.sp.MaxBytes())
+	if limit := rig.sp.MaxBytes() + quotaSlack(q, rig.sp, 1); rig.sp.Bytes() > limit {
+		t.Fatalf("quota used %d of %d, and the most it may run over is %d", rig.sp.Bytes(), rig.sp.MaxBytes(), limit-rig.sp.MaxBytes())
 	}
 	close(sink.gate)
 	waitFor(t, "the queue to drain", func() bool { return q.Depth() == 0 })
