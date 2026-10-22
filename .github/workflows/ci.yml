@@ -60,6 +60,8 @@ jobs:
         run: |
           OUT="$RUNNER_TEMP/plugin-examples"
           mkdir -p "$OUT"
+          # TinyGo's container doesn't run as the runner's user.
+          chmod 777 "$OUT"
 
           rustup toolchain install 1.99.1 --profile minimal --target wasm32-wasip1
           (cd examples/plugins/moving-average &&
