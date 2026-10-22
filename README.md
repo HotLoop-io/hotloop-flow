@@ -98,6 +98,30 @@ benchmark and I won't let anybody quote it as one. And under saturation every
 runtime queues and queueing owns the tail, which is why p99 wanders more than
 p50 between runs.
 
+### On a Raspberry Pi 5
+
+The same flow and the same commands, 2026-10-22, on a Raspberry Pi 5 Model B
+(8 GB, four Cortex-A76 cores, Ubuntu 26.04.1, kernel `7.0.0-1020-raspi`) with
+its clock capped at 2.0 GHz, running the published `2.2.0` arm64 image as a pod
+with nothing else on the node but cluster DaemonSets. Three runs, range printed.
+
+| | |
+|---|---|
+| Start to answering its first request | **0.10 to 0.46 s** |
+| RSS, idle | **88.0 to 88.3 MiB** |
+| RSS, peak under the HTTP load | **40.3 to 40.5 MiB** |
+| HTTP, five-node flow, 8 connections, 30 s | **13.2k to 13.4k req/s** |
+| HTTP latency p50 / p99 | **0.48 ms / 2.72 to 2.78 ms** |
+| Engine, five-node chain, no I/O | **7.74 to 8.15 µs a message**, 4.0 KB allocated |
+| HTTP, the same command held for 600 s | **11.4k req/s**, p50 0.58 ms, p99 3.00 ms |
+
+The last row is the honest one for a box that stays loaded. The board hit its
+soft temperature limit under a minute in, throttled from about two minutes in,
+and sat at 83 to 86 C with the clock at 1.5 to 1.7 GHz for the rest. The
+idle RSS is about five times the x86 figure above and I don't know why yet.
+The process, the board, the throttle readings, and what I didn't establish are
+in [docs/bench/](docs/bench/README.md#results-on-a-raspberry-pi-5).
+
 `hotloop-flow bench` ships in this repository. The method and the rest of the
 caveats are in [docs/bench/](docs/bench/).
 
