@@ -65,7 +65,7 @@ func (s *testSuite) Replay(ctx context.Context, flows []byte, trace engine.Trace
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	bundle, err := json.Marshal(TestBundle{Flows: flows, Runtime: s.runtime, Replay: &trace})
+	bundle, err := json.Marshal(TestBundle{Flows: flows, Runtime: s.runtime, Plugins: &s.plugins, Replay: &trace})
 	if err != nil {
 		return flowtest.ReplayResult{}, err
 	}

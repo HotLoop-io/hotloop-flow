@@ -17,10 +17,12 @@ package wasmhost
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,6 +107,7 @@ type Module struct {
 	compiled wazero.CompiledModule
 	limits   Limits
 	name     string
+	caps     Capabilities
 
 	// Instances are pooled. Compiling is expensive and instantiating is not
 	// free either, but an instance carries guest state, so pooling also means a
@@ -114,12 +117,18 @@ type Module struct {
 	pool []api.Module
 }
 
-// Compile prepares a guest.
+// Compile prepares a guest with no capabilities at all.
 //
 // The runtime is configured with no filesystem, no clock beyond what WASI
 // needs, no network and no environment. A guest can compute and return; it
 // cannot reach out.
 func Compile(ctx context.Context, name string, wasm []byte, limits Limits) (*Module, error) {
+	return CompileWith(ctx, name, wasm, limits, Options{})
+}
+
+// CompileWith prepares a guest and gives it exactly the capabilities in opts.
+// See Capabilities for what each one wires in and what the guest gets without it.
+func CompileWith(ctx context.Context, name string, wasm []byte, limits Limits, opts Options) (*Module, error) {
 	l := limits.withDefaults()
 
 	pages := uint32(l.MaxMemoryBytes / wasmPageSize)
@@ -132,7 +141,11 @@ func Compile(ctx context.Context, name string, wasm []byte, limits Limits) (*Mod
 		// returns -1 to the guest, and a guest that ignores that traps on the
 		// next access. Either way the host is unaffected.
 		WithMemoryLimitPages(pages).
+		WithMemoryCapacityFromMax(true).
 		WithCloseOnContextDone(true)
+	if opts.Cache != nil {
+		cfg = cfg.WithCompilationCache(opts.Cache)
+	}
 
 	rt := wazero.NewRuntimeWithConfig(ctx, cfg)
 
@@ -151,6 +164,22 @@ func Compile(ctx context.Context, name string, wasm []byte, limits Limits) (*Mod
 		return nil, fmt.Errorf("compiling guest: %w", err)
 	}
 
+	// A guest may import WASI and the host module and nothing else. Anything
+	// else is a reach the host never offered, and finding that out here names
+	// the import instead of failing at the first message.
+	if err := checkImports(compiled, opts.Capabilities); err != nil {
+		_ = compiled.Close(ctx)
+		_ = rt.Close(ctx)
+		return nil, err
+	}
+	if opts.Capabilities.context() {
+		if err := instantiateHostModule(ctx, rt, opts.Capabilities); err != nil {
+			_ = compiled.Close(ctx)
+			_ = rt.Close(ctx)
+			return nil, fmt.Errorf("preparing the host module: %w", err)
+		}
+	}
+
 	// Fail here rather than on the first message. A guest missing its entry
 	// point is a packaging mistake, and finding out at deploy is the difference
 	// between a red node and a flow that quietly drops everything.
@@ -165,7 +194,7 @@ func Compile(ctx context.Context, name string, wasm []byte, limits Limits) (*Mod
 		return nil, fmt.Errorf("guest does not export %s, so the host cannot pass it a message", ExportAlloc)
 	}
 
-	return &Module{runtime: rt, compiled: compiled, limits: l, name: name}, nil
+	return &Module{runtime: rt, compiled: compiled, limits: l, name: name, caps: opts.Capabilities}, nil
 }
 
 // Close releases the runtime and every pooled instance.
@@ -194,7 +223,29 @@ func (m *Module) acquire(ctx context.Context) (api.Module, error) {
 	cfg := wazero.NewModuleConfig().
 		WithName(""). // anonymous, so several instances can coexist
 		WithStartFunctions("_initialize", "_start")
+	// Without these a guest's clock is frozen and its random bytes are a fixed
+	// sequence, which is wazero's default and what "no capability" means.
+	if m.caps.Clock {
+		cfg = cfg.WithSysWalltime().WithSysNanotime()
+	}
+	if m.caps.Random {
+		cfg = cfg.WithRandSource(rand.Reader)
+	}
 	return m.runtime.InstantiateModule(ctx, m.compiled, cfg)
+}
+
+// Warm brings one instance up and keeps it. It runs the guest's start function,
+// so a module that can't start in its memory limit fails here, at deploy, and
+// not on the first message.
+func (m *Module) Warm(ctx context.Context) error {
+	callCtx, cancel := context.WithTimeout(ctx, m.limits.Timeout)
+	defer cancel()
+	inst, err := m.acquire(callCtx)
+	if err != nil {
+		return fmt.Errorf("instantiating guest: %w", classify(err, "starting"))
+	}
+	m.release(context.Background(), inst, true)
+	return nil
 }
 
 func (m *Module) release(ctx context.Context, inst api.Module, healthy bool) {
@@ -352,15 +403,26 @@ func classify(err error, during string) error {
 	// wazero reports a trap as a sys.ExitError or a plain error whose text names
 	// the trap. Memory exhaustion surfaces as an out-of-bounds access, because
 	// that is what a guest ignoring a failed memory.grow actually does.
-	msg := err.Error()
+	msg := brief(err)
 	switch {
 	case contains(msg, "out of bounds memory access"), contains(msg, "memory size exceeded"):
-		return fmt.Errorf("%w (%s): %v", ErrOutOfMemory, during, err)
+		return fmt.Errorf("%w (%s): %s", ErrOutOfMemory, during, msg)
 	case contains(msg, "unreachable"), contains(msg, "integer divide by zero"),
 		contains(msg, "invalid conversion"), contains(msg, "indirect call type mismatch"):
-		return fmt.Errorf("%w (%s): %v", ErrGuestTrapped, during, err)
+		return fmt.Errorf("%w (%s): %s", ErrGuestTrapped, during, msg)
 	}
 	return fmt.Errorf("%s: %w", during, err)
+}
+
+// brief is an error's text without the guest's stack trace, which names
+// functions only the guest's author can read and fills the Catch node's message
+// with lines about nothing the flow author can act on.
+func brief(err error) string {
+	msg := err.Error()
+	if i := strings.Index(msg, "\nwasm stack trace"); i >= 0 {
+		msg = msg[:i]
+	}
+	return msg
 }
 
 func contains(haystack, needle string) bool {

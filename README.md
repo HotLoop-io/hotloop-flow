@@ -1514,16 +1514,20 @@ Both figures are `go test -run=XXX -bench='FunctionSimple|WasmCall' -benchmem
 as the cloning numbers above. The WASM benchmark needs the test guest built first,
 exactly as CI builds it.
 
-**Here's the catch: no node uses the WASM host yet.** It's real, it's tested, and
-CI fails if those tests quietly skip. But nothing in the palette calls it and it
-isn't compiled into the binary, so today you cannot run a WASM guest in a flow.
-The Function node is goja and only goja. A `wasm` node on this host is Phase 6 of
-the [roadmap](docs/ROADMAP.md), and until it ships, everything below describes the
-host, not something you can drag onto a canvas.
+A flow runs a WASM guest through a plugin: a signed module with a descriptor the
+editor draws its dialog from, which gets no host access unless it asks and you
+say yes. Memory is capped per node, a message gets a timeout, and a guest that
+blows past either traps, lands at a Catch node with the reason, and takes nothing
+else down. All of it is in [docs/plugins.md](docs/plugins.md), including how
+you trust a publisher's key and what the refusals say. What it means for you:
+the thing Node-RED needs npm and a whole Node.js install for, Flow runs as a
+sandboxed file you can verify before it loads.
 
-When it does ship, a node can be written in Rust, TinyGo, Zig or AssemblyScript
-instead of JavaScript, so the signal processing an OT flow actually wants runs
-compiled, with a memory ceiling it can't argue with.
+A plugin can be written in Rust, TinyGo, Zig or AssemblyScript instead of
+JavaScript, so the signal processing an OT flow actually wants runs compiled,
+with a memory ceiling it can't argue with. There are two worked examples built in
+CI, [one in Rust](examples/plugins/moving-average) and [one in
+TinyGo](examples/plugins/stamp).
 
 The guest ABI is three exports, two of them allocator hooks, and it's that small
 on purpose. Every export is attack surface, and one more thing every guest
@@ -1546,12 +1550,11 @@ that actually matter, and a node that needs more should have to say so:
 | | goja | WASM |
 |---|---|---|
 | Timeout per call | 5 s | 5 s |
-| Memory ceiling | none enforceable | 64 MiB, hard |
+| Memory ceiling | none enforceable | 16 MiB a node unless the plugin says otherwise, 64 MiB at most unless you raise `plugins.maxMemoryMiB`, hard |
 | Max output | 16 MiB | 8 MiB |
 
 Both runtimes are pure Go with no cgo. That's what keeps the build
-`CGO_ENABLED=0` and the image distroless today, and keeps both true when the
-WASM host goes into the binary. Pull in one cgo dependency and the static binary
+`CGO_ENABLED=0` and the image distroless, and the WASM host is in the binary. Pull in one cgo dependency and the static binary
 and the distroless image go with it, and CI fails the build to tell you so.
 
 ---
@@ -1731,6 +1734,7 @@ TypeScript and native SVG, 48.5 kB of JS and 20.1 kB of CSS minified.
 | `hotloop-flow hash-password` | bcrypt hash for a password. Takes `-password` or `HOTLOOP_FLOW_PASSWORD`. Refuses anything under 8 characters. |
 | `hotloop-flow import <flows.json>` | Reports what would happen before you deploy it. |
 | `hotloop-flow diff <old> <new>` | Node-by-node diff of two flow files. Also git's diff driver and difftool. |
+| `hotloop-flow plugin keygen`, `sign`, `verify` | Makes a publisher key, signs a [plugin](docs/plugins.md), and runs every check a server runs when it loads one, saying why if it would refuse. |
 | `hotloop-flow test <tests.yaml>` | Runs [flow tests](#tests-next-to-the-flows) in process. `-junit` for CI. |
 | `hotloop-flow deploy -file <flows.json>` | Shows the diff against a running instance, then deploys with a note. For CI. |
 | `hotloop-flow export` | The running flow file, byte for byte, or `-deployment N` from the history. |
@@ -1818,6 +1822,13 @@ exec:
 files:
   allowedPaths: []          # extra trees on top of data.dir, which is always allowed
 
+plugins:
+  dir: ""                   # empty means plugins/ inside data.dir
+  trustedKeys: []           # publisher keys: ed25519:<base64>, a PEM public key, or a file holding one. Empty refuses every plugin
+  grants: {}                # plugin name to the host access it may have: clock, random, context.flow, context.global
+  maxMemoryMiB: 64          # the most memory any one plugin node can be given
+  maxTimeout: 5s            # the longest any one plugin node can be given for a message
+
 secrets:
   allowedPaths: []          # where a tls-config may read a certificate or key, on top of data.dir
 
@@ -1880,6 +1891,9 @@ Secret.
 | `HOTLOOP_FLOW_LOG_LEVEL`, `HOTLOOP_FLOW_LOG_FORMAT` | Logging. |
 | `HOTLOOP_FLOW_DISCOVERY_ENABLED`, `HOTLOOP_FLOW_DISCOVERY_CIDRS` | Discovery nodes. Comma-separated CIDRs. |
 | `HOTLOOP_FLOW_EXEC_ENABLED`, `HOTLOOP_FLOW_EXEC_ALLOWED_COMMANDS` | The exec node. Comma-separated commands. |
+| `HOTLOOP_FLOW_PLUGINS_DIR`, `HOTLOOP_FLOW_PLUGIN_TRUSTED_KEYS` | Where plugins are, and the publisher keys to trust. Comma-separated keys. |
+| `HOTLOOP_FLOW_PLUGIN_GRANTS` | What plugins may use: `name=cap,cap;name=cap`. |
+| `HOTLOOP_FLOW_PLUGIN_MAX_MEMORY_MIB`, `HOTLOOP_FLOW_PLUGIN_MAX_TIMEOUT` | The ceilings on a plugin node's memory and per-message time. |
 | `HOTLOOP_FLOW_FILE_ALLOWED_PATHS` | Extra file node roots. Comma-separated. |
 | `HOTLOOP_FLOW_SECRET_ALLOWED_PATHS` | Extra roots a secret file may be read from. Comma-separated. |
 | `HOTLOOP_FLOW_INSECURE` | `true` runs with authentication off, and nothing else does. Only `1`, `true`, `yes` and `on` count, so `false` or `0` can't turn it off by accident. For an isolated network you've decided to own. It doesn't waive the credential secret. |
@@ -1911,6 +1925,7 @@ timeouts.
 | `GET /metrics` | none | Prometheus. Counts and node ids only, never message contents or configuration. |
 | `GET /settings` | `settings.read` | |
 | `GET /nodes` | `nodes.read` | The registry, which is what drives the editor's palette and its dialogs. |
+| `GET /plugins` | `nodes.read` | The plugins that loaded, what each asks for and has been granted, and the ones that were refused with the reason. |
 | `GET /flows` | `flows.read` | |
 | `GET /flows/export` | `flows.read` | The flow file exactly as it sits on disk, for git. |
 | `POST /flows` | `flows.write` | Deploy. Takes an optional note for the deployment log. |
@@ -2188,7 +2203,8 @@ shell, the file nodes are scoped, and everything listed under
 Node.js. There is no future version of this where they suddenly do, and I am not going to
 imply otherwise to make a table look nicer. That is the trade you make for the
 footprint and the sandbox, stated plainly so you can decide against it. Signed
-WASM plugins are Flow's answer to that, Phase 6 of the roadmap.
+WASM plugins are Flow's answer to that, and they run today: see
+[docs/plugins.md](docs/plugins.md).
 
 JSONata used to top the list of what an imported flow trips over. It runs now:
 every `jsonata`-typed property evaluates, with Node-RED's `$flowContext`,
@@ -2254,8 +2270,11 @@ the point. A flow that leans on one breaks the day it stops being there.
 - **Durable wires have never been on a Pi.** Store and forward and the disk
   writes were measured on an x86 box under WSL. The Pi 4 and Zero 2 W numbers
   are still to do, and I won't print a card figure I didn't measure on a card.
-- **A node that uses the WASM host.** The host is built and tested. Nothing in
-  the palette calls it, so WASM guests can't run in a flow today.
+- **Plugins have never run on a Pi, and Kubernetes can't configure them yet.**
+  The traps and the refusals are tested against guests built from Rust, TinyGo
+  and Go, but the per-call numbers above are from an x86 box, and the Helm chart
+  has no plugin values yet, so on a cluster the plugin settings only come in
+  through the config file you mount.
 - **It has never run on a real plant floor.** Shepherd Boy Farms is the intended
   first site. Everything past the deploy line is unproven in the field, and I'm
   not calling it production-hardened until a plant has had a real go at
@@ -2291,7 +2310,8 @@ hotloop-flow/
     otlp/            the OpenTelemetry export: spans over OTLP/HTTP
     store/           context (memory and SQLite), durable wire queues, flow file, credentials
     js/              goja host
-    wasmhost/        wazero host, tested, not used by any node yet
+    wasmhost/        wazero host: memory ceiling, timeout, capabilities
+    plugin/          plugin format, signatures, trust, grants, and the node each plugin becomes
     api/             admin REST and the editor websocket
     config/          the YAML surface and the refusals
     metrics/         the Prometheus exposition
@@ -2301,7 +2321,8 @@ hotloop-flow/
     discover/        network discovery
   web/               the editor
   charts/            the Helm chart
-  docs/              deploying, compatibility, the roadmap, and the benchmark method
+  docs/              deploying, plugins, compatibility, the roadmap, and the benchmark method
+  examples/plugins/  a plugin in Rust and one in TinyGo, built in CI
 ```
 
 ## Building
@@ -2312,8 +2333,8 @@ go test ./...
 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o hotloop-flow ./cmd/hotloop-flow
 ```
 
-Static, no cgo, runs on distroless. goja is pure Go, and so is wazero for when
-the WASM host goes in, which is the only reason that sentence is true. CI fails
+Static, no cgo, runs on distroless. goja is pure Go, and so is wazero, which runs
+the plugins, and that is the only reason that sentence is true. CI fails
 the build if the binary exceeds 40MiB or turns out to be dynamically linked,
 because both of those are things you discover on a plant floor otherwise.
 

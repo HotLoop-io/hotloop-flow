@@ -1,0 +1,22 @@
+[package]
+name = "moving-average"
+version = "1.0.0"
+edition = "2021"
+publish = false
+license = "BUSL-1.1"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+# A panic is a trap in the guest, which the host reports to a Catch node and
+# then throws the instance away. Unwinding would only make the module bigger.
+panic = "abort"
+strip = true

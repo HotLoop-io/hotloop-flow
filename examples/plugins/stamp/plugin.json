@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "name": "stamp",
+  "version": "1.0.0",
+  "label": "stamp",
+  "description": "Adds the time to each message.",
+  "help": "Sets `msg.stampedAt` to the time as RFC 3339 in UTC, and `msg.stampedAtUnix` to the same instant in milliseconds. Needs the clock capability, which the operator grants in `plugins.grants.stamp`.",
+  "props": [
+    { "name": "field", "kind": "string", "label": "Property", "default": "stampedAt",
+      "help": "The message property to set. The Unix milliseconds go in the same name with Unix on the end." }
+  ],
+  "capabilities": ["clock"],
+  "limits": { "memoryMiB": 8, "timeoutMs": 250 }
+}

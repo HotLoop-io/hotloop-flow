@@ -43,3 +43,5 @@ testdata/jsonata-suite/
 # Compiled WASM test guest — built by CI, not committed
 testdata/wasmguest/*.wasm
 testdata/wasmguest/*.h
+testdata/capguest/*.wasm
+testdata/capguest/*.h

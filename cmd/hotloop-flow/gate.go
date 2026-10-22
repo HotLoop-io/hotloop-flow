@@ -35,6 +35,8 @@ type testSuite struct {
 	gate    bool
 	timeout time.Duration
 	runtime BundleRuntime
+	// plugins is how a child loads the plugins the flows use.
+	plugins PluginSetup
 
 	// command is the executable a run is made with, and its environment:
 	// this binary in the field, the test binary under go test.
@@ -55,6 +57,7 @@ func newTestSuite(cfg config.Config) *testSuite {
 			Overflow:      cfg.Runtime.Overflow,
 			BlockTimeout:  cfg.Runtime.BlockTimeout,
 		},
+		plugins: pluginSetup(cfg),
 		command: func() (string, []string, error) {
 			exe, err := os.Executable()
 			return exe, os.Environ(), err
@@ -111,7 +114,7 @@ func (s *testSuite) Run(ctx context.Context, flows, tests []byte, match string) 
 	defer cancel()
 
 	bundle, err := json.Marshal(TestBundle{
-		Flows: flows, Tests: string(tests), Runtime: s.runtime, Match: match, File: s.Name(),
+		Flows: flows, Tests: string(tests), Runtime: s.runtime, Plugins: &s.plugins, Match: match, File: s.Name(),
 	})
 	if err != nil {
 		return flowtest.Report{}, err
