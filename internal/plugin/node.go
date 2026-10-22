@@ -199,7 +199,8 @@ func (a access) Set(s wasmhost.ContextScope, key string, v any) error {
 
 func (n *wasmNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
 	ctx = wasmhost.WithContextAccess(ctx, access{svc: n.svc})
-	resp, err := n.mod.Call(ctx, wasmhost.Request{Msg: m.Data, Config: n.config})
+	visible, held := splitOpaque(m.Data)
+	resp, err := n.mod.Call(ctx, wasmhost.Request{Msg: visible, Config: n.config})
 	if err != nil {
 		return fmt.Errorf("plugin %s: %w", n.plugin.Manifest.Name, err)
 	}
@@ -220,6 +221,13 @@ func (n *wasmNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 	for port, msgs := range resp.Send {
 		for _, data := range msgs {
 			if data != nil {
+				// What JSON can't carry goes back on what the guest sends, unless
+				// the guest set that property itself.
+				for k, v := range held {
+					if _, set := data[k]; !set {
+						data[k] = v
+					}
+				}
 				byPort[port] = append(byPort[port], engine.WrapMsg(data))
 			}
 		}
@@ -234,3 +242,50 @@ func (n *wasmNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 
 // Close releases the plugin's instances and its memory.
 func (n *wasmNode) Close(ctx context.Context, _ bool) error { return n.mod.Close(ctx) }
+
+// splitOpaque separates a message into what a guest can be given and what it
+// can't. A property whose value isn't plain JSON (an HTTP In node's response
+// handle, a binary buffer) would be lost or mangled crossing to the guest, and
+// a plugin between an HTTP In and an HTTP Response would then leave the request
+// unanswered. Those properties stay with the node and go back on the messages
+// it sends. The message passed in isn't changed.
+func splitOpaque(data map[string]any) (visible, held map[string]any) {
+	visible = make(map[string]any, len(data))
+	for k, v := range data {
+		if plainJSON(v, 0) {
+			visible[k] = v
+			continue
+		}
+		if held == nil {
+			held = map[string]any{}
+		}
+		held[k] = v
+	}
+	return visible, held
+}
+
+func plainJSON(v any, depth int) bool {
+	if depth > 64 {
+		return false
+	}
+	switch t := v.(type) {
+	case nil, bool, string, float64, float32, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, json.Number:
+		return true
+	case map[string]any:
+		for _, e := range t {
+			if !plainJSON(e, depth+1) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		for _, e := range t {
+			if !plainJSON(e, depth+1) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}

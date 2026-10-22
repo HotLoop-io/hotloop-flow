@@ -185,6 +185,42 @@ secrets:
   # the mounts above.
   allowedPaths: []
 
+# ── Plugins ──────────────────────────────────────────────────────────────────
+# Signed WebAssembly plugins, see docs/plugins.md. Off renders nothing, and the
+# binary loads nothing. On with no trusted keys, every plugin is refused: a key
+# is what you are saying yes to.
+plugins:
+  enabled: false
+  # Where plugin directories are read from. Empty means plugins/ inside the data
+  # directory, or mountPath when a volume is set below.
+  dir: ""
+  # Publisher keys to trust, each "ed25519:<base64>" or a PEM public key. The
+  # key is public, so it belongs here and not in a Secret. Get one from
+  # `hotloop-flow plugin keygen`.
+  trustedKeys: []
+  # What each plugin may use, by plugin name: clock, random, context.flow,
+  # context.global. A flow using a plugin that asks for more fails the deploy.
+  grants: {}
+  #   moving-average: []
+  #   stamp: [clock]
+  # The most memory and the longest time any one plugin node can be given.
+  maxMemoryMiB: 64
+  maxTimeout: 5s
+  # How the plugin files get there. With no volume, copy them into plugins/ on
+  # the data volume. With one, it is any Kubernetes volume source, mounted read
+  # only at mountPath: an existing claim, a ConfigMap (binaryData, one plugin
+  # directory per item path), or a Secret.
+  volume: {}
+  #   persistentVolumeClaim:
+  #     claimName: flow-plugins
+  #   configMap:
+  #     name: flow-plugins
+  #     items:
+  #       - {key: moving-average.wasm, path: moving-average/plugin.wasm}
+  #       - {key: moving-average.json, path: moving-average/plugin.json}
+  #       - {key: moving-average.sig,  path: moving-average/plugin.sig}
+  mountPath: /etc/hotloop-flow/plugins
+
 # ── Persistence ──────────────────────────────────────────────────────────────
 # 2Gi per the edge Longhorn sweep. Flows, credentials and context all live here.
 persistence:

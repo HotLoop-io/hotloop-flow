@@ -177,6 +177,11 @@ spec:
               mountPath: {{ required "secrets.mounts[].mountPath is required" $m.mountPath }}
               readOnly: true
             {{- end }}
+            {{- if and .Values.plugins.enabled .Values.plugins.volume }}
+            - name: plugins
+              mountPath: {{ .Values.plugins.mountPath }}
+              readOnly: true
+            {{- end }}
 
       volumes:
         - name: config
@@ -191,6 +196,10 @@ spec:
           secret:
             secretName: {{ required "secrets.mounts[].secretName is required" $m.secretName }}
             defaultMode: 0440
+        {{- end }}
+        {{- if and .Values.plugins.enabled .Values.plugins.volume }}
+        - name: plugins
+          {{- toYaml .Values.plugins.volume | nindent 10 }}
         {{- end }}
         - name: data
         {{- if .Values.persistence.enabled }}

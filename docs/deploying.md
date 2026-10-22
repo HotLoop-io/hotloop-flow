@@ -140,6 +140,10 @@ finishes the handshake instead of leaving half-open connections on a PLC.
 | `exec.enabled`, `exec.allowedCommands` | off, empty | The exec node. Same rule. |
 | `files.allowedPaths` | empty | Extra trees the file nodes may reach beyond `/data`. |
 | `secrets.mounts` | empty | Secrets to mount read-only, each `{secretName, mountPath}`, for a tls-config's files and `ew_credentialFiles`. Each path joins the secret scope and never the file nodes'. |
+| `plugins.enabled` | off | [Plugins](plugins.md). Off renders nothing. On, with `plugins.trustedKeys` empty, every plugin is refused. |
+| `plugins.trustedKeys`, `plugins.grants` | empty | The publisher keys to believe, and what each plugin may use by name (`clock`, `random`, `context.flow`, `context.global`). A flow using a plugin that asks for more fails the deploy. |
+| `plugins.maxMemoryMiB`, `plugins.maxTimeout` | `64`, `5s` | The most memory and the longest time any one plugin node can be given. |
+| `plugins.volume`, `plugins.mountPath`, `plugins.dir` | empty, `/etc/hotloop-flow/plugins`, empty | How the plugin files arrive. No volume: copy them into `plugins/` on the data volume. A volume is any Kubernetes volume source (an existing claim, a ConfigMap, a Secret), mounted read-only at `mountPath`, and `dir` follows it. |
 | `metrics.serviceMonitor.enabled` | off | Prometheus Operator scraping. |
 | `ingress.enabled` | off | If you want it reachable from outside the cluster. |
 

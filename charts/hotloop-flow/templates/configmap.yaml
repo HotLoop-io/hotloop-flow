@@ -115,6 +115,26 @@ data:
         []
         {{- end }}
 
+    {{- if .Values.plugins.enabled }}
+
+    plugins:
+      dir: {{ .Values.plugins.dir | default (ternary .Values.plugins.mountPath "" (not (empty .Values.plugins.volume))) | quote }}
+      trustedKeys:
+        {{- if .Values.plugins.trustedKeys }}
+        {{- toYaml .Values.plugins.trustedKeys | nindent 8 }}
+        {{- else }}
+        []
+        {{- end }}
+      grants:
+        {{- if .Values.plugins.grants }}
+        {{- toYaml .Values.plugins.grants | nindent 8 }}
+        {{- else }}
+        {}
+        {{- end }}
+      maxMemoryMiB: {{ .Values.plugins.maxMemoryMiB | int }}
+      maxTimeout: {{ .Values.plugins.maxTimeout }}
+    {{- end }}
+
     logging:
       level: {{ .Values.logging.level }}
       format: {{ .Values.logging.format }}

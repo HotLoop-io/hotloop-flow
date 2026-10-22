@@ -95,7 +95,12 @@ func Load(ctx context.Context, dir string, policy Policy) (*Host, error) {
 		return nil, fmt.Errorf("reading the plugin directory: %w", err)
 	}
 	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		// A ConfigMap or Secret volume lays a directory out as a symlink to the
+		// kubelet's own tree, so what is a directory is asked of the target.
+		if info, err := os.Stat(filepath.Join(dir, e.Name())); err != nil || !info.IsDir() {
 			continue
 		}
 		p, err := h.loadOne(ctx, filepath.Join(dir, e.Name()))
