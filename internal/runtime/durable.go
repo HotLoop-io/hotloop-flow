@@ -103,11 +103,45 @@ type durableWire struct {
 	memInflight    int
 	pendingAppends int
 
+	// lifeMu and gone close a wire that was taken out of the flow. Every write
+	// to its queue holds the read side, and removal takes the write side to set
+	// gone before it purges. A message the target hands back after that, which
+	// can be any time, finds the wire gone and is counted dropped, where it used
+	// to be written to a queue nothing reads or will purge, charged to the quota
+	// until the next restart. abandoned tells a delivery in flight not to wait
+	// out the close timeout for a target that is stuck: its queue is about to
+	// be purged, so there is nothing to send twice.
+	lifeMu    sync.RWMutex
+	gone      bool
+	abandoned atomic.Bool
+
 	// lastStamp keeps the stamps on one wire strictly increasing, so two
 	// readings that reach the wire in the same tick of a coarse clock still
 	// get different times.
 	stampMu   sync.Mutex
 	lastStamp time.Time
+}
+
+// errWireGone is what a write to a wire that was taken out of the flow gets.
+var errWireGone = errors.New("the durable wire was removed from the flow")
+
+// abandonGrace is how long a delivery in flight is given to finish when its wire
+// is being removed. A healthy target answers in milliseconds and its message is
+// acknowledged, so it isn't counted dropped with the purge. A stuck one costs
+// this and not the close timeout.
+const abandonGrace = 250 * time.Millisecond
+
+// appendLive writes to the wire's queue unless the wire has been removed.
+func (w *durableWire) appendLive(seq uint64, body []byte, over bool) (uint64, error) {
+	w.lifeMu.RLock()
+	defer w.lifeMu.RUnlock()
+	if w.gone {
+		return 0, errWireGone
+	}
+	if over {
+		return w.q.AppendSeqOver(seq, body)
+	}
+	return w.q.AppendSeq(seq, body)
 }
 
 func (w *durableWire) stampTime() time.Time {
@@ -265,8 +299,12 @@ func (rt *Runtime) syncDurable(g *graph) map[string]*durableWire {
 		if _, ok := wanted[key]; ok {
 			continue
 		}
+		w.abandoned.Store(true)
 		w.cancel()
 		<-w.done
+		w.lifeMu.Lock()
+		w.gone = true
+		w.lifeMu.Unlock()
 		delete(rt.durable, key)
 		rt.purgeDurable(w.q, w.to)
 	}
@@ -408,9 +446,11 @@ func (w *durableWire) memDone(seq uint64, orig *engine.Msg, err error) {
 	body, skipped, eerr := store.EncodeMsg(orig)
 	if eerr == nil {
 		w.reportSkipped(skipped)
-		_, eerr = w.q.AppendSeqOver(seq, body)
+		_, eerr = w.appendLive(seq, body, true)
 	}
-	if eerr != nil {
+	if errors.Is(eerr, errWireGone) {
+		w.dropped(orig, "wire-removed")
+	} else if eerr != nil {
 		w.dropped(orig, "spill-failed")
 	}
 	w.mu.Lock()
@@ -441,8 +481,12 @@ func (w *durableWire) appendSpill(seq uint64, msg *engine.Msg, from *runner) {
 	var deadline <-chan time.Time
 	for {
 		space := rt.spool.Space()
-		_, err = w.q.AppendSeq(seq, body)
+		_, err = w.appendLive(seq, body, false)
 		if err == nil {
+			return
+		}
+		if errors.Is(err, errWireGone) {
+			w.dropped(msg, "wire-removed")
 			return
 		}
 		if !errors.Is(err, store.ErrQuota) {
@@ -625,9 +669,13 @@ func (w *durableWire) deliver(ctx context.Context, e store.Entry) bool {
 			// Stopping. The message is in the node's inbox and the runtime is
 			// about to drain it, so wait for how that goes rather than leave
 			// it queued on disk as well and send it twice.
+			wait := w.rt.opts.CloseTimeout
+			if w.abandoned.Load() {
+				wait = abandonGrace
+			}
 			select {
 			case herr = <-result:
-			case <-time.After(w.rt.opts.CloseTimeout):
+			case <-time.After(wait):
 				return false
 			}
 		}
