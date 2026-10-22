@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -474,12 +475,7 @@ func TestDurableWireRemovedPurgesItsQueue(t *testing.T) {
 	// slow runner: 30 dropped against the 29 sampled.
 	queued := q.Depth()
 
-	plain := `[
-	  {"id":"t1","type":"tab","label":"T"},
-	  {"id":"a","type":"pass","z":"t1","x":1,"y":1,"wires":[["b"]]},
-	  {"id":"b","type":"sink","z":"t1","x":2,"y":1,"wires":[]}
-	]`
-	if _, err := rig.rt.Update(context.Background(), mustFlows(t, plain), UpdateOptions{Mode: DeployNodes}); err != nil {
+	if _, err := rig.rt.Update(context.Background(), mustFlows(t, notDurable(spillFlow)), UpdateOptions{Mode: DeployNodes}); err != nil {
 		t.Fatal(err)
 	}
 	if q.Depth() != 0 || rig.sp.Bytes() != 0 {
@@ -493,6 +489,86 @@ func TestDurableWireRemovedPurgesItsQueue(t *testing.T) {
 	}
 	if n := sink.count(); n != 0 {
 		t.Fatalf("%d delivered to a target that never took one", n)
+	}
+}
+
+// notDurable is the same flow with the wire no longer marked. It has to be the
+// same in every other way: a node whose settings differ is a node the deploy
+// replaces, and the deploy waits for a replaced node to finish its message.
+// This test once swapped in a flow without the sink's inbox capacity, so the
+// sink was replaced while the test held it inside a message, and every run
+// spent the 15 second close timeout there. Sixty runs of it hit go test's ten
+// minute limit.
+func notDurable(flow string) string {
+	return strings.Replace(flow, `"ew_durable":["b"],`, "", 1)
+}
+
+// A message the target hands back to a wire that has since been taken out of
+// the flow has nowhere to go. It used to be written to the queue anyway, after
+// the purge, and sat there charged to the quota with nothing to read it. This
+// is that message, handed back after the wire is gone: it is counted dropped
+// and nothing is written.
+func TestDurableWireRemovedRefusesWhatComesBackLate(t *testing.T) {
+	sink := &flakySink{gate: make(chan struct{})}
+	rig := startDurable(t, filepath.Join(t.TempDir(), "state.db"), spillFlow, Options{}, 0, sink)
+	defer rig.stop(t)
+	defer close(sink.gate)
+	rig.rt.durableMu.Lock()
+	w := rig.rt.durable["a:0>b"]
+	rig.rt.durableMu.Unlock()
+	if w == nil {
+		t.Fatal("the durable wire is not running")
+	}
+	if _, err := rig.rt.Update(context.Background(), mustFlows(t, notDurable(spillFlow)), UpdateOptions{Mode: DeployNodes}); err != nil {
+		t.Fatal(err)
+	}
+	q := w.q
+	before := q.Dropped()
+
+	// What the target's goroutine does when it finds the wire spilling, and
+	// what a sender does that was already inside offer when the wire went.
+	w.memDone(w.q.AllocSeq(), engine.NewMsgWithPayload(1.0), errDropped)
+	w.appendSpill(w.q.AllocSeq(), engine.NewMsgWithPayload(2.0), nil)
+
+	if q.Depth() != 0 || rig.sp.Bytes() != 0 {
+		t.Fatalf("queue depth %d and %d bytes charged after messages came back to a removed wire", q.Depth(), rig.sp.Bytes())
+	}
+	if got := q.Dropped() - before; got != 2 {
+		t.Fatalf("%d counted dropped, want the 2 that came back", got)
+	}
+}
+
+// Taking a durable wire out of a flow waits for a delivery in flight only as
+// long as it takes a healthy target to answer. A target that is stuck in a
+// message cost the whole close timeout, 15 seconds, with the deploy held, to
+// protect a message that is purged a moment later anyway.
+func TestDurableWireRemovedDoesNotWaitOnAStuckTarget(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	down := &flakySink{}
+	down.down.Store(true)
+	rig := startDurable(t, path, durableFlow, Options{}, 0, down)
+	inject(t, rig.rt, 0, 10)
+	waitFor(t, "10 messages on disk", func() bool { return rig.sp.Wire("a:0>b").Depth() == 10 })
+	rig.stop(t)
+
+	// The backlog is on disk before this runtime starts, so its pump delivers
+	// from disk at once, into a target that takes the first message and never
+	// finishes it.
+	stuck := &flakySink{gate: make(chan struct{})}
+	rig = startDurable(t, path, durableFlow, Options{}, 0, stuck)
+	defer rig.stop(t)
+	defer close(stuck.gate)
+	waitFor(t, "the target to be inside a message", func() bool { return stuck.attempts.Load() == 1 })
+
+	start := time.Now()
+	if _, err := rig.rt.Update(context.Background(), mustFlows(t, notDurable(durableFlow)), UpdateOptions{Mode: DeployNodes}); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("removing the wire held the deploy for %s", took)
+	}
+	if q := rig.sp.Wire("a:0>b"); q.Depth() != 0 || rig.sp.Bytes() != 0 {
+		t.Fatalf("queue depth %d and %d bytes charged after the wire was removed", q.Depth(), rig.sp.Bytes())
 	}
 }
 
