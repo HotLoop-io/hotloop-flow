@@ -315,6 +315,21 @@ func TestAModuleThatIsNotWebAssemblyIsRefused(t *testing.T) {
 	mustContain(t, refusal(t, h, "junk"), "not usable")
 }
 
+// A Kubernetes ConfigMap or Secret mount makes each plugin directory a symlink
+// into the kubelet's tree. The first live install found the loader skipping them.
+func TestAPluginDirectoryThatIsASymlinkLoads(t *testing.T) {
+	real, root := t.TempDir(), t.TempDir()
+	pub := newPublisher(t)
+	install(t, real, "linked", wasmasm.Echo(okResponse), manifest("linked", ""), &pub)
+	if err := os.Symlink(filepath.Join(real, "linked"), filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	h := load(t, root, policy(pub))
+	if got := h.Loaded(); len(got) != 1 || got[0] != "linked" {
+		t.Fatalf("loaded %v, refused %v", got, h.Refusals())
+	}
+}
+
 func TestAMissingPluginDirectoryIsNotAnError(t *testing.T) {
 	h := load(t, filepath.Join(t.TempDir(), "nope"), policy())
 	if len(h.Loaded()) != 0 || len(h.Refusals()) != 0 {
