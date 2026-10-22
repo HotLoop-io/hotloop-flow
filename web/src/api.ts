@@ -4,6 +4,8 @@
 // every external host, and an edge box has no internet, so anything not bundled
 // simply would not load.
 
+import type { WireProblem } from './wiretypes';
+
 /**
  * A node type, as served by GET /nodes.
  *
@@ -392,6 +394,11 @@ export class Api {
   /** Replaces the suite. One that doesn't parse comes back as an error with the reason. */
   saveTests(yaml: string): Promise<{ tests: number }> {
     return this.sendText('PUT', '/tests', yaml);
+  }
+
+  /** What is wrong with the typed wires in a working copy. Deploys nothing. */
+  flowTypes(flows: unknown[]): Promise<{ wires: WireProblem[] }> {
+    return this.send('POST', '/flows/types', flows);
   }
 
   /** Adds the tests in a test file of their own to the suite. */

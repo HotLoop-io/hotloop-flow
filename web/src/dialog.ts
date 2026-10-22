@@ -10,6 +10,7 @@
 
 import type { Descriptor, PropDef } from './api';
 import type { FlowEntry, Graph } from './graph';
+import { IN_KEY, OUT_KEY } from './wiretypes';
 
 export interface DialogResult {
   props: Record<string, unknown>;
@@ -74,6 +75,12 @@ export function editNode(
     }
     if (!descriptor) {
       controls.push(renderRawJSON(body, entry));
+    }
+
+    // Typed wires: what the node accepts and what each output promises. A node
+    // that is on a canvas has them; a configuration node has no ports.
+    if (descriptor && entry.id !== '' && !graph.isConfig(entry)) {
+      controls.push(renderTypes(body, entry, graph));
     }
 
     // Help
@@ -516,6 +523,83 @@ function renderList(parent: HTMLElement, p: PropDef, entry: FlowEntry): Control 
 }
 
 /** Raw JSON editing, for a node type this runtime does not implement. */
+/**
+ * The Types section: an optional JSON Schema for the message the node accepts,
+ * and one for each output port. Each is a schema over the whole message, so the
+ * payload is properties.payload. Empty means no type, which is the default and
+ * costs nothing.
+ */
+function renderTypes(parent: HTMLElement, entry: FlowEntry, graph: Graph): Control {
+  const details = document.createElement('details');
+  details.className = 'dialog-types';
+  details.setAttribute('data-test', 'types');
+  const current = entry[IN_KEY] !== undefined || entry[OUT_KEY] !== undefined;
+  details.open = current;
+  const summary = document.createElement('summary');
+  summary.textContent = 'Types';
+  details.append(summary);
+
+  const note = document.createElement('div');
+  note.className = 'field-help';
+  note.textContent =
+    'Optional JSON Schemas over the whole message, so the payload is properties.payload. ' +
+    'A wire between two typed ends that can never agree is refused at deploy; anything else that ' +
+    'breaks a schema goes to a Catch node with the path of the bad field.';
+  details.append(note);
+  parent.append(details);
+
+  const area = (label: string, test: string, value: unknown): HTMLTextAreaElement => {
+    const wrap = field(details, { name: test, kind: 'json', label });
+    const ta = document.createElement('textarea');
+    ta.className = 'code lang-json';
+    ta.spellcheck = false;
+    ta.rows = 4;
+    ta.setAttribute('data-test', test);
+    ta.value = value === undefined || value === null ? '' : JSON.stringify(value, null, 2);
+    wrap.append(ta);
+    return ta;
+  };
+
+  const inArea = area('Accepts (input)', 'schema-in', entry[IN_KEY]);
+  const outs = Array.isArray(entry[OUT_KEY]) ? (entry[OUT_KEY] as unknown[]) : [];
+  const ports = graph.outputCount(entry);
+  const outAreas: HTMLTextAreaElement[] = [];
+  for (let i = 0; i < ports; i++) {
+    outAreas.push(area(ports === 1 ? 'Promises (output)' : `Promises (output ${i + 1})`, `schema-out-${i + 1}`, outs[i]));
+  }
+
+  const parse = (label: string, ta: HTMLTextAreaElement): { value?: unknown; error?: string } => {
+    const text = ta.value.trim();
+    if (text === '') return {};
+    try {
+      const v = JSON.parse(text) as unknown;
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+        return { error: `${label} is a JSON Schema: an object` };
+      }
+      return { value: v };
+    } catch (ex) {
+      return { error: `${label} is not valid JSON: ${(ex as Error).message}` };
+    }
+  };
+
+  return {
+    read: () => {
+      const accepted = parse('Accepts', inArea);
+      if (accepted.error) return { error: accepted.error };
+      const promised: unknown[] = [];
+      for (let i = 0; i < outAreas.length; i++) {
+        const r = parse(ports === 1 ? 'Promises' : `Promises (output ${i + 1})`, outAreas[i]!);
+        if (r.error) return { error: r.error };
+        promised.push(r.value ?? null);
+      }
+      // Only what was written is kept: an empty section takes the key off the
+      // node, so a flow that never used types never grows the keys.
+      const any = promised.some((v) => v !== null);
+      return { values: { [IN_KEY]: accepted.value, [OUT_KEY]: any ? promised : undefined } };
+    },
+  };
+}
+
 function renderRawJSON(parent: HTMLElement, entry: FlowEntry): Control {
   const wrap = field(parent, { name: '__raw', kind: 'json', label: 'Configuration' });
 

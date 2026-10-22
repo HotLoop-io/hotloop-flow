@@ -88,3 +88,36 @@ func TestTheTypedWireRefusalOverHTTPAndInTheAuditTrail(t *testing.T) {
 		t.Fatalf("an agreeing flow: %d %s", code, out)
 	}
 }
+
+// The editor asks the runtime which wires can never agree, on a working copy,
+// with read permission and without deploying anything.
+func TestTheEditorCanAskWhichWiresClash(t *testing.T) {
+	app, _ := newApp(t)
+	e := serveAppWith(t, app, map[string][]string{"viewer": {"flows.read"}}, nil)
+	viewer := e.login(t, "viewer")
+
+	code, out := e.call(t, "POST", "/flows/types", viewer, []byte(typedFlow("string")))
+	var body struct {
+		Wires []struct {
+			NodeID  string `json:"nodeId"`
+			To      string `json:"to"`
+			Port    int    `json:"port"`
+			Message string `json:"message"`
+		} `json:"wires"`
+	}
+	if code != http.StatusOK || json.Unmarshal(out, &body) != nil || len(body.Wires) != 1 ||
+		body.Wires[0].NodeID != "sensor" || body.Wires[0].To != "limit" || body.Wires[0].Port != 1 {
+		t.Fatalf("POST /flows/types: %d %s", code, out)
+	}
+
+	code, out = e.call(t, "POST", "/flows/types", viewer, []byte(typedFlow("number")))
+	if code != http.StatusOK || !strings.Contains(string(out), `"wires":[]`) {
+		t.Fatalf("agreeing flow: %d %s", code, out)
+	}
+	if code, _ := e.call(t, "POST", "/flows/types", viewer, []byte(`{`)); code != http.StatusBadRequest {
+		t.Fatalf("garbage: %d", code)
+	}
+	if got := app.flowStore.Bytes(); strings.Contains(string(got), "sensor") {
+		t.Fatal("asking deployed the flow")
+	}
+}

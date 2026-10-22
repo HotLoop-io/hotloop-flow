@@ -152,6 +152,23 @@
 
 .wire:hover { stroke: var(--accent); opacity: 1; stroke-width: 3; cursor: pointer; }
 
+/* The type written on a wire. A chip at the middle of the curve: the wire's own
+   colour when both ends agree, muted when only one end declares a type, red when
+   the two can never agree and a deploy would refuse it. */
+.wire-type { pointer-events: none; }
+.wire-type rect { fill: var(--portal-bg); stroke: var(--text-sub); stroke-width: 1; opacity: 0.95; }
+.wire-type text {
+  fill: var(--text-sub);
+  font-family: var(--hl-font-mono);
+  font-size: 10px;
+}
+.wire-type.ok rect { stroke: var(--success); }
+.wire-type.ok text { fill: var(--text-main); }
+.wire-type.half rect { stroke-dasharray: 3 2; }
+.wire-type.clash rect { stroke: var(--danger); stroke-width: 1.5; }
+.wire-type.clash text { fill: var(--danger-text); font-weight: 600; }
+.wire[data-type-state="clash"] { stroke: var(--danger); stroke-width: 3; opacity: 1; }
+
 .wire-pending {
   stroke: var(--accent);
   stroke-dasharray: 6 4;
