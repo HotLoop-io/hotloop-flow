@@ -19,6 +19,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/flowdiff"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
+	"github.com/HotLoop-io/hotloop-flow/internal/mcphost"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
 	"github.com/HotLoop-io/hotloop-flow/internal/mfa"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
@@ -39,6 +40,9 @@ const (
 	PermSettings   = "settings.read"
 	PermInject     = "inject.write"
 	PermAuditRead  = "audit.read"
+	// PermMCP is what a caller needs to reach the MCP endpoint, where flows are
+	// served as tools. A tool can ask for more.
+	PermMCP = mcphost.Permission
 )
 
 // Deps is everything the server needs from the rest of the process.
@@ -77,6 +81,10 @@ type Deps struct {
 	// flow's routes change on every deploy and http.ServeMux cannot unregister
 	// a pattern.
 	FlowRoutes *flowhttp.Router
+
+	// MCP holds the tools the flows are serving. Nil means this instance has
+	// no MCP endpoint.
+	MCP *mcphost.Registry
 
 	// Tests keeps the flow test suite and runs it. Nil means this instance
 	// keeps none.
@@ -271,6 +279,22 @@ func (s *Server) routes() {
 	s.mux.Handle("GET "+s.path("/runtime/stats"), s.auth(PermStatusRead, s.handleStats))
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))
+	if s.deps.MCP != nil {
+		// POST for every request, and GET and DELETE for the handshake revisions
+		// of MCP, which open a stream and end a session with them. Each is named
+		// because an unnamed method here would conflict with the editor's
+		// "GET /" pattern when the editor is served at the same root.
+		// Authentication is the handler's own, so a caller is identified before
+		// the protocol sees the request.
+		mh := s.deps.MCP.Handler(mcphost.Options{
+			Authenticate: s.mcpIdentify,
+			Audit:        s.mcpAudit,
+			Logger:       s.log,
+		})
+		for _, method := range []string{"POST", "GET", "DELETE"} {
+			s.mux.Handle(method+" "+s.path("/mcp"), mh)
+		}
+	}
 
 	// The editor. Unauthenticated on purpose: it is a static bundle that renders
 	// a login form, and every call it makes afterwards carries a token. Putting
@@ -399,29 +423,9 @@ func (s *Server) auth(perm string, h http.HandlerFunc) http.Handler {
 			return
 		}
 
-		tok, viaQuery := requestToken(r)
-		if tok == "" {
-			writeError(w, http.StatusUnauthorized, "no bearer token")
-			return
-		}
-		if viaQuery {
-			// One handshake is one connection, so this is once per connection.
-			// The path and the address, never the URL: the token is in it.
-			s.log.Warn("websocket token sent in the URL query string: it works, "+
-				"but the URL lands in proxy and access logs. Send it as the "+
-				"subprotocol hotloop-flow.bearer.<token> instead",
-				"path", r.URL.Path, "remote", r.RemoteAddr)
-		}
-		user, ok := s.tokens.lookup(tok)
-		if !ok {
-			// Not a session. Perhaps an API token from the config, which is
-			// how a CI job deploys without anybody's password.
-			if t, found := s.deps.Config.FindToken(tok); found {
-				user, ok = config.User{Username: "token:" + t.Name, Permissions: t.Permissions}, true
-			}
-		}
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "token is invalid or has expired")
+		user, status, msg := s.identify(r)
+		if status != 0 {
+			writeError(w, status, msg)
 			return
 		}
 		if !user.Allows(perm) {
@@ -430,6 +434,69 @@ func (s *Server) auth(perm string, h http.HandlerFunc) http.Handler {
 		}
 		h(w, r.WithContext(withUser(r, user.Username)))
 	})
+}
+
+// identify works out who a request is from: a session token, or an API token
+// from the config. A zero status means it knows; otherwise the status and the
+// words to answer with.
+func (s *Server) identify(r *http.Request) (user config.User, status int, msg string) {
+	tok, viaQuery := requestToken(r)
+	if tok == "" {
+		return config.User{}, http.StatusUnauthorized, "no bearer token"
+	}
+	if viaQuery {
+		// One handshake is one connection, so this is once per connection.
+		// The path and the address, never the URL: the token is in it.
+		s.log.Warn("websocket token sent in the URL query string: it works, "+
+			"but the URL lands in proxy and access logs. Send it as the "+
+			"subprotocol hotloop-flow.bearer.<token> instead",
+			"path", r.URL.Path, "remote", r.RemoteAddr)
+	}
+	user, ok := s.tokens.lookup(tok)
+	if !ok {
+		// Not a session. Perhaps an API token from the config, which is
+		// how a CI job deploys without anybody's password.
+		if t, found := s.deps.Config.FindToken(tok); found {
+			user, ok = config.User{Username: "token:" + t.Name, Permissions: t.Permissions}, true
+		}
+	}
+	if !ok {
+		return config.User{}, http.StatusUnauthorized, "token is invalid or has expired"
+	}
+	return user, 0, ""
+}
+
+// mcpIdentify is how the MCP endpoint knows its caller. It is the admin API's
+// own check, with one difference that is the point of the endpoint: with
+// authentication switched off there is no caller to name, and a tool call with
+// no name in the audit log is refused rather than served.
+func (s *Server) mcpIdentify(r *http.Request) (mcphost.Identity, *mcphost.Refusal) {
+	if !s.deps.Config.Auth.Enabled {
+		return mcphost.Identity{}, &mcphost.Refusal{
+			Status:  http.StatusForbidden,
+			Message: "the MCP endpoint needs authentication, and this instance runs with it switched off (HOTLOOP_FLOW_INSECURE). A tool call has to have a caller to name in the audit log.",
+		}
+	}
+	user, status, msg := s.identify(r)
+	if status != 0 {
+		// No token at all is not worth a row. A token that was sent and is
+		// wrong is somebody trying, and is.
+		_, sent := requestToken(r)
+		hadToken := r.Header.Get("Authorization") != "" || sent
+		return mcphost.Identity{}, &mcphost.Refusal{Status: status, Message: msg, Audit: hadToken && msg != "no bearer token"}
+	}
+	return mcphost.Identity{Name: user.Username, Allows: user.Allows}, nil
+}
+
+func (s *Server) mcpAudit(ev mcphost.Event) {
+	if s.deps.Audit == nil {
+		return
+	}
+	if err := s.deps.Audit.Record(audit.Entry{
+		Event: ev.Name, User: ev.User, Remote: ev.Remote, ForwardedFor: ev.ForwardedFor, Detail: ev.Detail,
+	}); err != nil {
+		s.log.Error("the audit log could not be written", "event", ev.Name, "user", ev.User, "error", err)
+	}
 }
 
 func withUser(r *http.Request, name string) context.Context {
