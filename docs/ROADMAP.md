@@ -136,11 +136,11 @@ A historian going down for an hour shouldn't cost you an hour of readings.
       minutes under steady input, bring it back, count rows. None missing, none
       doubled. Then kill -9 the runtime mid-queue and count again. The script, the
       counts and the disk writes per hour are in [durable/](durable/README.md)
-- [ ] Proven on a real Pi 4 and a Zero 2 W: memory, start time, sustained
-      messages per second, and SD card writes per hour, because a context store
-      that chews through an SD card is a bug. The writes per hour are measured on
-      x86 under WSL and published. The boards aren't, because I haven't had them
-      in front of me, so this stays open
+- [x] Proven on a real Pi 5: memory, start time, and sustained throughput, in
+      [docs/bench](bench/README.md#results-on-a-raspberry-pi-5), with the
+      throttling it showed
+- [ ] Proven on a Pi 4 and a Zero 2 W, and SD card writes per hour on a card,
+      because a context store that chews through an SD card is a bug
 
 ### Phase 5: the plant floor
 
