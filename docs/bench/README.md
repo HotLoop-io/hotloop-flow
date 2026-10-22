@@ -95,7 +95,9 @@ Raspberry Pi 5 Model B Rev 1.1 with 8 GB (`MemTotal` 8,122,272 kB), four
 Cortex-A76 cores, Ubuntu 26.04.1 LTS, kernel `7.0.0-1020-raspi`, root on NVMe.
 The clock is capped at 2.0 GHz (`arm_freq=2000`, the Pi 5 default is 2.4 GHz)
 because that board's power supply is under the official 27 W one, and the
-governor is `ondemand`. I don't know whether a cooler is fitted to this board.
+governor is `ondemand`. The house notes say none of the cluster's Pis has an Active
+Cooler yet, and the node shows no fan among its cooling devices, so this is a bare
+board.
 
 It ran as a pod on a k3s node, with nothing else on that node but the cluster's
 own DaemonSets (monitoring exporters, the load balancer shim, the reboot
@@ -152,7 +154,9 @@ never set. So the sustained figure is 11.4k req/s against 13.2k to 13.4k for the
 30-second runs, and p50 moved from 0.48 to 0.58 ms. Those happened together. I
 didn't sample throughput per minute, so I can't tell you how much of the drop is
 the clock and how much is anything else. After the load stopped the board went
-back to about 55 C within ten minutes, and the sticky "has occurred" bits stay
+back to about 55 C within ten minutes. The peak, 86.2 C, is above the 85 C line I
+use as the stop for a memory test on these boards, and nothing on the node
+failed or froze, though I haven't tested its memory, and the sticky "has occurred" bits stay
 set until reboot, as they're meant to.
 
 The three 30-second runs were short enough that the sampler caught the soft
