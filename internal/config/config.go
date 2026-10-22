@@ -43,6 +43,29 @@ type Config struct {
 	Audit     Audit     `yaml:"audit"`
 	Tests     Tests     `yaml:"tests"`
 	Trace     Trace     `yaml:"trace"`
+	Plugins   Plugins   `yaml:"plugins"`
+}
+
+// Plugins is where WebAssembly plugins are loaded from and what they may do.
+//
+// Nothing here has a default that lets a plugin run. With no trusted keys every
+// plugin is refused as untrusted, and with no grants every plugin that asks for
+// host access fails the deploy of any flow that uses it.
+type Plugins struct {
+	// Dir is where plugin directories live. Empty means a plugins directory
+	// inside data.dir.
+	Dir string `yaml:"dir"`
+	// TrustedKeys are the publisher keys whose signatures are believed. Each
+	// entry is a key written out, as ed25519:<base64> or a PEM public key, or
+	// the path of a file holding one.
+	TrustedKeys []string `yaml:"trustedKeys"`
+	// Grants maps a plugin's name to the capabilities the operator gives it:
+	// clock, random, context.flow, context.global.
+	Grants map[string][]string `yaml:"grants"`
+	// MaxMemoryMiB is the most memory any one plugin node can be given.
+	MaxMemoryMiB int `yaml:"maxMemoryMiB"`
+	// MaxTimeout is the longest any one plugin node can be given for a message.
+	MaxTimeout time.Duration `yaml:"maxTimeout"`
 }
 
 // Trace is message tracing: where a message went, how long each node had it,
@@ -455,6 +478,7 @@ func Default() Config {
 		History: History{Retain: 100},
 		Audit:   Audit{MaxBytes: 16 << 20, Keep: 4},
 		Tests:   Tests{Timeout: 2 * time.Minute},
+		Plugins: Plugins{MaxMemoryMiB: 64, MaxTimeout: 5 * time.Second},
 		Trace: Trace{
 			Enabled: true, Traces: 256, MaxHops: 512, MaxMessageBytes: 16 << 10, MaxBytes: 16 << 20, PerSecond: 1000,
 			OTLP: OTLP{ServiceName: "hotloop-flow", Interval: 2 * time.Second},
@@ -587,6 +611,25 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("HOTLOOP_FLOW_DISCOVERY_CIDRS"); v != "" {
 		cfg.Discovery.AllowedCIDRs = splitList(v)
 	}
+	envStr("HOTLOOP_FLOW_PLUGINS_DIR", &cfg.Plugins.Dir)
+	if v := os.Getenv("HOTLOOP_FLOW_PLUGIN_TRUSTED_KEYS"); v != "" {
+		cfg.Plugins.TrustedKeys = splitList(v)
+	}
+	// name=cap,cap;name=cap
+	if v := os.Getenv("HOTLOOP_FLOW_PLUGIN_GRANTS"); v != "" {
+		cfg.Plugins.Grants = map[string][]string{}
+		for _, entry := range strings.Split(v, ";") {
+			if name, caps, ok := strings.Cut(entry, "="); ok && strings.TrimSpace(name) != "" {
+				cfg.Plugins.Grants[strings.TrimSpace(name)] = splitList(caps)
+			}
+		}
+	}
+	envInt("HOTLOOP_FLOW_PLUGIN_MAX_MEMORY_MIB", &cfg.Plugins.MaxMemoryMiB)
+	if v := os.Getenv("HOTLOOP_FLOW_PLUGIN_MAX_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			cfg.Plugins.MaxTimeout = d
+		}
+	}
 	if envBool("HOTLOOP_FLOW_EXEC_ENABLED") {
 		cfg.Exec.Enabled = true
 	}
@@ -674,6 +717,12 @@ func (c *Config) Validate() error {
 	}
 	if c.History.Retain < 0 {
 		return fmt.Errorf("history.retain must not be negative; 0 keeps every deployment")
+	}
+	if c.Plugins.MaxMemoryMiB < 1 || c.Plugins.MaxMemoryMiB > 4095 {
+		return fmt.Errorf("plugins.maxMemoryMiB must be between 1 and 4095; a WebAssembly memory can't be larger than 4 GiB")
+	}
+	if c.Plugins.MaxTimeout <= 0 {
+		return fmt.Errorf("plugins.maxTimeout must be above zero")
 	}
 	if c.Tests.Timeout <= 0 {
 		return fmt.Errorf("tests.timeout must be above zero; it's how long a run of the flow tests may take")
@@ -809,6 +858,14 @@ var (
 	tokenName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 	tokenHash = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 )
+
+// PluginsDir is where plugin directories are read from.
+func (c *Config) PluginsDir() string {
+	if c.Plugins.Dir != "" {
+		return c.Plugins.Dir
+	}
+	return filepath.Join(c.Data.Dir, "plugins")
+}
 
 // FlowPath is the absolute path to the flow file.
 func (c *Config) FlowPath() string { return filepath.Join(c.Data.Dir, c.Data.FlowFile) }

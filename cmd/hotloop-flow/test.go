@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -54,8 +55,10 @@ type TestBundle struct {
 	Flows   json.RawMessage `json:"flows"`
 	Tests   string          `json:"tests"`
 	Runtime BundleRuntime   `json:"runtime"`
-	Match   string          `json:"match,omitempty"`
-	File    string          `json:"file,omitempty"`
+	// Plugins is how to load the plugins the flows may use. Nil loads none.
+	Plugins *PluginSetup `json:"plugins,omitempty"`
+	Match   string       `json:"match,omitempty"`
+	File    string       `json:"file,omitempty"`
 	// Replay, when set, makes this a replay and not a test run: put the
 	// message that started this trace into Flows and say how it came out.
 	Replay *engine.TraceView `json:"replay,omitempty"`
@@ -182,6 +185,14 @@ func testBundle(stdin io.Reader, stdout io.Writer) error {
 	dec := json.NewDecoder(stdin)
 	if err := dec.Decode(&b); err != nil {
 		return fmt.Errorf("reading the test bundle: %w", err)
+	}
+	if b.Plugins != nil {
+		// The child has no log of its own worth reading; a plugin refused here is
+		// refused in the parent too, and the deploy says so.
+		if _, err := loadPlugins(context.Background(), *b.Plugins, node.Default,
+			slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+			return err
+		}
 	}
 	opts := flowtest.Options{Registry: node.Default, Runtime: runtime.Options{
 		InboxCapacity: b.Runtime.InboxCapacity,

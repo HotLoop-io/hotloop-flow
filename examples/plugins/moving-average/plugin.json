@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "name": "moving-average",
+  "version": "1.0.0",
+  "label": "moving average",
+  "description": "Averages a reading over the last N messages.",
+  "help": "Averages `msg.payload`, or another property, over the last N messages and sends the average on with a `samples` count. The window lives in the plugin's own memory, so a redeploy starts it empty.",
+  "props": [
+    { "name": "window", "kind": "number", "label": "Window (messages)", "default": 5, "required": true,
+      "help": "How many of the latest readings to average." },
+    { "name": "field", "kind": "string", "label": "Property", "default": "payload",
+      "help": "The message property to average." }
+  ],
+  "limits": { "memoryMiB": 8, "timeoutMs": 250 }
+}

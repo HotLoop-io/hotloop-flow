@@ -42,6 +42,65 @@ jobs:
             -o testdata/wasmguest/guest.wasm ./testdata/wasmguest
           test -s testdata/wasmguest/guest.wasm
 
+      - name: Build the capability test guest
+        # The clock and random tests need a guest built by a real toolchain that
+        # asks the host for both. Same reasoning as the guest above.
+        run: |
+          GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared \
+            -o testdata/capguest/guest.wasm ./testdata/capguest
+          test -s testdata/capguest/guest.wasm
+
+      - name: Build the plugin examples, one in Rust and one in TinyGo
+        # The two worked examples in examples/plugins, built the way the docs
+        # say to build them. The toolchains are pinned: Rust 1.99.1, and
+        # TinyGo 0.43.0 from its own container, by digest. The container is
+        # TinyGo's documented way in, and it keeps a second compiler off the
+        # runner. The tests that load them are told where they are, and a step
+        # below fails the build if they skipped.
+        run: |
+          OUT="$RUNNER_TEMP/plugin-examples"
+          mkdir -p "$OUT"
+
+          rustup toolchain install 1.99.1 --profile minimal --target wasm32-wasip1
+          (cd examples/plugins/moving-average &&
+            CARGO_TARGET_DIR="$RUNNER_TEMP/cargo-target" \
+            cargo +1.99.1 build --locked --release --target wasm32-wasip1)
+          cp "$RUNNER_TEMP/cargo-target/wasm32-wasip1/release/moving_average.wasm" "$OUT/moving-average.wasm"
+
+          # tinygo/tinygo:0.43.0
+          sudo podman run --rm -v "$PWD/examples/plugins/stamp:/src:ro" -v "$OUT:/out" -w /src \
+            docker.io/tinygo/tinygo@sha256:3470986dbce0b43cc5c590d46b8770f656528bc3e9f29267214d464c0fbbe9c5 \
+            tinygo build -target=wasip1 -buildmode=c-shared -o /out/stamp.wasm .
+
+          ls -l "$OUT"
+          test -s "$OUT/moving-average.wasm" && test -s "$OUT/stamp.wasm"
+          echo "HOTLOOP_PLUGIN_EXAMPLES=$OUT" >> "$GITHUB_ENV"
+
+      - name: Sign, verify and tamper with the examples through the CLI
+        # A key made for this run, outside the checkout and gone with the
+        # runner. Nothing here is a key anyone could trust anywhere else.
+        run: |
+          set -e
+          go build -o "$RUNNER_TEMP/hotloop-flow" ./cmd/hotloop-flow
+          HLF="$RUNNER_TEMP/hotloop-flow"
+          K="$RUNNER_TEMP/plugin-keys"; mkdir -p "$K"
+          "$HLF" plugin keygen -out "$K/ci"
+          for p in moving-average stamp; do
+            d="$RUNNER_TEMP/plugins/$p"; mkdir -p "$d"
+            cp "examples/plugins/$p/plugin.json" "$d/plugin.json"
+            cp "$HOTLOOP_PLUGIN_EXAMPLES/$p.wasm" "$d/plugin.wasm"
+            "$HLF" plugin verify -trust "$K/ci.pub" "$d" && { echo "::error::$p verified unsigned"; exit 1; } || true
+            "$HLF" plugin sign -key "$K/ci.key" "$d"
+            "$HLF" plugin verify -trust "$K/ci.pub" "$d"
+          done
+          # Tampered: the descriptor of a signed plugin asks for the clock.
+          sed -i 's/"limits"/"capabilities": ["clock"], "limits"/' "$RUNNER_TEMP/plugins/moving-average/plugin.json"
+          if "$HLF" plugin verify -trust "$K/ci.pub" "$RUNNER_TEMP/plugins/moving-average" > "$RUNNER_TEMP/tamper.txt"; then
+            echo "::error::a tampered plugin verified"; exit 1
+          fi
+          cat "$RUNNER_TEMP/tamper.txt"
+          grep -q "changed after it was signed" "$RUNNER_TEMP/tamper.txt"
+
       - name: Start a real MQTT broker
         # The MQTT tests talk to a real broker or they skip, and until this step
         # existed they skipped here every time. The partial deploy test counts
@@ -254,6 +313,25 @@ jobs:
           fi
           echo "$OUT" | grep -q "TestWasmMemoryCeilingIsEnforced" || {
             echo "::error::the memory ceiling test did not run"; exit 1; }
+
+      - name: The plugin tests actually ran
+        # The traps, the refusals and the two examples. A skipped one reads as a
+        # pass, so list what has to have passed and fail on any skip.
+        run: |
+          OUT=$(go test ./internal/wasmhost/ ./internal/plugin/ ./cmd/hotloop-flow/ -count=1 -v \
+            -run 'TestGuest|TestOneGuest|TestContext|TestWith|TestWithout|TestAGuest|TestAPlugin|TestAnUnsigned|TestATampered|TestAdding|TestAsking|TestTheRust|TestTheTinyGo|TestPlugin' 2>&1)
+          echo "$OUT" | grep -E '^(--- |ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::a plugin test was skipped"; exit 1
+          fi
+          for t in TestGuestPastTheMemoryCeilingTrapsAndTheMemoryComesBack \
+                   TestGuestThatLoopsPastTheTimeoutTrapsWithoutHoldingAnythingUp \
+                   TestWithTheClockCapabilityTimeIsReal TestWithTheRandomCapabilityRandomIsReal \
+                   TestAnUnsignedPluginIsRefusedAndSaysSo TestATamperedModuleIsRefusedAndSaysSo \
+                   TestAskingForSomethingNotGrantedFailsTheDeploy \
+                   TestTheRustExampleAveragesAWindowOfReadings TestTheTinyGoExampleNeedsTheClockAndStampsRealTime; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
 
       - name: The MQTT tests actually ran
         # Same reasoning as the sandbox check: a broker that failed to come up

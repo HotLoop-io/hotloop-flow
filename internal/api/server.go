@@ -22,6 +22,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
 	"github.com/HotLoop-io/hotloop-flow/internal/mfa"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
+	"github.com/HotLoop-io/hotloop-flow/internal/plugin"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
 	"github.com/HotLoop-io/hotloop-flow/internal/wiretype"
@@ -99,6 +100,10 @@ type Deps struct {
 	// Mirror reports the git mirror's progress for GET /deployments. Nil when
 	// there is no mirror.
 	Mirror func() any
+
+	// Plugins reports the plugins that loaded and the ones that were refused,
+	// with the reasons, for GET /plugins. Nil when this instance has none.
+	Plugins func() any
 
 	// Metrics are extra families for /metrics, from the parts of the process
 	// that aren't nodes.
@@ -242,6 +247,7 @@ func (s *Server) routes() {
 	// Authenticated.
 	s.mux.Handle("GET "+s.path("/settings"), s.auth(PermSettings, s.handleSettings))
 	s.mux.Handle("GET "+s.path("/nodes"), s.auth(PermNodesRead, s.handleNodes))
+	s.mux.Handle("GET "+s.path("/plugins"), s.auth(PermNodesRead, s.handlePlugins))
 	s.mux.Handle("GET "+s.path("/flows"), s.auth(PermFlowsRead, s.handleGetFlows))
 	s.mux.Handle("POST "+s.path("/flows"), s.auth(PermFlowsWrite, s.handlePostFlows))
 	s.mux.Handle("GET "+s.path("/audit"), s.auth(PermAuditRead, s.handleAudit))
@@ -620,6 +626,17 @@ func (s *Server) handleNodes(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.deps.Registry.Descriptors())
 }
 
+// handlePlugins says which plugins loaded and which were refused and why. A
+// refusal that is only in the startup log is one nobody reads until the flow
+// that needed it has already failed.
+func (s *Server) handlePlugins(w http.ResponseWriter, _ *http.Request) {
+	if s.deps.Plugins == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"plugins": []any{}, "refused": []any{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, s.deps.Plugins())
+}
+
 func (s *Server) handleGetFlows(w http.ResponseWriter, _ *http.Request) {
 	flows, err := s.deps.Flows.Load()
 	if err != nil {
@@ -688,6 +705,7 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 
 	var failed *TestsFailedError
 	var wires *wiretype.RefusedError
+	var refused *plugin.DeployError
 	res, err := s.deps.Deploy(r.Context(), DeployRequest{
 		Flows:       flows,
 		ExpectedRev: expectedRev,
@@ -710,6 +728,13 @@ func (s *Server) handlePostFlows(w http.ResponseWriter, r *http.Request) {
 		s.record(r, audit.DeployRefused, requestUser(r), map[string]any{
 			"reason": "typed wires", "problems": len(wires.Problems)})
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error(), "wires": wires.Problems})
+		return
+	case errors.As(err, &refused):
+		// 422 as well: the document is fine and so is the server, but the
+		// flows use a plugin that isn't allowed to run here. The message names
+		// each node and what it would need.
+		s.record(r, audit.DeployRefused, requestUser(r), map[string]any{"reason": "plugins", "problems": refused.Problems})
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error(), "plugins": refused.Problems})
 		return
 	case errors.As(err, &failed):
 		// 422: the flow document is fine and the server is fine; the flows
@@ -875,6 +900,9 @@ func (s *Server) handleRollback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	case errors.Is(err, ErrRollbackCredentials):
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	case errors.As(err, new(*plugin.DeployError)):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	case err != nil:

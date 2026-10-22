@@ -34,6 +34,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/nodes" // registers the built-in palette
 	"github.com/HotLoop-io/hotloop-flow/internal/otlp"
+	"github.com/HotLoop-io/hotloop-flow/internal/plugin"
 	"github.com/HotLoop-io/hotloop-flow/internal/runtime"
 	"github.com/HotLoop-io/hotloop-flow/internal/shell"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
@@ -81,13 +82,15 @@ func run() error {
 			return cmdExport(os.Args[2:], os.Stdout)
 		case "token":
 			return cmdToken(os.Args[2:], os.Stdout)
+		case "plugin":
+			return cmdPlugin(os.Args[2:], os.Stdout)
 		case "bench":
 			return cmdBench(os.Args[2:])
 		case "version":
 			fmt.Println(version)
 			return nil
 		default:
-			return fmt.Errorf("unknown command %q (try: serve, hash-password, token, import, diff, test, deploy, export, bench, version)", os.Args[1])
+			return fmt.Errorf("unknown command %q (try: serve, hash-password, token, plugin, import, diff, test, deploy, export, bench, version)", os.Args[1])
 		}
 	}
 	return cmdServe(os.Args[1:])
@@ -242,7 +245,16 @@ func cmdServe(args []string) error {
 		extraMetrics = append(extraMetrics, pc.Families()...)
 	}
 
+	// Plugins are registered before anything starts, because the registry is
+	// read-only once a runtime has been built from it.
+	plugins, err := loadPlugins(context.Background(), pluginSetup(cfg), node.Default, log)
+	if err != nil {
+		return err
+	}
+	defer plugins.Close(context.Background())
+
 	app := &application{
+		plugins:   plugins,
 		cfg:       cfg,
 		log:       log,
 		flowStore: flowStore,
@@ -323,6 +335,7 @@ func cmdServe(args []string) error {
 		MFA:          secondFactor,
 		Audit:        trail,
 		Mirror:       mirrorStatus,
+		Plugins:      func() any { return plugins.Report() },
 		Metrics:      extraMetrics,
 		Config:       cfg,
 		Registry:     node.Default,
@@ -438,9 +451,11 @@ type application struct {
 	history   *history.Log
 	mirror    *gitmirror.Mirror
 	registry  *node.Registry
-	contexts  *store.ScopedContexts
-	spool     *store.Spool
-	hub       interface{ Broadcast(runtime.Event) }
+	// plugins refuses a deploy that uses a plugin that isn't allowed to run.
+	plugins  *plugin.Host
+	contexts *store.ScopedContexts
+	spool    *store.Spool
+	hub      interface{ Broadcast(runtime.Event) }
 	// tests is the flow test suite kept beside the flow file, and the deploy
 	// gate's way of running it.
 	tests *testSuite
@@ -460,6 +475,14 @@ type application struct {
 	// writes two files, appends to the deployment log and swaps the runtime,
 	// and two of those interleaved would record a parent that was never live.
 	deployMu sync.Mutex
+}
+
+// refusePlugins is the deploy's plugin check. It runs before a byte is written.
+func (a *application) refusePlugins(flows *engine.Flows) error {
+	if a.plugins == nil {
+		return nil
+	}
+	return a.plugins.Preflight(flows)
 }
 
 func (a *application) currentRuntime() *runtime.Runtime {
@@ -634,6 +657,9 @@ func (a *application) deploy(ctx context.Context, req api.DeployRequest) (api.De
 	// leave everything exactly as it was, and the flows that are running
 	// must never notice it was tried. Credentials are already out of the
 	// document, so the tests never see them; they run with their own.
+	if err := a.refusePlugins(flows); err != nil {
+		return api.DeployResult{}, err
+	}
 	if err := a.gate(ctx, flows); err != nil {
 		return api.DeployResult{}, err
 	}
@@ -687,6 +713,13 @@ func (a *application) rollback(ctx context.Context, req api.RollbackRequest) (ap
 	if err := a.creds.Check(target.Credentials); err != nil {
 		return api.DeployResult{}, fmt.Errorf("%w: deployment %d's credentials can't be read with the current credential secret: %v",
 			api.ErrRollbackCredentials, target.Seq, err)
+	}
+
+	// Checked before anything is written, like any other deploy: a rollback to
+	// flows that use a plugin that has since been refused or revoked is a deploy
+	// that would not start, and it says so instead.
+	if err := a.refusePlugins(flows); err != nil {
+		return api.DeployResult{}, err
 	}
 
 	note := fmt.Sprintf("rollback to deployment %d", target.Seq)
