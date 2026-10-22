@@ -180,3 +180,52 @@ func TestChartHistoryAuditAndTestsValuesReachTheConfig(t *testing.T) {
 		t.Errorf("a default render sets HOTLOOP_FLOW_GIT_PASSWORD")
 	}
 }
+
+// A default render has no plugin settings and no plugin volume, so an instance
+// that doesn't use plugins gets exactly the objects it got before they existed.
+func TestChartPluginsAreOffByDefault(t *testing.T) {
+	render := helmRender(t)
+	if bytes.Contains(render, []byte("plugins:")) || bytes.Contains(render, []byte("name: plugins")) {
+		t.Errorf("a default render carries plugin settings:\n%s", render)
+	}
+}
+
+// Every plugins.* value reaches the field of the same name, and a volume is
+// mounted read-only where the config says the plugins are.
+func TestChartPluginsValuesReachTheConfig(t *testing.T) {
+	render := helmRender(t,
+		"--set", "plugins.enabled=true",
+		"--set", "plugins.trustedKeys[0]=ed25519:/iYdLE7lAGb2YFglPYjhoPItgdiQ9xEPVMqQNrD8Hqg=",
+		"--set", "plugins.grants.stamp[0]=clock",
+		"--set", "plugins.grants.remember[0]=context.flow",
+		"--set", "plugins.maxMemoryMiB=32",
+		"--set", "plugins.maxTimeout=2s",
+		"--set", "plugins.volume.configMap.name=flow-plugins",
+	)
+	got := loadRendered(t, configFromRender(t, render)).Plugins
+	if got.Dir != "/etc/hotloop-flow/plugins" {
+		t.Errorf("dir = %q, want the mount path", got.Dir)
+	}
+	if len(got.TrustedKeys) != 1 || got.TrustedKeys[0] != "ed25519:/iYdLE7lAGb2YFglPYjhoPItgdiQ9xEPVMqQNrD8Hqg=" {
+		t.Errorf("trustedKeys = %v", got.TrustedKeys)
+	}
+	if !reflect.DeepEqual(got.Grants, map[string][]string{"stamp": {"clock"}, "remember": {"context.flow"}}) {
+		t.Errorf("grants = %v", got.Grants)
+	}
+	if got.MaxMemoryMiB != 32 || got.MaxTimeout != 2*time.Second {
+		t.Errorf("limits = %d, %v", got.MaxMemoryMiB, got.MaxTimeout)
+	}
+	for _, want := range []string{"name: plugins", "mountPath: /etc/hotloop-flow/plugins", "name: flow-plugins"} {
+		if !bytes.Contains(render, []byte(want)) {
+			t.Errorf("the render does not contain %q", want)
+		}
+	}
+
+	// Enabled with nothing else is the binary's own defaults: no volume, and the
+	// plugins directory is the one inside the data volume.
+	bare := loadRendered(t, helmConfig(t, "--set", "plugins.enabled=true")).Plugins
+	want := Default().Plugins
+	if bare.Dir != "" || bare.MaxMemoryMiB != want.MaxMemoryMiB || bare.MaxTimeout != want.MaxTimeout {
+		t.Errorf("bare plugins = %+v, binary defaults %+v", bare, want)
+	}
+}

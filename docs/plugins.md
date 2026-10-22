@@ -171,6 +171,9 @@ key made for that run and thrown away with the runner. No key is committed.
 
 ### As an operator
 
+On the Helm chart these are `plugins.trustedKeys`, `plugins.grants` and
+`plugins.volume`, in [deploying.md](deploying.md).
+
 You trust a publisher by putting their public key in `plugins.trustedKeys`, or in
 `HOTLOOP_FLOW_PLUGIN_TRUSTED_KEYS`, comma separated. Each entry is the
 `ed25519:<base64>` line, a PEM public key, or the path of a file holding one, which
@@ -238,8 +241,9 @@ the example module and not into Flow.
 ## What isn't proven
 
 * Plugins have run on x86 only. No Pi.
-* The Helm chart has no plugin values, so on Kubernetes the plugin settings come
-  in through a mounted config file.
+* On Kubernetes the plugin files arrive through `plugins.volume`, any volume
+  source. A ConfigMap holds a plugin only up to its 1 MiB limit, so a plugin the
+  size of the TinyGo example wants a claim.
 * There's no network capability. A plugin can't make a request, and that's on
   purpose until someone has a reason with a host allowlist to go with it.
 * Flow tests run plugins for real, in the same child process as every other node.
