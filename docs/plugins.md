@@ -35,6 +35,10 @@ The ABI is the one in the [README](../README.md#two-sandboxes-and-only-one-of-th
 is optional, and everything crosses as JSON. A guest gets
 `{"msg": {...}, "config": {...}}` and returns
 `{"send": [[msgs for output 0], [msgs for output 1]], "status": {...}, "error": "...", "logs": [...]}`.
+A message property that isn't plain JSON, such as the response handle an HTTP In
+node attaches or a binary buffer, isn't given to the guest. The node holds it and
+puts it back on every message the guest sends, unless the guest set that property
+itself, so a plugin can sit between an HTTP In and an HTTP Response.
 `config` is what the node's dialog holds. An `error` fails the message to a Catch
 node, and whatever it sent before that is still sent.
 

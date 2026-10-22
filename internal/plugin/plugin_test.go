@@ -666,3 +666,39 @@ tests:
 	}
 	t.Logf("with no grant, the node did not start: %s, %v", r2.Tests[0].Status, r2.Tests[0].Problems)
 }
+
+// An HTTP In node puts a Go object on msg.res, and the HTTP Response node needs
+// that same object back. A plugin in between can't be given it, and must not
+// lose it: the first flow run on the house cluster hung for that reason.
+func TestAPropertyJSONCantCarryComesBackOnWhatThePluginSends(t *testing.T) {
+	root := t.TempDir()
+	pub := newPublisher(t)
+	install(t, root, "passthru", wasmasm.Echo(okResponse), manifest("passthru", ""), &pub)
+	h := load(t, root, policy(pub))
+	n := buildNode(t, h, "wasm-passthru", "")
+
+	type handle struct{ id int }
+	held := &handle{id: 7}
+	in := engine.WrapMsg(map[string]any{"payload": 1.0, "res": held, "bytes": []byte{1, 2, 3}})
+	out := &capture{}
+	if err := n.Receive(context.Background(), in, out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.sent) != 1 {
+		t.Fatalf("%d messages out", len(out.sent))
+	}
+	got := out.sent[0].Data
+	if got["res"] != any(held) {
+		t.Errorf("msg.res = %#v, want the same handle back", got["res"])
+	}
+	if b, _ := got["bytes"].([]byte); len(b) != 3 {
+		t.Errorf("msg.bytes = %#v", got["bytes"])
+	}
+	if got["payload"] != "fine" {
+		t.Errorf("the guest's own payload was overwritten: %v", got["payload"])
+	}
+	// The message the node was handed is untouched.
+	if in.Data["res"] != any(held) || in.Data["payload"] != 1.0 {
+		t.Error("the input message was changed")
+	}
+}
