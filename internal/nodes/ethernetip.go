@@ -787,6 +787,7 @@ type enipWriteNode struct {
 	dtype  enipType
 	svc    node.Services
 	target enipTarget
+	gate   *hotloopGate
 }
 
 func registerEtherNetIPWrite() {
@@ -820,10 +821,11 @@ func registerEtherNetIPWrite() {
 				Help: "A list writes consecutive array elements, starting at the one named."},
 			{Name: "dataType", Kind: node.PropSelect, Label: "Data type", Default: "int32", Options: enipTypeOptions(),
 				Help: "The tag's own type. A tag written as another type is refused by the controller."},
+			hotloopGateProps()[0], hotloopGateProps()[1],
 		},
 		Help: "Writes a tag in a Logix controller when a message arrives, then passes the message on. " +
 			"This changes the machine. There is no confirmation step and no read back: the message " +
-			"that arrives at the output means the controller acknowledged the write.",
+			"that arrives at the output means the controller acknowledged the write." + hotloopGateHelp,
 	}, newEtherNetIPWrite)
 }
 
@@ -855,6 +857,11 @@ func newEtherNetIPWrite(def *node.Definition) (node.Node, error) {
 	if n.tag.Type == node.TypeStr && strings.TrimSpace(n.tag.Value) == "" {
 		return nil, fmt.Errorf("tag is required: the name of the tag to write, like Pump1.Speed")
 	}
+	g, gerr := newHotloopGate(def)
+	if gerr != nil {
+		return nil, gerr
+	}
+	n.gate = g
 	return n, nil
 }
 
@@ -876,6 +883,9 @@ func (n *enipWriteNode) Receive(ctx context.Context, m *engine.Msg, out node.Emi
 	if !ok || raw == nil {
 		return n.fail(out, fmt.Errorf("value resolved to nothing, so there is nothing to write. "+
 			"Check the Value field, which reads %s %q", n.value.Type, n.value.Value))
+	}
+	if n.gate != nil {
+		return n.gate.write(ctx, m, raw, out, n.fail)
 	}
 	items, isList := raw.([]any)
 	if !isList {
