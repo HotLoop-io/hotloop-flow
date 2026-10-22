@@ -7,9 +7,10 @@
 
 import {
   type FlowEntry, type Graph, type Point,
-  GROUP_HEAD, NODE_HEIGHT, NODE_WIDTH, PORT_RADIUS, SUBFLOW_PREFIX, inputPort, outputPort, snap, wirePath,
+  GROUP_HEAD, NODE_HEIGHT, NODE_WIDTH, PORT_RADIUS, SUBFLOW_PREFIX, inputPort, outputPort, snap, wireMid, wirePath,
 } from './graph';
 import { type DiffOverlay, wireKey } from './diff';
+import { type WireProblem, clashesByWire, wireTypeLabel } from './wiretypes';
 import type { TestMark } from './tests';
 import { type TraceOverlay, fmtNanos, tipFor } from './trace';
 
@@ -59,6 +60,7 @@ export class Canvas {
   private statuses = new Map<string, { fill: string; shape: string; text: string }>();
   private diff: DiffOverlay | null = null;
   private testMarks = new Map<string, TestMark>();
+  private wireClashes = new Map<string, string[]>();
   private trace: TraceOverlay | null = null;
   private readonly readOnly: boolean;
   private lastPress = { id: '', at: 0 };
@@ -463,6 +465,16 @@ export class Canvas {
    * clears them, which an edit does, since a mark on a node that has changed
    * since is a claim about a flow that no longer exists.
    */
+  /**
+   * What the runtime found wrong with the typed wires, from POST /flows/types.
+   * Wires that can never agree are drawn as clashes; the rest of the types on
+   * the wires come from the schemas on the nodes and need no answer from it.
+   */
+  setWireProblems(problems: WireProblem[]): void {
+    this.wireClashes = clashesByWire(problems);
+    this.renderWires();
+  }
+
   setTestMarks(marks: Map<string, TestMark> | null): void {
     this.testMarks = marks ?? new Map();
     this.renderNodes();
@@ -638,6 +650,7 @@ export class Canvas {
   private renderWires(): void {
     this.layers.wires.replaceChildren();
     const frag = document.createDocumentFragment();
+    const chips: SVGGElement[] = [];
 
     for (const { from, port, to } of this.graph.wiresOn(this.graph.activeTab)) {
       const total = this.graph.outputCount(from);
@@ -651,8 +664,43 @@ export class Canvas {
       path.setAttribute('data-port', String(port));
       path.setAttribute('data-to', to.id);
 
+      // The type on the wire, when either end declares one: a chip at the
+      // middle of the curve, and the whole story as the wire's tooltip. The chip
+      // takes no pointer events, so it never gets between a press and the wire.
+      const typed = wireTypeLabel(from, port, to, this.wireClashes);
+      if (typed) {
+        const tip = document.createElementNS(SVG_NS, 'title');
+        tip.textContent = typed.title;
+        path.append(tip);
+        path.setAttribute('data-type-state', typed.state);
+        frag.append(path);
+
+        const mid = wireMid(outputPort(from, port, total), inputPort(to));
+        const text = truncate(typed.text, 26);
+        const width = Math.max(18, text.length * 6.4 + 12);
+        const chip = document.createElementNS(SVG_NS, 'g');
+        chip.setAttribute('class', `wire-type ${typed.state}`);
+        chip.setAttribute('data-wire-type', `${from.id}:${port}:${to.id}`);
+        chip.setAttribute('transform', `translate(${mid.x} ${mid.y})`);
+        const box = document.createElementNS(SVG_NS, 'rect');
+        box.setAttribute('x', String(-width / 2));
+        box.setAttribute('y', '-8');
+        box.setAttribute('width', String(width));
+        box.setAttribute('height', '16');
+        box.setAttribute('rx', '8');
+        const label = document.createElementNS(SVG_NS, 'text');
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('dy', '3.5');
+        label.textContent = text;
+        chip.append(box, label);
+        chips.push(chip);
+        continue;
+      }
+
       frag.append(path);
     }
+    // Chips go over every wire, so a wire crossing one never hides it.
+    for (const c of chips) frag.append(c);
 
     // Wires that are gone, drawn faintly between where their ends are now, or
     // were, for an end that went with them.

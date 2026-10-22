@@ -1721,7 +1721,7 @@ A message with the wrong shape is the failure I least want on a live line. A
 temperature that arrives as the string `"hot"`, a missing `id`, a number where a
 list was supposed to be: nothing crashes, the flow keeps going, and something
 downstream quietly does the wrong thing. Flow takes JSON Schema to that problem
-in three steps, and the first is in.
+in three steps.
 
 ### Schema on the `json` node
 
@@ -1815,8 +1815,29 @@ the message does not match the schema of output 1: payload.temp: got string, wan
 `json` node's mismatches too. A node with no schemas costs one nil check, and a
 flow with none behaves exactly as it did before.
 
-Types drawn on the wires in the editor are next on the
-[roadmap](docs/ROADMAP.md#phase-7-typed-wires-and-mcp).
+### Types on the wires, in the editor
+
+A wire with a type at either end carries it. The editor writes the type on the
+wire, at the middle of the curve: the sender's, as a few characters
+(`payload {temp: number}`), and the whole story when you hover the wire.
+
+- **Both ends declare a type and they agree:** green outline, the sender's type.
+- **Only one end declares one:** dashed and muted, so you can see where a wire is
+  still untyped.
+- **Both declare one and they can never agree:** the wire and its label go red and
+  say which field, `≠ payload.temp`, and the tooltip has the runtime's reason. The
+  deploy would refuse it, and now you can see it before you press Deploy.
+
+The red isn't the editor guessing. It asks the runtime, `POST /flows/types`, which
+runs the same check the deploy refuses with, so the canvas and the deploy can't
+disagree. The editor only asks when something on the canvas has a schema, a
+little after the last edit. A flow with no schemas makes no call and draws
+nothing new.
+
+Set the types in a node's dialog, under **Types**: an input schema, and one for
+each output port. Empty means no type, and a node you never typed doesn't grow
+the keys. Writing something that isn't JSON, or isn't an object, is refused in
+the dialog.
 
 ---
 
@@ -2091,6 +2112,7 @@ timeouts.
 | `GET /deployments/{seq}/flows` | `flows.read` | That deployment's flow file, byte for byte. |
 | `GET /deployments/{from}/diff/{to}` | `flows.read` | Node-by-node diff between two deployments, structured and as text. |
 | `POST /flows/diff` | `flows.read` | The diff from what's live to the document in the body. Deploys nothing. |
+| `POST /flows/types` | `flows.read` | The typed-wire check a deploy makes, on the document in the body: `{"wires": [...]}`, empty when nothing is wrong. The editor draws the answer. Deploys nothing. |
 | `POST /deployments/{seq}/rollback` | `flows.write` | Deploys that record's flows and credentials again as a new deployment. Takes the rev header and an optional `{"note": ...}`. |
 | `GET /tests` | `flows.read` | The flow test suite kept beside the flow file, its file name, and whether deploys are gated on it. |
 | `PUT /tests` | `flows.write` | Replaces the suite. The body is the YAML; one that doesn't parse is a 400 with the reason. |

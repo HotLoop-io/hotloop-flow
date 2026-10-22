@@ -18,6 +18,7 @@ import { twoFactorDialog } from './account';
 import { draftTestDialog, draftTestFromTraceDialog, editSuiteDialog, marksFrom, renderReport } from './tests';
 import { overlayFrom as traceOverlay, renderReplay, renderTrace } from './trace';
 import type { TestReport } from './api';
+import { IN_KEY, OUT_KEY, type WireProblem } from './wiretypes';
 
 export interface EditorHandles {
   destroy(): void;
@@ -768,6 +769,11 @@ export function mountEditor(
         // node rather than in a wall of text.
         showReport(ex.body.tests as TestReport);
       }
+      if (ex instanceof ApiError && ex.status === 422 && Array.isArray(ex.body.wires)) {
+        // Two ends of a wire that can never agree. Drawn on the canvas, so the
+        // fix starts at the wire.
+        canvas.setWireProblems(ex.body.wires as WireProblem[]);
+      }
       failed(ex, 'Deploy failed');
       return false;
     }
@@ -1264,7 +1270,34 @@ export function mountEditor(
     // So are test marks on a flow that has changed since the run.
     canvas.setTestMarks(null);
     renderTabs();
+    scheduleTypeCheck();
   });
+
+  // Typed wires: the runtime says which wires can never agree, and the canvas
+  // draws them. Asked only when a node in the working copy declares a schema, so
+  // a flow without any never makes the call, and a little after the last edit,
+  // so dragging a node is not a request per pixel.
+  let typeTimer: number | undefined;
+  let typesAsked = 0;
+  function scheduleTypeCheck(): void {
+    window.clearTimeout(typeTimer);
+    typeTimer = window.setTimeout(() => void checkTypes(), 300);
+  }
+  async function checkTypes(): Promise<void> {
+    const entries = graph.all() as FlowEntry[];
+    if (!entries.some((e) => IN_KEY in e || OUT_KEY in e)) {
+      canvas.setWireProblems([]);
+      return;
+    }
+    const ask = ++typesAsked;
+    try {
+      const { wires } = await api.flowTypes(entries);
+      // An answer to an older copy than the one on the canvas is stale.
+      if (ask === typesAsked) canvas.setWireProblems(wires);
+    } catch {
+      // The marks are help, not the gate. A deploy makes the same check and says so.
+    }
+  }
 
   // A close guard, because losing an afternoon of wiring to a stray Cmd-W is
   // not a mistake anyone should be able to make once.
@@ -1279,6 +1312,7 @@ export function mountEditor(
     renderTabs();
     canvas.render();
     canvas.fit();
+    scheduleTypeCheck();
     for (const w of doc.warnings ?? []) {
       if (alreadyLogged?.has(w)) continue;
       appendEvent({ topic: 'error', data: { error: w }, at: new Date().toISOString() });

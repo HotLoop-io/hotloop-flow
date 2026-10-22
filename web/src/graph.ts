@@ -164,7 +164,7 @@ export function snap(v: number): number {
  * still bows out enough to be followed rather than collapsing into a straight
  * line through the node it came from.
  */
-export function wirePath(from: Point, to: Point): string {
+function wireOffset(from: Point, to: Point): number {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
@@ -173,6 +173,21 @@ export function wirePath(from: Point, to: Point): string {
   // Wiring backwards is normal — a loop, a retry path — and needs a wider bow
   // or the curve doubles back through both nodes.
   if (dx < 0) offset = Math.max(offset, Math.abs(dx) * 0.6 + 60);
+  return offset;
+}
+
+/** The middle of the curve wirePath draws, where a wire's type is written. */
+export function wireMid(from: Point, to: Point): Point {
+  const offset = wireOffset(from, to);
+  // A cubic Bezier at t = 0.5 is (P0 + 3 P1 + 3 P2 + P3) / 8.
+  return {
+    x: (from.x + 3 * (from.x + offset) + 3 * (to.x - offset) + to.x) / 8,
+    y: (from.y + 3 * from.y + 3 * to.y + to.y) / 8,
+  };
+}
+
+export function wirePath(from: Point, to: Point): string {
+  const offset = wireOffset(from, to);
 
   return `M ${from.x} ${from.y} C ${from.x + offset} ${from.y}, ${to.x - offset} ${to.y}, ${to.x} ${to.y}`;
 }
@@ -655,6 +670,10 @@ export class Graph {
     if (!e) return;
     this.checkpoint('edit node');
     Object.assign(e, props);
+    // A property the dialog cleared comes back undefined. Take the key off the
+    // entry rather than leave it for the file to drop, so code that asks
+    // whether a node has one gets the right answer.
+    for (const k of Object.keys(props)) if (props[k] === undefined) delete e[k];
 
     // A configuration node has no wires, and giving it an empty list would
     // make the runtime read it as a node. Only a node that is wired keeps its
