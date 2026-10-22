@@ -449,9 +449,11 @@ jobs:
         # The MCP server and client are tested with the Go SDK's own client and
         # server over real HTTP, in both eras of the protocol. None of these
         # needs a service, so none should ever skip, and a rename that drops one
-        # from the run should fail here and not pass quietly.
+        # from the run should fail here and not pass quietly. The one that needs
+        # a real HotLoop is the HotLoop step's, above, and is left out here
+        # because this step doesn't start the Modbus server it provisions.
         run: |
-          OUT=$(go test ./internal/mcphost/ -count=1 -v 2>&1; go test ./internal/api/ ./internal/nodes/ ./internal/flowtest/ -count=1 -v -run 'MCP' 2>&1)
+          OUT=$(go test ./internal/mcphost/ -count=1 -v 2>&1; go test ./internal/api/ ./internal/nodes/ ./internal/flowtest/ -count=1 -v -run 'MCP' -skip 'TestHotloopMCP' 2>&1)
           echo "$OUT" | grep -E '^(---|ok|FAIL)' | grep -v -- '--- PASS' || true
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::an MCP test skipped"
