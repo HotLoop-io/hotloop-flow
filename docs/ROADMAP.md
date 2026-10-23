@@ -303,7 +303,9 @@ answers, because the reasons are what stops somebody reopening them.
 Decided 2026-10-03:
 
 - **Industrial nodes get built in Flow,** on the same open source libraries the
-  HotLoop drivers use. HotLoop's drivers stay HotLoop's, and Flow stays Apache.
+  HotLoop drivers use. HotLoop's drivers stay HotLoop's. Flow keeps its own license, which was
+  Apache-2.0 when this was decided and is HotLoop's Business Source License 1.1
+  from 2.2.0 on.
 - **Flow stays its own product and is never embedded in HotLoop.** It runs next
   to HotLoop and talks to HotLoop's API from the outside, which is what the
   Phase 5 HotLoop nodes do, and that's the whole relationship.
