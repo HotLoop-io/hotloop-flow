@@ -39,7 +39,7 @@ What that means on a bad night:
 It runs your existing flows unchanged, too. That's [further down](#bring-your-flows),
 because it's a feature, not the point.
 
-Current release is `2.2.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.2.0`
+Current release is `2.3.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.3.0`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
 36,000 lines of Go, more than a third of it tests, 79 node types, and the race
@@ -59,7 +59,7 @@ what's printed.
 | | |
 |---|---|
 | Binary, linux/amd64, static | **22.0 MB** |
-| Image, `2.2.0` amd64, as `podman image inspect` reports it | **39.1 MB** |
+| Image, `2.3.0` amd64, as `podman image inspect` reports it | **44.8 MB** |
 | Start to answering its first request | **0.05 s** |
 | RSS, idle | **16.4 to 16.7 MiB** |
 | RSS, peak under the HTTP load below | **26.4 to 28.5 MiB** |
@@ -67,13 +67,15 @@ what's printed.
 | HTTP latency p50 / p99 | **0.39 to 0.41 ms / 1.78 to 4.03 ms** |
 | Engine, five-node chain, no I/O | **2.20 to 3.11 µs a message**, 3.9 KB allocated |
 
-The image row is the published `2.2.0` image, read on 2026-10-20 with
-`podman image inspect ghcr.io/hotloop-io/hotloop-flow:2.2.0 --format '{{.Size}}'`
-(39,095,482 bytes). It was 32.1 MB at `2.1.0` and 25.4 MB at `2.0.5`. Part of
-that is the license text in `/usr/share/doc/hotloop-flow/`, and 2.2.0 also added
-the plant nodes, tracing and the SQLite state store. I did not split the growth
-between those, so don't read all of it as any one of them. The other rows are
-still the 2026-10-02 build.
+The image row is the `2.3.0` image built from the release tree the way the
+release workflow builds it, `podman build --platform linux/amd64 --build-arg
+VERSION=v2.3.0 .`, read on 2026-10-22 with
+`podman image inspect <that image> --format '{{.Size}}'` (44,833,285 bytes). It
+was not read from ghcr.io, because the tag wasn't pushed yet. It was 39.1 MB at
+`2.2.0`, 32.1 MB at `2.1.0` and 25.4 MB at `2.0.5`. Between 2.2.0 and 2.3.0 Flow
+gained the HotLoop and MCP nodes, JSON Schema checking and the WebAssembly
+plugin host, and I did not split the growth between them, so don't read all of
+it as any one of them. The other rows are still the 2026-10-02 build.
 
 The start, memory and HTTP rows are one command against
 [the bench flow](docs/bench/bench-flow.json), set up exactly as in
@@ -1923,10 +1925,10 @@ podman run --rm -p 1880:1880 -v hotloop-flow-data:/data \
   -e HOTLOOP_FLOW_ADMIN_USER=admin \
   -e HOTLOOP_FLOW_ADMIN_PASSWORD_HASH='<bcrypt hash>' \
   -e HOTLOOP_FLOW_CREDENTIAL_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/hotloop-io/hotloop-flow:2.2.0
+  ghcr.io/hotloop-io/hotloop-flow:2.3.0
 ```
 
-Generate the hash with `podman run --rm ghcr.io/hotloop-io/hotloop-flow:2.2.0
+Generate the hash with `podman run --rm ghcr.io/hotloop-io/hotloop-flow:2.3.0
 hash-password -password 'something-long'`. The image is distroless nonroot with
 no shell in it, so there is nothing to `exec` into and nothing for anybody who
 gets code execution to pivot with.

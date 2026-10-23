@@ -81,9 +81,14 @@ What a durable wire does:
   `block` waits up to `blockTimeout` for space and then errors, `drop-newest`
   refuses the arriving message, `drop-oldest` evicts the oldest message that
   isn't being delivered, `error` raises to a Catch node. Every one is counted and
-  announced as a dropped event. The file runs somewhat larger than the quota, by
-  SQLite's page overhead and the write-ahead log, and a test fills it, drains it
-  and fills it again six times to prove it doesn't keep growing.
+  announced as a dropped event. One exception: a message already accepted into
+  memory that the wire then has to move to disk goes in over the quota, because
+  refusing it would drop an older message and keep newer ones. The overshoot is
+  at most what the target holds, its inbox plus the one message its goroutine has
+  taken and not yet started, so the quota can read a few messages over for a
+  moment. The file runs somewhat larger than the quota, by SQLite's page
+  overhead and the write-ahead log, and a test fills it, drains it and fills it
+  again six times to prove it doesn't keep growing.
 - **Shows its depth.** `hotloop_flow_durable_wire_depth{wire="..."}` is the
   messages waiting, with `_bytes`, `_delivered_total`, `_retries_total` and
   `_dropped_total` beside it, and `hotloop_flow_durable_bytes` against
