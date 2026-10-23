@@ -591,7 +591,7 @@ func (w *durableWire) pump(ctx context.Context) {
 			}
 			continue
 		}
-		e, ok, err := w.q.Next(cursor)
+		e, ok, err := w.q.Claim(cursor)
 		if err != nil {
 			w.logf("reading the queue for durable wire %s: %v", w.key, err)
 			if !sleepCtx(ctx, time.Second) {
