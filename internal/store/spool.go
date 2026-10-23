@@ -324,8 +324,17 @@ func (s *Spool) commit(batch []spoolReq) (stop bool) {
 			case reqEvict:
 				var seq uint64
 				var size int64
+				// Not the message in flight, and not one that has been
+				// acknowledged and is only waiting for this transaction to
+				// delete it: Ack has already given its space back, so taking
+				// it again would give the same space back twice and leave the
+				// wire's depth and the quota short of what is on disk.
+				floor := r.seq
+				if a := acks[r.wire]; a > floor {
+					floor = a
+				}
 				row := tx.QueryRow(`SELECT seq, LENGTH(body) FROM wire_queue WHERE wire = ? AND seq > ? ORDER BY seq LIMIT 1`,
-					r.wire.id, r.seq)
+					r.wire.id, floor)
 				if err := row.Scan(&seq, &size); err != nil {
 					// Nothing to evict is an answer, not a failure.
 					continue
@@ -460,6 +469,12 @@ type WireQueue struct {
 	// inflight is the message being delivered right now. Evicting the oldest
 	// message must never take the one a target is in the middle of.
 	inflight atomic.Uint64
+
+	// claimMu makes picking the next message and marking it in flight one step
+	// as far as EvictOldest can tell. Without it an eviction between the two
+	// takes the message the pump has just read, the pump delivers it anyway,
+	// and its Ack gives the space back a second time.
+	claimMu sync.Mutex
 }
 
 // Entry is a queued message.
@@ -555,6 +570,19 @@ func (q *WireQueue) Next(after uint64) (Entry, bool, error) {
 	return e, true, nil
 }
 
+// Claim is Next for the one reader that delivers the queue: it returns the oldest
+// message after seq and marks it in flight, so EvictOldest can't take it between
+// the two. The reader clears the mark with SetInflight(0) when it is done.
+func (q *WireQueue) Claim(after uint64) (Entry, bool, error) {
+	q.claimMu.Lock()
+	defer q.claimMu.Unlock()
+	e, ok, err := q.Next(after)
+	if ok {
+		q.inflight.Store(e.Seq)
+	}
+	return e, ok, err
+}
+
 // Ack marks a message, and so everything before it, delivered. The space is
 // free at once; the rows are deleted with the next write, or before Ack returns
 // when the spool was opened with SyncAcks.
@@ -582,7 +610,9 @@ func (q *WireQueue) Ack(e Entry) {
 // EvictOldest removes the oldest message that is not in flight, for a wire whose
 // policy is to make room by dropping. It reports whether there was one.
 func (q *WireQueue) EvictOldest() (bool, error) {
+	q.claimMu.Lock()
 	rep, err := q.s.submit(spoolReq{kind: reqEvict, wire: q, seq: q.inflight.Load()})
+	q.claimMu.Unlock()
 	if err != nil {
 		return false, err
 	}

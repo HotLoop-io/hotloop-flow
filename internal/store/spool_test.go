@@ -392,3 +392,112 @@ func TestSpoolDepthNeverCountsAMessageThatIsNotOnDisk(t *testing.T) {
 		}
 	}
 }
+
+// A message that has been acknowledged stays in the file until the next write
+// deletes it, and Ack has already given its space back. Evicting the oldest
+// message in that window took the acknowledged row, gave the same space back a
+// second time, and left a live message on disk that the wire's depth and the
+// quota no longer counted. The queue then never drained to zero.
+func TestSpoolEvictOldestSparesAMessageAckedButNotYetDeleted(t *testing.T) {
+	db := openDB(t, filepath.Join(t.TempDir(), "state.db"))
+	defer db.Close()
+	// An ack flush so long that the acknowledged row is still in the file when
+	// the eviction runs.
+	sp, err := OpenSpool(db, SpoolOptions{AckFlush: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sp.Close()
+	q := sp.Wire("w")
+	for i := 0; i < 3; i++ {
+		if _, err := q.Append(body(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, _, _ := q.Claim(0)
+	q.Ack(first)
+	q.SetInflight(0)
+
+	if ok, err := q.EvictOldest(); !ok || err != nil {
+		t.Fatalf("evict: %v %v", ok, err)
+	}
+	if err := sp.FlushAcks(); err != nil {
+		t.Fatal(err)
+	}
+	left, ok, _ := q.Next(0)
+	if !ok || !bytes.Equal(left.Body, body(2)) {
+		t.Fatalf("left %q, want only the newest message: the eviction took the wrong one", left.Body)
+	}
+	if q.Depth() != 1 || sp.Bytes() != left.Size || q.Bytes() != left.Size {
+		t.Fatalf("depth %d, wire bytes %d, quota %d for one message of %d bytes", q.Depth(), q.Bytes(), sp.Bytes(), left.Size)
+	}
+}
+
+// The reader delivers the queue while a sender evicts from it, as a drop-oldest
+// wire does. Every message ends up delivered or evicted, once, and when the
+// queue is empty its depth and the quota are zero and not off by the messages
+// both sides thought they had.
+func TestSpoolClaimAndEvictOldestNeverCountAMessageTwice(t *testing.T) {
+	db := openDB(t, filepath.Join(t.TempDir(), "state.db"))
+	defer db.Close()
+	sp, err := OpenSpool(db, SpoolOptions{AckFlush: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sp.Close()
+	q := sp.Wire("w")
+	const n = 400
+	for i := 0; i < n; i++ {
+		if _, err := q.Append(body(i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var wg sync.WaitGroup
+	var delivered int64
+	stop := make(chan struct{})
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		defer close(stop)
+		var cursor uint64
+		for {
+			e, ok, err := q.Claim(cursor)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if !ok {
+				return
+			}
+			cursor = e.Seq
+			q.Ack(e)
+			q.SetInflight(0)
+			delivered++
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := q.EvictOldest(); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}()
+	wg.Wait()
+	if err := sp.FlushAcks(); err != nil {
+		t.Fatal(err)
+	}
+	if q.Depth() != 0 || q.Bytes() != 0 || sp.Bytes() != 0 {
+		t.Fatalf("empty queue reads depth %d, wire bytes %d, quota %d", q.Depth(), q.Bytes(), sp.Bytes())
+	}
+	if got := delivered + q.Dropped(); got != n {
+		t.Fatalf("%d delivered and %d evicted is %d, not the %d queued", delivered, q.Dropped(), got, n)
+	}
+}
