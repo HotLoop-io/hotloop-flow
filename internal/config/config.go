@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HotLoop-io/hotloop-flow/internal/assertion"
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
@@ -204,7 +205,36 @@ type Auth struct {
 
 	// Lockout slows password guessing down to something useless.
 	Lockout Lockout `yaml:"lockout"`
+
+	// Assertion signs people in from the EmberCORE dashboard. Off unless a
+	// public key file is named.
+	Assertion Assertion `yaml:"assertion"`
 }
+
+// Assertion is the dashboard sign-in. The dashboard puts a signed token in a
+// request header on every request it proxies to Flow, and Flow checks it with
+// the dashboard's PUBLIC key. Bearer tokens and the local users keep working
+// beside it; they are the break-glass for staff and automation.
+type Assertion struct {
+	// PublicKeyFile is the dashboard's ES256 public key (PKIX PEM). Empty
+	// leaves the whole mode off, and Flow behaves exactly as it did without
+	// it. HOTLOOP_FLOW_ASSERTION_PUBLIC_KEY_FILE.
+	PublicKeyFile string `yaml:"publicKeyFile"`
+	// Issuer is the iss a token must carry. Default "embernet-dashboard".
+	Issuer string `yaml:"issuer"`
+	// Audience is the aud a token must carry, "<tenant>/<release>". Required
+	// with a key: a token made for one app must open no other.
+	Audience string `yaml:"audience"`
+	// Header is where the token arrives. Default "X-Embernet-Assertion".
+	Header string `yaml:"header"`
+	// HideLogin makes the editor say it is opened from the dashboard instead
+	// of offering its own sign-in form. The API's own sign-in and the bearer
+	// tokens are untouched. Default true.
+	HideLogin bool `yaml:"hideLogin"`
+}
+
+// On reports whether dashboard sign-in is configured.
+func (a Assertion) On() bool { return a.PublicKeyFile != "" }
 
 // Lockout bounds failed sign-ins.
 type Lockout struct {
@@ -477,6 +507,7 @@ func Default() Config {
 		},
 		Auth: Auth{
 			Enabled:    true,
+			Assertion:  Assertion{Issuer: assertion.DefaultIssuer, Header: assertion.DefaultHeader, HideLogin: true},
 			SessionTTL: 7 * 24 * time.Hour,
 			Lockout: Lockout{
 				Attempts: 5, PerAddress: 20,
@@ -603,6 +634,14 @@ func applyEnv(cfg *Config) {
 			PasswordHash: hash,
 			Permissions:  []string{"*"},
 		})
+	}
+
+	envStr("HOTLOOP_FLOW_ASSERTION_PUBLIC_KEY_FILE", &cfg.Auth.Assertion.PublicKeyFile)
+	envStr("HOTLOOP_FLOW_ASSERTION_ISSUER", &cfg.Auth.Assertion.Issuer)
+	envStr("HOTLOOP_FLOW_ASSERTION_AUDIENCE", &cfg.Auth.Assertion.Audience)
+	envStr("HOTLOOP_FLOW_ASSERTION_HEADER", &cfg.Auth.Assertion.Header)
+	if v, ok := os.LookupEnv("HOTLOOP_FLOW_ASSERTION_HIDE_LOGIN"); ok && v != "" {
+		cfg.Auth.Assertion.HideLogin = envBool("HOTLOOP_FLOW_ASSERTION_HIDE_LOGIN")
 	}
 
 	envStr("HOTLOOP_FLOW_GIT_URL", &cfg.History.Git.URL)
@@ -828,6 +867,23 @@ func (c *Config) Validate() error {
 		if _, err := bcrypt.Cost([]byte(u.PasswordHash)); err != nil {
 			return fmt.Errorf("auth.users[%d] (%s): passwordHash is not a bcrypt hash. "+
 				"Generate one with: hotloop-flow hash-password", i, u.Username)
+		}
+	}
+
+	// Dashboard sign-in. A key that can't be read or isn't the right kind is a
+	// refusal to start, not a Flow that quietly signs nobody in, and an
+	// audience is required because without one a token made for any other app
+	// would open this one.
+	if a := c.Auth.Assertion; a.On() {
+		if a.Audience == "" {
+			return fmt.Errorf("auth.assertion.publicKeyFile is set but auth.assertion.audience is not. " +
+				"Set it to <tenant>/<release>, or HOTLOOP_FLOW_ASSERTION_AUDIENCE")
+		}
+		if a.Header == "" {
+			return fmt.Errorf("auth.assertion.header is empty")
+		}
+		if _, err := assertion.Load(a.PublicKeyFile, a.Issuer, a.Audience); err != nil {
+			return fmt.Errorf("auth.assertion: %w", err)
 		}
 	}
 

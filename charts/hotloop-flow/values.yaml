@@ -349,6 +349,33 @@ auth:
   passwordHash: ""      # pre-computed bcrypt hash, wins over password
   sessionTTL: 168h
 
+# ── Dashboard sign-in ────────────────────────────────────────────────────────
+# The EmberCORE dashboard signs people in to the editor. It sends a token it
+# signed (ES256, valid for 60 seconds) in X-Embernet-Assertion on every request
+# it proxies, the editor's websocket included, and Flow checks it with the
+# public key below: issuer, audience (this app in this tenant) and expiry. The
+# permission comes from the tenant's role map in the dashboard: "*" is full
+# access, "read" is read-only. Bearer tokens and the admin login keep working
+# beside it, which is the break-glass for staff and automation.
+#
+# The App Store fills this in on a deploy. With publicKey empty none of it
+# renders and Flow is what it always was. Only the PUBLIC key is ever here.
+embernetSignin:
+  # "assertion" when the dashboard signs people in
+  driver: ""
+  # PKIX PEM, the dashboard's ES256 public key
+  publicKey: ""
+  algorithm: ES256
+  header: X-Embernet-Assertion
+  issuer: embernet-dashboard
+  # The audience a token must name, <tenant>/<Service>. Worked out from the
+  # tenant-<id> namespace and the release name; set it only when the release is
+  # in no tenant-<id> namespace and carries no tenant label.
+  audience: ""
+  # The editor says it is opened from the dashboard instead of offering its own
+  # sign-in form. The API's own sign-in and bearer tokens are untouched.
+  hideLoginForm: true
+
 # credentialSecret encrypts node credentials at rest.
 #
 # Generated on first install and preserved across upgrades by reading the

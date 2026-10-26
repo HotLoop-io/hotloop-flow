@@ -74,7 +74,8 @@ export interface Settings {
   version: string;
   adminRoot: string;
   runtime: { inboxCapacity: number; overflow: string };
-  auth: { enabled: boolean };
+  /** sso: the EmberCORE dashboard signed this request in, so there is nothing to sign out of. */
+  auth: { enabled: boolean; sso?: boolean };
   discovery: { enabled: boolean };
   metrics: { enabled: boolean; path: string };
 }
@@ -193,6 +194,23 @@ export class Api {
     } catch {
       // Private mode. The session simply will not survive a reload.
       this.token = null;
+    }
+  }
+
+  /**
+   * Whether this runtime is opened from the EmberCORE dashboard, and whether it
+   * therefore leaves out its own sign-in form. Asked before anybody has signed
+   * in. A runtime that does not have the answer, or cannot be reached, is
+   * treated as one that has its own login, which is what every runtime was.
+   */
+  async authMode(): Promise<{ dashboard: boolean; hideLogin: boolean }> {
+    try {
+      const res = await fetch(`${this.base}/auth/mode`);
+      if (!res.ok) return { dashboard: false, hideLogin: false };
+      const body = (await res.json()) as { dashboard?: boolean; hideLogin?: boolean };
+      return { dashboard: body.dashboard === true, hideLogin: body.hideLogin === true };
+    } catch {
+      return { dashboard: false, hideLogin: false };
     }
   }
 
