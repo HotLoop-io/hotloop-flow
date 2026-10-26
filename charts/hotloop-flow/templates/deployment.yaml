@@ -24,6 +24,9 @@ spec:
         # values change appears to apply and the running process never sees it.
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if include "hotloop-flow.signinOn" . }}
+        checksum/signin: {{ include (print $.Template.BasePath "/configmap-signin.yaml") . | sha256sum }}
+        {{- end }}
         {{- with (include "hotloop-flow.appIcon" .) }}
         embernet.ai/app-icon: {{ . | quote }}
         {{- end }}
@@ -172,6 +175,11 @@ spec:
             # /tmp is cheap insurance for a library that does not.
             - name: tmp
               mountPath: /tmp
+            {{- if include "hotloop-flow.signinOn" . }}
+            - name: embernet-signin
+              mountPath: /etc/embernet-signin
+              readOnly: true
+            {{- end }}
             {{- range $i, $m := .Values.secrets.mounts }}
             - name: secret-{{ $i }}
               mountPath: {{ required "secrets.mounts[].mountPath is required" $m.mountPath }}
@@ -189,6 +197,11 @@ spec:
             name: {{ include "hotloop-flow.configMapName" . }}
         - name: tmp
           emptyDir: {}
+        {{- if include "hotloop-flow.signinOn" . }}
+        - name: embernet-signin
+          configMap:
+            name: {{ include "hotloop-flow.signinName" . }}
+        {{- end }}
         {{- range $i, $m := .Values.secrets.mounts }}
         # Group-readable only: fsGroup gives the app the group, and nobody
         # else on the node gets to read a password off the volume.

@@ -264,3 +264,44 @@ The Multus attachment name for macvlan mode.
 {{- .Values.network.macvlan.existingName -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+Dashboard sign-in is on when the App Store gave the chart the dashboard's public
+key. Without one nothing of it renders and Flow is what it always was.
+*/}}
+{{- define "hotloop-flow.signinOn" -}}
+{{- if and .Values.embernetSignin .Values.embernetSignin.publicKey .Values.auth.enabled -}}true{{- end -}}
+{{- end }}
+
+{{- define "hotloop-flow.signinName" -}}
+{{- printf "%s-signin" (include "hotloop-flow.fullname" .) }}
+{{- end }}
+
+{{/*
+The audience a token has to carry: <tenant>/<Service name>, the string the
+dashboard signs (the tenant comes from the tenant-<id> namespace). No audience
+is a render error: a check that is quietly off is worse than a chart that
+won't render.
+*/}}
+{{- define "hotloop-flow.signinAudience" -}}
+{{- $s := .Values.embernetSignin -}}
+{{- if $s.audience -}}
+{{- $s.audience -}}
+{{- else if hasPrefix "tenant-" .Release.Namespace -}}
+{{- printf "%s/%s" (trimPrefix "tenant-" .Release.Namespace) (include "hotloop-flow.fullname" .) -}}
+{{- else if (index (.Values.tenantLabels | default dict) "embernet.ai/tenant") -}}
+{{- printf "%s/%s" (index .Values.tenantLabels "embernet.ai/tenant" | toString | lower) (include "hotloop-flow.fullname" .) -}}
+{{- else -}}
+{{- fail "embernetSignin.publicKey is set but the audience can't be worked out: the release is not in a tenant-<id> namespace and has no embernet.ai/tenant label; set embernetSignin.audience to <tenant>/<service>" -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+The Service annotation that tells the dashboard to sign people in with a signed
+assertion. Only when sign-in is on.
+*/}}
+{{- define "hotloop-flow.signinAnnotation" -}}
+{{- if include "hotloop-flow.signinOn" . -}}
+embernet.ai/signin: assertion
+{{- end -}}
+{{- end }}

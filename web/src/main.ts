@@ -167,6 +167,37 @@ function renderLogin(message?: string): void {
   pass.focus();
 }
 
+/**
+ * The sign-in a runtime shows when it is opened from the EmberCORE dashboard
+ * and the dashboard did not sign this person in: there is no form, because the
+ * dashboard is the way in. The API's own sign-in and its bearer tokens are
+ * untouched, which is how staff and automation get in.
+ */
+function renderDashboardOnly(): void {
+  editor?.destroy();
+  editor = null;
+  app.replaceChildren();
+  app.className = '';
+
+  const title = document.createElement('h1');
+  title.append('Hot');
+  const mark = document.createElement('span');
+  mark.className = 'mark';
+  mark.textContent = 'Loop';
+  title.append(mark, ' Flow');
+
+  const sub = document.createElement('p');
+  sub.textContent = 'Open this from the EmberCORE dashboard. If you were signed in there and still see this, your role does not include Flow.';
+
+  const card = document.createElement('div');
+  card.className = 'login';
+  card.append(title, sub);
+  const wrap = document.createElement('div');
+  wrap.className = 'login-wrap';
+  wrap.append(card);
+  app.append(wrap);
+}
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 
 async function start(): Promise<void> {
@@ -179,6 +210,10 @@ async function start(): Promise<void> {
     [settings, descriptors] = await Promise.all([api.settings(), api.nodes()]);
   } catch (ex) {
     if (ex instanceof ApiError && ex.status === 401) {
+      if (!hadToken && (await api.authMode()).hideLogin) {
+        renderDashboardOnly();
+        return;
+      }
       renderLogin(hadToken ? 'Session expired. Sign in again.' : undefined);
       return;
     }
@@ -193,7 +228,9 @@ async function start(): Promise<void> {
     settings.version,
     // With authentication off there is nobody to sign out and no screen to
     // sign back in on, so the editor gets no Sign out button at all.
-    settings.auth.enabled ? () => { api.logout(); renderLogin(); } : null,
+    // Nor when the dashboard signed this person in: signing out of Flow would
+    // only land on a form the dashboard has taken away.
+    settings.auth.enabled && !settings.auth.sso ? () => { api.logout(); renderLogin(); } : null,
     () => renderLogin('Session expired. Sign in again.'),
   );
 }

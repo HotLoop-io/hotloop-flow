@@ -11,9 +11,15 @@ metadata:
            detail and stay invisible in the catalogue. */}}
     {{- include "hotloop-flow.storeLabels" . | nindent 4 }}
   {{- $ann := include "hotloop-flow.storeAnnotations" . }}
-  {{- if trim $ann }}
+  {{- $signin := include "hotloop-flow.signinAnnotation" . }}
+  {{- if or (trim $ann) $signin }}
   annotations:
-    {{- $ann | trim | nindent 4 }}
+    {{- with (trim $ann) }}
+    {{- . | nindent 4 }}
+    {{- end }}
+    {{- with $signin }}
+    {{- . | nindent 4 }}
+    {{- end }}
   {{- end }}
 spec:
   type: {{ .Values.service.type }}

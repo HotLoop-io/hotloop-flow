@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/HotLoop-io/hotloop-flow/internal/assertion"
 	"github.com/HotLoop-io/hotloop-flow/internal/audit"
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
@@ -175,6 +176,9 @@ type Server struct {
 	hub     *hub
 	log     *slog.Logger
 	root    string
+	// assertion checks the dashboard's signed token. Nil when dashboard
+	// sign-in is not configured, which is the default and changes nothing.
+	assertion *assertion.Verifier
 }
 
 // New builds the server and wires its routes.
@@ -191,6 +195,16 @@ func New(deps Deps) *Server {
 		hub:     newHub(deps.Logger),
 		log:     deps.Logger,
 		root:    root,
+	}
+	if a := cfg.Auth.Assertion; cfg.Auth.Enabled && a.On() {
+		// config.Validate has already read this key once, so a failure here is
+		// the file changing between the two. Sign-in by assertion stays off and
+		// says why; bearer tokens and the local users are unaffected.
+		if v, err := assertion.Load(a.PublicKeyFile, a.Issuer, a.Audience); err != nil {
+			deps.Logger.Error("dashboard sign-in is off: the public key could not be loaded", "error", err)
+		} else {
+			s.assertion = v
+		}
 	}
 	s.routes()
 	return s
@@ -218,6 +232,7 @@ func (s *Server) routes() {
 	// would restart-loop the pod forever.
 	s.mux.HandleFunc("GET "+s.path("/health"), s.handleHealth)
 	s.mux.HandleFunc("GET "+s.path("/ready"), s.handleReady)
+	s.mux.HandleFunc("GET "+s.path("/auth/mode"), s.handleAuthMode)
 	s.mux.HandleFunc("POST "+s.path("/auth/token"), s.handleToken)
 	s.mux.HandleFunc("POST "+s.path("/auth/revoke"), s.handleRevoke)
 	s.mfaRoutes()
@@ -441,6 +456,11 @@ func (s *Server) auth(perm string, h http.HandlerFunc) http.Handler {
 // from the config. A zero status means it knows; otherwise the status and the
 // words to answer with.
 func (s *Server) identify(r *http.Request) (user config.User, status int, msg string) {
+	if s.assertion != nil {
+		if raw := r.Header.Get(s.deps.Config.Auth.Assertion.Header); raw != "" {
+			return s.identifyAssertion(raw)
+		}
+	}
 	tok, viaQuery := requestToken(r)
 	if tok == "" {
 		return config.User{}, http.StatusUnauthorized, "no bearer token"
@@ -465,6 +485,30 @@ func (s *Server) identify(r *http.Request) (user config.User, status int, msg st
 		return config.User{}, http.StatusUnauthorized, "token is invalid or has expired"
 	}
 	return user, 0, ""
+}
+
+// assertionPrefix is what a person signed in by the dashboard is called in the
+// deployment log and the audit trail, so they can't be mistaken for a local
+// account or an API token that happens to share the name.
+const assertionPrefix = "dashboard:"
+
+// identifyAssertion is identify for a request that carries the dashboard's
+// signed token. A token that is present and wrong is refused outright, with
+// no fall back to whatever else the request holds: a client that sends one is
+// claiming to be the dashboard. A good token whose roles map to nothing is
+// refused too, so a role the tenant took away is no access, not a guess. There
+// is no session: the dashboard sends a fresh token on every request, so a role
+// changed there is the role here on the next one.
+func (s *Server) identifyAssertion(raw string) (user config.User, status int, msg string) {
+	claims, err := s.assertion.Verify(raw)
+	if err != nil {
+		return config.User{}, http.StatusUnauthorized, "dashboard sign-in refused"
+	}
+	perms, ok := assertion.Permissions(claims.Roles)
+	if !ok {
+		return config.User{}, http.StatusForbidden, "the dashboard gave this person no access to Flow"
+	}
+	return config.User{Username: assertionPrefix + claims.Subject, Permissions: perms}, 0, ""
 }
 
 // mcpIdentify is how the MCP endpoint knows its caller. It is the admin API's
@@ -664,6 +708,17 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleAuthMode tells the editor, before anybody has signed in, whether this
+// Flow is opened from the dashboard. It says nothing that the login screen
+// does not already say and reveals no key, issuer or audience.
+func (s *Server) handleAuthMode(w http.ResponseWriter, _ *http.Request) {
+	on := s.assertion != nil
+	writeJSON(w, http.StatusOK, map[string]any{
+		"dashboard": on,
+		"hideLogin": on && s.deps.Config.Auth.Assertion.HideLogin,
+	})
+}
+
 func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	if tok := bearerToken(r); tok != "" {
 		if u, ok := s.tokens.lookup(tok); ok {
@@ -674,7 +729,7 @@ func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleSettings(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	cfg := s.deps.Config
 	// Deliberately narrow. The credential secret, the password hashes and the
 	// filesystem layout are not the editor's business, and this response goes
@@ -688,7 +743,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, _ *http.Request) {
 		},
 		// The editor has no other way to know it may skip the login screen, and
 		// a login screen with no users behind it is a locked door.
-		"auth":      map[string]any{"enabled": cfg.Auth.Enabled},
+		// sso is true when the dashboard signed this request in, so the editor
+		// leaves out a Sign out button that would only land on a login form.
+		"auth":      map[string]any{"enabled": cfg.Auth.Enabled, "sso": strings.HasPrefix(requestUser(r), assertionPrefix)},
 		"discovery": map[string]any{"enabled": cfg.Discovery.Enabled},
 		"metrics":   map[string]any{"enabled": cfg.Metrics.Enabled, "path": cfg.Metrics.Path},
 		"editor":    map[string]any{"theme": "hotloop"},

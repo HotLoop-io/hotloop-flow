@@ -1,0 +1,14 @@
+{{- if include "hotloop-flow.signinOn" . }}
+{{- /* The dashboard's PUBLIC key, which is all that ever goes in a values file.
+       Nothing here can sign a token. */}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hotloop-flow.signinName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "hotloop-flow.labels" . | nindent 4 }}
+data:
+  public.pem: |
+    {{- .Values.embernetSignin.publicKey | trim | nindent 4 }}
+{{- end }}

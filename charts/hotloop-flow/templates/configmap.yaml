@@ -28,6 +28,16 @@ data:
     auth:
       enabled: {{ .Values.auth.enabled }}
       sessionTTL: {{ .Values.auth.sessionTTL }}
+      {{- if include "hotloop-flow.signinOn" . }}
+      # The EmberCORE dashboard signs people in. Its token is checked with the
+      # public key mounted below; bearer tokens and the admin login still work.
+      assertion:
+        publicKeyFile: /etc/embernet-signin/public.pem
+        issuer: {{ .Values.embernetSignin.issuer | quote }}
+        audience: {{ include "hotloop-flow.signinAudience" . | quote }}
+        header: {{ .Values.embernetSignin.header | quote }}
+        hideLogin: {{ .Values.embernetSignin.hideLoginForm }}
+      {{- end }}
 
     runtime:
       inboxCapacity: {{ .Values.runtime.inboxCapacity }}
