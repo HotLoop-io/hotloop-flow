@@ -382,39 +382,32 @@ func TestWatchReportsChanges(t *testing.T) {
 	if err := os.WriteFile(target, []byte("a"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 10*time.Second, "the new file to be noticed", func() bool { return e.total() >= 1 })
-
-	found := false
-	for _, m := range e.on(0) {
-		if m.Payload() == target {
-			found = true
-			if m.Data["change"] != "added" {
-				t.Errorf("change = %v, want added", m.Data["change"])
-			}
-			if m.Data["type"] != "file" {
-				t.Errorf("type = %v, want file", m.Data["type"])
-			}
-			if m.Data["file"] != "new.csv" {
-				t.Errorf("file = %v", m.Data["file"])
+	// One poll announces the watched directory itself (its modification time
+	// moved) and then the new file, one message after the other, so "something
+	// arrived" is not "the file arrived". Wait for the message about the file.
+	about := func(change string) *engine.Msg {
+		for _, m := range e.on(0) {
+			if m.Payload() == target && m.Data["change"] == change {
+				return m
 			}
 		}
+		return nil
 	}
-	if !found {
-		t.Fatalf("no message named the new file; got %d messages", e.total())
+	waitFor(t, 10*time.Second, "the new file to be noticed", func() bool { return about("added") != nil })
+
+	m := about("added")
+	if m.Data["type"] != "file" {
+		t.Errorf("type = %v, want file", m.Data["type"])
+	}
+	if m.Data["file"] != "new.csv" {
+		t.Errorf("file = %v", m.Data["file"])
 	}
 
-	// And removal.
-	before := e.total()
+	// And removal, the same way: the directory's own change comes first.
 	if err := os.Remove(target); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, 10*time.Second, "the removal to be noticed",
-		func() bool { return e.total() > before })
-
-	last := e.on(0)[len(e.on(0))-1]
-	if last.Data["change"] != "removed" {
-		t.Fatalf("change = %v, want removed", last.Data["change"])
-	}
+	waitFor(t, 10*time.Second, "the removal to be noticed", func() bool { return about("removed") != nil })
 }
 
 // TestWatchUnderAStandInLooksAtNothing: in a flow test a watcher reads nothing

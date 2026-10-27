@@ -113,13 +113,13 @@ in through the dashboard instead of asking for a second password.
 Absolute numbers only, each with the command that made it, so you can go
 disagree with me on your own hardware. Linux under WSL2, 24 CPUs (Ryzen 9 7900X),
 2026-10-02, the native binary built from `main` at `950076b` with
-`CGO_ENABLED=0 -trimpath -ldflags="-s -w"`. Three runs each, and the range is
-what's printed.
+`CGO_ENABLED=0 -trimpath -ldflags="-s -w"`, except the two size rows, which are
+re-measured below. Three runs each, and the range is what's printed.
 
 | | |
 |---|---|
-| Binary, linux/amd64, static | **22.0 MB** |
-| Image, `2.3.0` amd64, as `podman image inspect` reports it | **44.8 MB** |
+| Binary, linux/amd64, static | **41.1 MB** |
+| Image, `2.5.0` amd64, as `podman image inspect` reports it | **44.95 MB** |
 | Start to answering its first request | **0.05 s** |
 | RSS, idle | **16.4 to 16.7 MiB** |
 | RSS, peak under the HTTP load below | **26.4 to 28.5 MiB** |
@@ -127,15 +127,17 @@ what's printed.
 | HTTP latency p50 / p99 | **0.39 to 0.41 ms / 1.78 to 4.03 ms** |
 | Engine, five-node chain, no I/O | **2.20 to 3.11 µs a message**, 3.9 KB allocated |
 
-The image row is the `2.3.0` image built from the release tree the way the
-release workflow builds it, `podman build --platform linux/amd64 --build-arg
-VERSION=v2.3.0 .`, read on 2026-10-22 with
-`podman image inspect <that image> --format '{{.Size}}'` (44,833,285 bytes). It
-was not read from ghcr.io, because the tag wasn't pushed yet. It was 39.1 MB at
-`2.2.0`, 32.1 MB at `2.1.0` and 25.4 MB at `2.0.5`. Between 2.2.0 and 2.3.0 Flow
-gained the HotLoop and MCP nodes, JSON Schema checking and the WebAssembly
-plugin host, and I did not split the growth between them, so don't read all of
-it as any one of them. The other rows are still the 2026-10-02 build.
+The binary row is the 2.5.0 tree built the way the table's heading says,
+`CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"`, on 2026-10-27: 41,144,480
+bytes. It said 22.0 MB for a long time because it was the 2026-10-02 build, and
+the binary has grown a lot since, and I did not split the growth between the
+things that were added. The image row is the `2.5.0` image built from
+the release tree the way the release workflow builds it, `podman build --platform
+linux/amd64 --build-arg VERSION=v2.5.0 .`, read on 2026-10-27 with
+`podman image inspect <that image> --format '{{.Size}}'` (44,951,518 bytes). It
+was not read from ghcr.io, because the tag wasn't pushed yet. It was 44.8 MB at
+`2.3.0`, 39.1 MB at `2.2.0`, 32.1 MB at `2.1.0` and 25.4 MB at `2.0.5`. The other
+rows are still the 2026-10-02 build.
 
 The start, memory and HTTP rows are one command against
 [the bench flow](docs/bench/bench-flow.json), set up exactly as in
