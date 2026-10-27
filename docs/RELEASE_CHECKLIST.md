@@ -442,10 +442,14 @@ that says a version is out while its image still 401s is a lie with a link in it
 git grep -n -F 'PREV' -- src README.md        # in each repo; every hit is read
 curl -s -o /dev/null -w '%{http_code}\n' https://hotloop.io/flow/
 curl -s https://hotloop.io/flow/ | grep -c 'X.Y.Z'
-curl -s -o /dev/null -w '%{http_code}\n' https://hotloop.io/releases/flow/X.Y.Z/
+curl -s -o /dev/null -w '%{http_code}\n' https://hotloop.io/releases/flow/
+curl -s https://hotloop.io/releases/flow/ | grep -c 'id="flow-X.Y.Z"'
 ```
 
-Live pages answer `200` and say `X.Y.Z`. Pages deploys take a few minutes after
+Live pages answer `200` and say `X.Y.Z`. The release notes are one page with an
+anchor per version, so there is no `/releases/flow/X.Y.Z/` (it is a 404). A URL
+fragment never reaches the server, so the check is the `200` on the page plus
+the `id="flow-X.Y.Z"` grep, which must print `1`. Pages deploys take a few minutes after
 the merge.
 
 ## 10. The package stays public
