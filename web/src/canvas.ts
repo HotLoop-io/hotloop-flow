@@ -471,7 +471,12 @@ export class Canvas {
    * the wires come from the schemas on the nodes and need no answer from it.
    */
   setWireProblems(problems: WireProblem[]): void {
-    this.wireClashes = clashesByWire(problems);
+    const next = clashesByWire(problems);
+    // The check runs a moment after every edit and mostly says what it said
+    // before. Redrawing then throws away every wire element for nothing, which
+    // is also what a double-click on a wire can land in the middle of.
+    if (sameClashes(this.wireClashes, next)) return;
+    this.wireClashes = next;
     this.renderWires();
   }
 
@@ -894,3 +899,12 @@ function truncate(s: string, max: number): string {
 }
 
 export { snap };
+
+function sameClashes(a: Map<string, string[]>, b: Map<string, string[]>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [key, list] of a) {
+    const other = b.get(key);
+    if (!other || other.length !== list.length || other.some((m, i) => m !== list[i])) return false;
+  }
+  return true;
+}

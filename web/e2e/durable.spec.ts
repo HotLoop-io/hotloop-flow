@@ -74,6 +74,32 @@ test('a wire is marked durable with a limit, drawn differently, saved in the fil
   expect('ew_durable_attempts' in i1).toBe(false);
 });
 
+test('the wires are drawn once and not thrown away again when nothing about them changed', async ({ page, request }) => {
+  // The type check runs a moment after every edit. When it finds the same
+  // thing it found before, the wire elements must stay. A double-click on a
+  // wire that lands while they are replaced finds nothing under the pointer.
+  await seed(request, threeNodes());
+  await signIn(page);
+  const replaced = () => page.evaluate(() => (window as unknown as { __replaced: number }).__replaced);
+  await page.evaluate(() => {
+    const w = window as unknown as { __replaced: number };
+    w.__replaced = 0;
+    const layer = document.querySelector('.canvas-host > .canvas path.wire')!.parentElement!;
+    new MutationObserver((records) => {
+      w.__replaced += records.filter((r) => r.removedNodes.length > 0).length;
+    }).observe(layer, { childList: true });
+  });
+  await openWire(page, 'i1', 'c1');
+  await page.locator('[data-test="wire-durable"]').check();
+  await page.locator('[data-test="wire-done"]').click();
+  await expect(wireEl(page, 'i1', 'c1')).toHaveClass(/durable/);
+  // The edit itself has redrawn the wires. Count from here, past the type
+  // check's 300 ms delay, and nothing may be replaced.
+  await page.evaluate(() => { (window as unknown as { __replaced: number }).__replaced = 0; });
+  await page.waitForTimeout(800);
+  expect(await replaced()).toBe(0);
+});
+
 test('the mark goes with the node it leads to, is copied with both ends, and is dropped when only one end is copied', async ({ page, request }) => {
   const flows = threeNodes();
   const i1 = flows.find((e) => e.id === 'i1')!;
