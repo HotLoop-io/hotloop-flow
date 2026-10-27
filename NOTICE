@@ -24,7 +24,7 @@ The Go modules and npm packages compiled into the binary unmodified are not
 listed here. The image carries THIRD_PARTY_LICENSES next to this file in
 /usr/share/doc/hotloop-flow/: every one of them, with its version and the full
 text of its license, generated at build time from the binary's own dependency
-graph and the editor bundle's esbuild metafile.
+graph and the editor bundle's own record of what the build put in it.
 
 --------------------------------------------------------------------------------
 Node-RED

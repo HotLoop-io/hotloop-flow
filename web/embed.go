@@ -15,10 +15,10 @@ import (
 	"time"
 )
 
-// dist holds the esbuild output.
+// dist holds the Astro build's output.
 //
-// all: is required because esbuild writes into a directory the embed pattern
-// would otherwise skip, and the .gitignore'd dist is created by the build.
+// all: is required because the build writes files whose names begin with an
+// underscore, which the embed pattern would otherwise skip, and the .gitignore'd dist is created by the build.
 // The placeholder file keeps this compiling before the editor has been built,
 // so `go build ./...` works on a fresh clone without running npm.
 //
@@ -88,10 +88,10 @@ func Handler(prefix string) http.Handler {
 		// directory listing and redirect behaviour are not wanted here anyway.
 		w.Header().Set("Content-Type", contentType(path))
 
-		// Hashed asset names would allow long caching, but esbuild writes stable
-		// names, so the editor must not be cached across a deploy — an operator
-		// staring at a stale UI after an upgrade is worse than re-downloading a
-		// few hundred kilobytes.
+		// The assets carry a hash of their contents in their names, so a stale one
+		// cannot be served after an upgrade. index.html is what names them, so it
+		// is the one the browser must always ask for again: an operator staring at
+		// a stale UI after an upgrade is worse than re-downloading a page.
 		if path == "index.html" {
 			w.Header().Set("Cache-Control", "no-cache")
 		} else {

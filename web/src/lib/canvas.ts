@@ -543,8 +543,8 @@ export class Canvas {
     }
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const n of nodes) {
-      minX = Math.min(minX, (n.x ?? 0) - NODE_WIDTH);
-      maxX = Math.max(maxX, (n.x ?? 0) + NODE_WIDTH);
+      minX = Math.min(minX, (n.x ?? 0) - NODE_WIDTH * 0.75);
+      maxX = Math.max(maxX, (n.x ?? 0) + NODE_WIDTH * 0.75);
       minY = Math.min(minY, (n.y ?? 0) - NODE_HEIGHT * 2);
       maxY = Math.max(maxY, (n.y ?? 0) + NODE_HEIGHT * 2);
     }
@@ -764,6 +764,18 @@ export class Canvas {
     body.setAttribute('fill', d?.color ?? '#9e9e9e');
     g.append(body);
 
+    // The node type's category color, as a strip down the left edge. It says
+    // what kind of node this is without taking the label's background, so the
+    // label reads the same in light and dark.
+    const r = 6;
+    const x0 = x - NODE_WIDTH / 2;
+    const y0 = y - NODE_HEIGHT / 2;
+    const strip = document.createElementNS(SVG_NS, 'path');
+    strip.setAttribute('d', `M${x0 + r} ${y0}H${x0 + 6}V${y0 + NODE_HEIGHT}H${x0 + r}A${r} ${r} 0 0 1 ${x0} ${y0 + NODE_HEIGHT - r}V${y0 + r}A${r} ${r} 0 0 1 ${x0 + r} ${y0}Z`);
+    strip.setAttribute('class', 'node-strip');
+    strip.setAttribute('fill', d?.color ?? '#9e9e9e');
+    g.append(strip);
+
     if (!d) {
       const warn = document.createElementNS(SVG_NS, 'title');
       warn.textContent = `${n.type} is not installed in this runtime`;
@@ -772,7 +784,7 @@ export class Canvas {
     }
 
     const label = document.createElementNS(SVG_NS, 'text');
-    label.setAttribute('x', String(x));
+    label.setAttribute('x', String(x + 3));
     label.setAttribute('y', String(y + 4));
     label.setAttribute('class', 'node-label');
     label.setAttribute('text-anchor', 'middle');

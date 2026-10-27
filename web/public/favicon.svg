@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="HotLoop">
+  <!-- 16px cut. The default mark's terminal dot is r=6, which lands at 0.96px
+       in a 16px favicon and disappears. Here it is r=10 and the arc gap is
+       widened to keep it legible as a break rather than a smudge. -->
+  <defs>
+    <linearGradient id="hlGrad16" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFB700"/>
+      <stop offset="100%" stop-color="#FF5A00"/>
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="36" fill="none" stroke="url(#hlGrad16)" stroke-width="16"
+          stroke-linecap="round" stroke-dasharray="158 68" transform="rotate(-45 50 50)"/>
+  <circle cx="75.5" cy="24.5" r="10" fill="#FF5A00"/>
+</svg>

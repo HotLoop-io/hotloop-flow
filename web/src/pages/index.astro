@@ -1,0 +1,20 @@
+---
+// The one page. The editor is a single app: sign-in, then the editor, all in
+// one island, so the runtime serves this at its root and the files beside it.
+import App from '../components/App.svelte';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HotLoop Flow</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <!-- Runs before the stylesheet so a dark-mode user never sees a white flash. -->
+    <script is:inline src="theme-guard.js"></script>
+  </head>
+  <body>
+    <div id="app"><App client:only="svelte" /></div>
+  </body>
+</html>

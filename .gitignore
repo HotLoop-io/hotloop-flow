@@ -4,7 +4,7 @@
 /dist/
 /.deploy/
 
-# Editor bundle build artefacts (generated into web/dist by esbuild, embedded at build time)
+# Editor bundle build artefacts (generated into web/dist by the Astro build, embedded at build time)
 /web/dist/*
 # ...except the placeholder. web/embed.go has //go:embed all:dist, which is a
 # compile error when the directory does not exist — so a fresh clone could not
@@ -45,3 +45,7 @@ testdata/wasmguest/*.wasm
 testdata/wasmguest/*.h
 testdata/capguest/*.wasm
 testdata/capguest/*.h
+
+# Astro
+/web/.astro/
+/web/meta.json
