@@ -45,3 +45,7 @@ testdata/wasmguest/*.wasm
 testdata/wasmguest/*.h
 testdata/capguest/*.wasm
 testdata/capguest/*.h
+
+# Astro
+/web/.astro/
+/web/meta.json

@@ -4,16 +4,12 @@
 // of jQuery and D3 plus a vendored Monaco, none of which can be themed to look
 // like ours, and all of which would have to be served from the binary.
 
-import './tokens.css';
-import './fonts.css';
-import './theme.css';
-import './canvas.css';
 import { setDarkMode } from './theme';
 import { Api, ApiError, type Descriptor, type Settings } from './api';
 import { mountEditor, type EditorHandles } from './editor';
 
 const api = new Api('');
-const app = document.getElementById('app')!;
+const app = document.getElementById('legacy')!;
 let editor: EditorHandles | null = null;
 
 // ── Theme ────────────────────────────────────────────────────────────────────

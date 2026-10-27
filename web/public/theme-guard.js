@@ -1,10 +1,3 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HotLoop Flow</title>
-<script>
 // FOUC guard. Runs before the stylesheet is applied, so a dark-mode user never
 // sees a white flash. It sets data-theme, which is what the tokens flip on.
 (function () {
@@ -15,11 +8,3 @@
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   } catch (e) { /* private mode; fall through to light */ }
 })();
-</script>
-<link rel="stylesheet" href="main.css">
-</head>
-<body>
-<div id="app"></div>
-<script type="module" src="main.js"></script>
-</body>
-</html>
