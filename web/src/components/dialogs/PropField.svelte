@@ -41,7 +41,7 @@
 </script>
 
 {#snippet head()}
-  <label>{label}{#if p.required}<span class="required"> *</span>{/if}</label>
+  <label>{label}{#if p.required}<span class="required">{' *'}</span>{/if}</label>
 {/snippet}
 {#snippet help()}
   {#if p.help}<div class="field-help">{p.help}</div>{/if}

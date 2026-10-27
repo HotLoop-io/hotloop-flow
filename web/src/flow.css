@@ -229,7 +229,7 @@ kbd { font: 600 var(--hl-fs-2xs)/1 var(--hl-font-mono); color: var(--hl-ink-soft
 .view-banner .what { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The read-only canvas for a deployment sits over the working one, which stays
    exactly as it was underneath. */
-.view-host { position: absolute; inset: 0; background: var(--hl-bg); }
+.view-host { position: absolute; inset: 44px 0 0 0; background: var(--hl-bg); }
 .canvas-host.viewing > .canvas { visibility: hidden; }
 .view-host .canvas { padding-top: 0; }
 
@@ -378,7 +378,7 @@ td { padding: 4px 6px; border-bottom: 1px solid var(--hl-border); white-space: n
 th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--hl-font-mono); }
 tbody tr.row { cursor: pointer; }
 tbody tr.row:hover td { background: var(--hl-sunken); }
-.meter { display: inline-block; width: 44px; height: 4px; border-radius: 2px; background: var(--hl-sunken); margin-left: 6px; vertical-align: middle; overflow: hidden; }
+.meter { display: inline-block; width: 28px; height: 4px; border-radius: 2px; background: var(--hl-sunken); margin-left: 6px; vertical-align: middle; overflow: hidden; }
 .meter > span { display: block; height: 100%; background: var(--hl-ok); }
 .meter > span.warn { background: var(--hl-warn); }
 .meter > span.hot { background: var(--hl-danger); }
