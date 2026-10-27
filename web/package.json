@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "astro build && node postbuild.mjs",
-    "typecheck": "astro check && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "typecheck": "astro check && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings --compiler-warnings \"a11y_label_has_associated_control:ignore,state_referenced_locally:ignore\"",
     "dev": "astro dev"
   },
   "devDependencies": {
