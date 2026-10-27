@@ -48,6 +48,66 @@ business use is free through EmberNET, under HotLoop's Business Source License.
 
 ---
 
+## What it looks like
+
+It follows your system, light or dark, and it's the same editor either way. Every
+picture below comes from `web/shots/screenshots.sh`, which starts the real binary
+and a real browser, so they get retaken when the editor changes and can't drift
+into a mockup. The plant on the canvas is an oven line with two deployments
+behind it.
+
+### Wire it, run it, watch it
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/editor-dark.png">
+  <img alt="The editor on an oven line: the canvas, the deployment history, and the debug and runtime panels" src="docs/screenshots/editor.png" width="900">
+</picture>
+
+The canvas is what's running. The debug dock under it prints what your debug
+nodes see, and the Runtime table beside it counts what went into and out of
+every node, with a bar for how full its queue is. When a line misbehaves you
+read it off the screen instead of going digging in a log.
+
+### Review it before it reaches the line
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/review-dark.png">
+  <img alt="The review panel listing one changed node, with a note box, beside the canvas with that node outlined" src="docs/screenshots/review.png" width="900">
+</picture>
+
+Deploy doesn't deploy. It draws the change on the canvas, writes it out in
+words, and asks you for a note. The note lands in the history beside your name,
+so whoever gets the call at 2 a.m. can see what changed and why.
+
+### Follow a message down the wires
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/debug-dark.png">
+  <img alt="A traced message lit across the canvas with the time each node spent on it, and the debug dock below" src="docs/screenshots/debug.png" width="900">
+</picture>
+
+Click Trace on a debug line and the path that message took lights up across the
+canvas, hop by hop, with what each node did to it and how long it took. Turn it
+into a test, or replay it into a draft, from the same panel.
+
+### Signing in
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/signin-dark.png">
+  <img alt="The sign-in card" src="docs/screenshots/signin.png" width="900">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dashboard-signin-dark.png">
+  <img alt="The notice a runtime shows when the dashboard signs people in and this page was opened another way" src="docs/screenshots/dashboard-signin.png" width="900">
+</picture>
+
+It won't start unlocked, so the first thing anyone sees is a sign-in. When the
+EmberCORE dashboard signs people in, a runtime opened any other way says to come
+in through the dashboard instead of asking for a second password.
+
+---
+
 ## The numbers
 
 Absolute numbers only, each with the command that made it, so you can go

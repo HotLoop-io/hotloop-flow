@@ -14,6 +14,7 @@
 !/web/dist/.gitkeep
 /web/node_modules/
 /web/e2e/node_modules/
+/web/shots/node_modules/
 /web/e2e/test-results/
 /web/e2e/playwright-report/
 

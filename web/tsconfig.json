@@ -9,5 +9,5 @@
     "skipLibCheck": true
   },
   "include": ["src/**/*", ".astro/types.d.ts"],
-  "exclude": ["dist", "e2e"]
+  "exclude": ["dist", "e2e", "shots"]
 }
