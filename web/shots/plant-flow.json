@@ -1,0 +1,326 @@
+[
+  {
+    "id": "press",
+    "type": "tab",
+    "label": "Press line",
+    "info": "Hydraulic press cell, line 3."
+  },
+  {
+    "id": "pack",
+    "type": "tab",
+    "label": "Packaging"
+  },
+  {
+    "id": "sf1",
+    "type": "subflow",
+    "name": "Scale reading",
+    "info": "Linear scale for a raw count.",
+    "category": "function",
+    "in": [
+      {
+        "x": 40,
+        "y": 60,
+        "wires": [
+          {
+            "id": "sf1c"
+          }
+        ]
+      }
+    ],
+    "out": [
+      {
+        "x": 400,
+        "y": 60,
+        "wires": [
+          {
+            "id": "sf1c",
+            "port": 0
+          }
+        ]
+      }
+    ],
+    "env": [
+      {
+        "name": "SCALE",
+        "type": "num",
+        "value": 0.125
+      }
+    ],
+    "color": "#DEBD5C"
+  },
+  {
+    "id": "sf1c",
+    "type": "change",
+    "z": "sf1",
+    "name": "scale",
+    "rules": [
+      {
+        "t": "set",
+        "p": "payload",
+        "pt": "msg",
+        "to": "payload",
+        "tot": "msg"
+      }
+    ],
+    "x": 220,
+    "y": 60,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "c0",
+    "type": "comment",
+    "z": "press",
+    "name": "Oven 3: poll, scale, alarm over 205",
+    "info": "",
+    "x": 190,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "i1",
+    "type": "inject",
+    "z": "press",
+    "name": "Oven 3 poll",
+    "props": [
+      {
+        "p": "payload",
+        "v": "0",
+        "vt": "num"
+      }
+    ],
+    "repeat": "",
+    "once": false,
+    "x": 130,
+    "y": 120,
+    "wires": [
+      [
+        "f1"
+      ]
+    ]
+  },
+  {
+    "id": "f1",
+    "type": "function",
+    "z": "press",
+    "name": "read oven 3",
+    "func": "// The oven's last eight readings, in the order the thermocouple gave them.\nconst readings = [197, 201, 204, 208, 203, 199, 207, 202];\nconst n = context.get('n') || 0;\ncontext.set('n', n + 1);\nmsg.payload = readings[n % readings.length];\nmsg.topic = 'oven3/temp';\nreturn msg;",
+    "outputs": 1,
+    "x": 330,
+    "y": 120,
+    "wires": [
+      [
+        "r1"
+      ]
+    ]
+  },
+  {
+    "id": "r1",
+    "type": "range",
+    "z": "press",
+    "name": "to deg C",
+    "property": "payload",
+    "minin": 0,
+    "maxin": 400,
+    "minout": 0,
+    "maxout": 400,
+    "action": "scale",
+    "round": true,
+    "x": 520,
+    "y": 120,
+    "wires": [
+      [
+        "s1"
+      ]
+    ]
+  },
+  {
+    "id": "s1",
+    "type": "switch",
+    "z": "press",
+    "name": "over 205?",
+    "property": "payload",
+    "propertyType": "msg",
+    "outputs": 2,
+    "checkall": "true",
+    "rules": [
+      {
+        "t": "gt",
+        "v": "205",
+        "vt": "num"
+      },
+      {
+        "t": "else"
+      }
+    ],
+    "x": 700,
+    "y": 120,
+    "wires": [
+      [
+        "ch1"
+      ],
+      [
+        "d2"
+      ]
+    ]
+  },
+  {
+    "id": "ch1",
+    "type": "change",
+    "z": "press",
+    "name": "tag alarm",
+    "rules": [
+      {
+        "t": "set",
+        "p": "alarm",
+        "pt": "msg",
+        "to": "oven 3 over 205",
+        "tot": "str"
+      }
+    ],
+    "x": 900,
+    "y": 80,
+    "wires": [
+      [
+        "d1"
+      ]
+    ]
+  },
+  {
+    "id": "d1",
+    "type": "debug",
+    "z": "press",
+    "name": "alarm",
+    "active": true,
+    "complete": "true",
+    "x": 1080,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "d2",
+    "type": "debug",
+    "z": "press",
+    "name": "oven 3 temp",
+    "active": true,
+    "complete": "payload",
+    "x": 920,
+    "y": 170,
+    "wires": []
+  },
+  {
+    "id": "cg",
+    "type": "catch",
+    "z": "press",
+    "name": "",
+    "uncaught": false,
+    "x": 130,
+    "y": 260,
+    "wires": [
+      [
+        "d3"
+      ]
+    ]
+  },
+  {
+    "id": "d3",
+    "type": "debug",
+    "z": "press",
+    "name": "errors",
+    "active": true,
+    "complete": "true",
+    "x": 330,
+    "y": 260,
+    "wires": []
+  },
+  {
+    "id": "sc",
+    "type": "status",
+    "z": "press",
+    "name": "",
+    "x": 130,
+    "y": 330,
+    "wires": [
+      [
+        "d4"
+      ]
+    ]
+  },
+  {
+    "id": "d4",
+    "type": "debug",
+    "z": "press",
+    "name": "node status",
+    "active": true,
+    "complete": "true",
+    "x": 330,
+    "y": 330,
+    "wires": []
+  },
+  {
+    "id": "gI",
+    "type": "group",
+    "z": "press",
+    "name": "Oven 3",
+    "style": {
+      "label": true
+    },
+    "nodes": [
+      "i1",
+      "f1",
+      "r1",
+      "s1"
+    ],
+    "x": 40,
+    "y": 76,
+    "w": 680,
+    "h": 100
+  },
+  {
+    "id": "ij",
+    "type": "inject",
+    "z": "pack",
+    "name": "Case count",
+    "props": [
+      {
+        "p": "payload",
+        "v": "12",
+        "vt": "num"
+      }
+    ],
+    "repeat": "",
+    "once": false,
+    "x": 140,
+    "y": 120,
+    "wires": [
+      [
+        "sfi"
+      ]
+    ]
+  },
+  {
+    "id": "sfi",
+    "type": "subflow:sf1",
+    "z": "pack",
+    "name": "",
+    "x": 340,
+    "y": 120,
+    "wires": [
+      [
+        "dp"
+      ]
+    ]
+  },
+  {
+    "id": "dp",
+    "type": "debug",
+    "z": "pack",
+    "name": "scaled",
+    "active": true,
+    "complete": "payload",
+    "x": 540,
+    "y": 120,
+    "wires": []
+  }
+]
