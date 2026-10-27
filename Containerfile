@@ -19,8 +19,9 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY web/ ./
 RUN npm run build
 
-# The npm packages esbuild actually put in dist (today, the two self-hosted
-# fonts), with their license texts, from the build's own metafile. Fails the
+# The npm packages the build actually put in dist (the Svelte runtime and the two
+# self-hosted fonts), with their license texts, from the build's own record of
+# every file it read (meta.json, written by astro.config.mjs). Fails the
 # build on a license we don't ship. The Go stage appends it to
 # THIRD_PARTY_LICENSES.
 RUN node third-party-licenses.mjs meta.json /build/THIRD_PARTY_LICENSES.editor

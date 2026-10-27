@@ -543,8 +543,8 @@ export class Canvas {
     }
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const n of nodes) {
-      minX = Math.min(minX, (n.x ?? 0) - NODE_WIDTH);
-      maxX = Math.max(maxX, (n.x ?? 0) + NODE_WIDTH);
+      minX = Math.min(minX, (n.x ?? 0) - NODE_WIDTH * 0.75);
+      maxX = Math.max(maxX, (n.x ?? 0) + NODE_WIDTH * 0.75);
       minY = Math.min(minY, (n.y ?? 0) - NODE_HEIGHT * 2);
       maxY = Math.max(maxY, (n.y ?? 0) + NODE_HEIGHT * 2);
     }

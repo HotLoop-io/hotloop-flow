@@ -1,4 +1,4 @@
-/* Self-hosted, latin subset only, bundled by esbuild into the editor build.
+/* Self-hosted, latin subset only, bundled by the Astro build into the editor.
  * The editor is embedded in the binary and runs on edge boxes with no internet,
  * so a CDN font would be absent there rather than slow. Everything outside the
  * latin subset falls through to the system font in --hl-font. */

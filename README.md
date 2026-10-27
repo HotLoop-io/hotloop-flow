@@ -1934,8 +1934,11 @@ no shell in it, so there is nothing to `exec` into and nothing for anybody who
 gets code execution to pivot with.
 
 Then open <http://localhost:1880>. Drop a `flows.json` into the data directory
-and restart, or just build the flow in the editor. The editor is vanilla
-TypeScript and native SVG, 48.5 kB of JS and 20.1 kB of CSS minified.
+and restart, or just build the flow in the editor. The editor is Astro with
+Svelte islands over a canvas of plain TypeScript and native SVG, built to static
+files inside the binary: 190.7 kB of JS and 30.1 kB of CSS minified, 62.5 kB and
+6.8 kB gzipped, read from `web/dist/_astro` after `npm run build`. Nothing in it
+is fetched from anywhere, so it works on a box with no internet.
 
 ### The commands
 

@@ -3,12 +3,13 @@
 //
 //   node third-party-licenses.mjs meta.json /build/THIRD_PARTY_LICENSES.editor
 //
-// meta.json is the metafile build.mjs writes: esbuild's own record of every
-// file it pulled into dist. That's the real graph. package.json's
-// devDependencies aren't: esbuild and TypeScript build the bundle and ship
-// none of themselves, while the fonts are copied into dist byte for byte and
-// end up embedded in the Go binary. So the list comes from what esbuild
-// actually read, the same way the Go side reads the binary's import graph.
+// meta.json is what the Astro build writes (astro.config.mjs): the record of
+// every file the bundler pulled into dist. That's the real graph.
+// package.json's devDependencies aren't: Astro, Svelte's compiler and
+// TypeScript build the bundle and ship none of themselves, while Svelte's small
+// runtime and the fonts do end up in dist and embedded in the Go binary. So the
+// list comes from what the bundler actually read, the same way the Go side
+// reads the binary's import graph.
 //
 // No dependencies on purpose. A license checker that needs its own npm tree
 // is one more thing in node_modules nobody reviewed.
@@ -94,8 +95,8 @@ if (bad.length) fail(`Not on the allowlist, unidentifiable, or shipped without i
 const rule = '='.repeat(80);
 const thin = '-'.repeat(80);
 let out = `${rule}\nEditor bundle (npm)\n${rule}\n\n`;
-out += 'The browser editor is built with esbuild and embedded in the binary. These\n';
-out += 'packages are the ones esbuild copied into it, from its own metafile.\n';
+out += 'The browser editor is built with Astro and Svelte and embedded in the binary.\n';
+out += 'These packages are the ones the bundler put into it, from its own record.\n';
 if (pkgs.length === 0) out += 'None: the bundle is all HotLoop Flow source.\n';
 out += '\n';
 for (const p of pkgs) out += `${p.name.padEnd(58)} ${p.version.padEnd(20)} ${p.license}\n`;

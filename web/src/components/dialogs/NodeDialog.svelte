@@ -106,6 +106,6 @@
     <div class="dialog-error">{error}</div>
     <span class="hint">Ctrl+Enter finishes</span>
     <button class="ghost" onclick={() => done(null)}>Cancel</button>
-    <button onclick={commit}>Done</button>
+    <button class="primary" onclick={commit}>Done</button>
   {/snippet}
 </Dialog>

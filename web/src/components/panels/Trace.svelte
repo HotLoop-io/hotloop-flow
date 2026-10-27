@@ -57,9 +57,9 @@
         {@const total = view.trace.hops.reduce((t, h) => t + h.nanos, 0)}
         <div class="trace-head" data-test="trace-summary">{view.trace.hops.length} hops, {fmtNanos(total)} in nodes{view.trace.truncated ? ', cut short: the trace hit its hop limit' : ''}</div>
         <div class="actions">
-          <button class="ghost" data-test="trace-make-test" title="Make a flow test from this trace" onclick={onmaketest}>Make test</button>
-          <button class="ghost" data-test="trace-replay" title="Put this message into the working copy and compare" onclick={onreplay}>Replay into draft</button>
-          <button class="ghost" data-test="trace-clear" onclick={onclear}>Clear</button>
+          <button class="ghost sm" data-test="trace-make-test" title="Make a flow test from this trace" onclick={onmaketest}>Make test</button>
+          <button class="ghost sm" data-test="trace-replay" title="Put this message into the working copy and compare" onclick={onreplay}>Replay into draft</button>
+          <button class="ghost sm" data-test="trace-clear" onclick={onclear}>Clear</button>
         </div>
         {#each hops as x (x.h.id)}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
