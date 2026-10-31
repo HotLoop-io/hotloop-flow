@@ -222,7 +222,8 @@ jobs:
       - name: Start a real HotLoop
         # The HotLoop tests talk to a real HotLoop or they skip, and a skip reads
         # as a pass. This is the published HotLoop IoT image, the same one a
-        # plant runs, on SQLite with a login and writes switched on. It shares
+        # plant runs, on SQLite with a login and writes switched on, MCP's included (it
+        # ships on from 4.18.12; the setting is explicit so this image, 4.18.10, matches). It shares
         # the host's network so it reaches the Modbus server above on
         # 127.0.0.1:5020, and the tests make the device, tags, script, recipe and
         # operator account they need through HotLoop's own API. The admin
@@ -240,7 +241,7 @@ jobs:
             -e HOTLOOP_DB_TYPE=sqlite -e HOTLOOP_DB_PATH=/tmp/hotloop.db \
             -e HOTLOOP_AUTH_ENABLED=true -e HOTLOOP_ADMIN_USER=admin \
             -e "HOTLOOP_ADMIN_PASSWORD_HASH=$HASH" \
-            -e HOTLOOP_ALLOW_WRITES=true -e "HOTLOOP_MCP_TOKEN=$MCPTOK" "$IMG"
+            -e HOTLOOP_ALLOW_WRITES=true -e HOTLOOP_ALLOW_MCP_WRITES=true -e "HOTLOOP_MCP_TOKEN=$MCPTOK" "$IMG"
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:18480/readyz >/dev/null 2>&1 && break; sleep 1; done
           curl -fsS http://127.0.0.1:18480/readyz >/dev/null || { sudo podman logs hotloop; echo "::error::HotLoop never became ready"; exit 1; }
           {
