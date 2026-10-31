@@ -141,6 +141,8 @@ A historian going down for an hour shouldn't cost you an hour of readings.
       throttling it showed
 - [ ] Proven on a Pi 4 and a Zero 2 W, and SD card writes per hour on a card,
       because a context store that chews through an SD card is a bug
+      Open because it needs the boards. The Pi 5 is measured; the lab has no
+      Pi 4 or Zero 2 W, and a number off any other box would be a made-up one
 
 ### Phase 5: the plant floor
 
@@ -159,35 +161,38 @@ biggest hole in a product built for plants.
       the edge node cut off and the host restarted, S7 against python-snap7's
       server, and EtherNet/IP against libplctag's `ab_server`. All simulators.
       No Siemens CPU or Logix controller has been in front of any of it
-- [ ] HotLoop nodes: entity changes in, entity state, call a script, apply a
+- [x] HotLoop nodes: entity changes in, entity state, call a script, apply a
       recipe. Every command goes through HotLoop's write gate and lands in its
       logbook as `flow:<node id>`, and a write the gate refuses arrives at a
       Catch node with the gate's reason
-- [ ] When HotLoop is there, Flow's equipment writes go through HotLoop's gate
+- [x] When HotLoop is there, Flow's equipment writes go through HotLoop's gate
       instead of straight to the PLC
+      Both shipped in 2.3.0. A write through the real gate is proven for Modbus
+      against a published HotLoop image; the OPC UA, S7 and EtherNet/IP write
+      nodes send through the same code and a test checks each offers the gate.
 
 ### Phase 6: plugins without npm
 
-- [ ] A `wasm` node on the host that already exists: hard memory ceiling, a
+- [x] A `wasm` node on the host that already exists: hard memory ceiling, a
       timeout, and a guest that blows past either traps without taking anything
       else down
-- [ ] Plugin format: the module, a descriptor so the editor renders its dialog,
+- [x] Plugin format: the module, a descriptor so the editor renders its dialog,
       and a signature. Unsigned or tampered plugins refuse to load and say why
-- [ ] Capabilities: a plugin gets no host access unless its manifest asks and
+- [x] Capabilities: a plugin gets no host access unless its manifest asks and
       the operator grants it. Asking for something not granted fails the deploy
-- [ ] A worked example in Rust and one in TinyGo, built in CI
+- [x] A worked example in Rust and one in TinyGo, built in CI
 
 ### Phase 7: typed wires and MCP
 
-- [ ] Schema validation on the `json` node, the first slice
-- [ ] Optional schemas on ports. A mismatch the editor can see is refused at
+- [x] Schema validation on the `json` node, the first slice
+- [x] Optional schemas on ports. A mismatch the editor can see is refused at
       deploy; one it can't goes to a Catch node with the path of the bad field,
       and to a metric
-- [ ] Types drawn on the wires in the editor
-- [ ] Flows as MCP tools: a tool node declares a name, a description and an
+- [x] Types drawn on the wires in the editor
+- [x] Flows as MCP tools: a tool node declares a name, a description and an
       input schema, and Flow serves `/mcp`. An agent calling a flow gets the
       same permissions and the same audit log as a person
-- [ ] An MCP client node, so a flow can call tools on other servers, HotLoop's
+- [x] An MCP client node, so a flow can call tools on other servers, HotLoop's
       included
 
 ### Phase 8: the editor, rewritten in Astro
@@ -290,8 +295,11 @@ but plenty of people drop one that doesn't.
       commit now
 - [x] Secrets by reference: a node reads a password from a mounted Kubernetes
       Secret or file, so it never lives in the flow file at all
-- [ ] Bring your flows: `hotloop-flow import` keeps reporting exactly what will
-      and won't run before anything is deployed
+- [x] Bring your flows: `hotloop-flow import` keeps reporting exactly what will
+      and won't run before anything is deployed. It lists the node types that
+      run, the ones that run with a difference and what the difference is, the
+      ones that will not start, and a node pointing at a config node that isn't
+      in the file
 
 ## Later
 

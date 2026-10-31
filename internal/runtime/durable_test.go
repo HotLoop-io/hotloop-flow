@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -741,4 +742,61 @@ func TestDurableWireSpillsThenReturnsToMemory(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		return rig.sp.Commits() == before
 	})
+}
+
+// A drop-oldest durable wire failed its drain once in a few thousand runs, and
+// the one dump caught showed the pump idle with messages queued. A rerun hides
+// that, so this loop runs the scenario again and again and holds each pass to
+// what a healthy wire does: every message delivered or counted dropped, the
+// queue empty in well under the pump's five second poll (a wake that was lost
+// and found by the poll would otherwise pass), and the stranded counter at
+// zero. A failure prints the wire's counters beside its table.
+//
+// HOTLOOP_FLOW_STRESS sets the passes; the default is small enough for CI.
+func TestDurableDropOldestStress(t *testing.T) {
+	passes := 150
+	if v := os.Getenv("HOTLOOP_FLOW_STRESS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			t.Fatalf("HOTLOOP_FLOW_STRESS=%q is not a count", v)
+		}
+		passes = n
+	}
+	for i := 0; i < passes; i++ {
+		if !dropOldestPass(t, i) {
+			return
+		}
+	}
+}
+
+func dropOldestPass(t *testing.T, pass int) bool {
+	sink := &flakySink{gate: make(chan struct{})}
+	rig := startDurable(t, filepath.Join(t.TempDir(), "state.db"), quotaFlow("drop-oldest"), Options{}, 4096, sink)
+	defer rig.stop(t)
+	inject(t, rig.rt, 0, 200)
+	processed(t, rig.rt, 200)
+	q := rig.sp.Wire("a:0>b")
+	close(sink.gate)
+	start := time.Now()
+	for q.Depth() != 0 || q.Dropped()+int64(sink.count()) != 200 {
+		if time.Since(start) > time.Second {
+			p, _ := q.Probe()
+			t.Errorf("pass %d: not drained after %s: delivered %d, dropped %d, stranded %d, probe %+v",
+				pass, time.Since(start), sink.count(), q.Dropped(), q.Stranded(), p)
+			return false
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if q.Stranded() != 0 {
+		t.Errorf("pass %d: stranded counted %d", pass, q.Stranded())
+		return false
+	}
+	got := sink.values()
+	for j := 1; j < len(got); j++ {
+		if got[j] <= got[j-1] {
+			t.Errorf("pass %d: order broken at %d: %v then %v", pass, j, got[j-1], got[j])
+			return false
+		}
+	}
+	return true
 }
