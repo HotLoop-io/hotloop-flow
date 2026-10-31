@@ -63,6 +63,34 @@ export async function centre(loc: Locator): Promise<{ x: number; y: number }> {
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
 
+/**
+ * Where the middle of a wire is, once it has stopped moving. A wire is a path
+ * with no height when its two nodes sit on one row, so Playwright calls it not
+ * visible and a locator click on it never lands; the box has to be read and
+ * clicked by hand. Read straight off the page it can be the old path, because
+ * the editor redraws wires a moment after an edit. The box is read until two
+ * reads a frame apart agree, and only then used.
+ */
+export async function stableCentre(page: Page, loc: Locator): Promise<{ x: number; y: number }> {
+  let last = '';
+  let box: { x: number; y: number; width: number; height: number } | null = null;
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
+        box = await loc.boundingBox();
+        const key = JSON.stringify(box);
+        const settled = box !== null && key === last;
+        last = key;
+        return settled;
+      },
+      { message: 'the wire to stop moving', intervals: [0, 50, 50, 100, 100, 250] },
+    )
+    .toBe(true);
+  const b = box!;
+  return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+}
+
 /** Drags from one point to another with a real pointer. */
 export async function drag(page: Page, from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> {
   await page.mouse.move(from.x, from.y);

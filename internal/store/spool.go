@@ -440,6 +440,9 @@ func (s *Spool) Families() []metrics.Family {
 		{Name: "hotloop_flow_durable_wire_given_up_total", Type: "counter",
 			Help:    "Messages a durable wire stopped retrying because the wire has an attempt limit and the target refused the message that many times. Each one was raised to the flow as an error with the message attached.",
 			Collect: each(func(q *WireQueue) float64 { return float64(q.gaveUp.Load()) })},
+		{Name: "hotloop_flow_durable_wire_stranded_total", Type: "counter",
+			Help:    "Times a durable wire's pump found nothing to deliver while the wire's depth said messages were waiting, and it stayed that way past a recheck. Zero on a healthy wire.",
+			Collect: each(func(q *WireQueue) float64 { return float64(q.stranded.Load()) })},
 		{Name: "hotloop_flow_durable_commits_total", Type: "counter",
 			Help:    "Transactions written to the durable queue. Flat while every durable wire's target keeps up, because nothing is written until one doesn't.",
 			Collect: func() []metrics.Sample { return []metrics.Sample{{Value: float64(s.commits.Load())}} }},
@@ -465,6 +468,7 @@ type WireQueue struct {
 	retries  atomic.Int64
 	dropped  atomic.Int64
 	gaveUp   atomic.Int64
+	stranded atomic.Int64
 
 	// inflight is the message being delivered right now. Evicting the oldest
 	// message must never take the one a target is in the middle of.
@@ -502,6 +506,42 @@ func (q *WireQueue) Dropped() int64 { return q.dropped.Load() }
 
 // GaveUp counts messages given up on after the wire's attempt limit.
 func (q *WireQueue) GaveUp() int64 { return q.gaveUp.Load() }
+
+// Stranded counts the times the pump found nothing to deliver while the queue
+// said it held messages, and the disk agreed or disagreed for a reason the
+// pump could not explain. It is zero on a healthy wire, always.
+func (q *WireQueue) Stranded() int64 { return q.stranded.Load() }
+
+// CountStranded is kept by the pump when it finds the queue stuck.
+func (q *WireQueue) CountStranded() { q.stranded.Add(1) }
+
+// QueueProbe is what a wire's counters say next to what its table holds, read
+// together so a wire that has stopped delivering can say why.
+type QueueProbe struct {
+	// Depth, Bytes and Inflight are the counters.
+	Depth, Bytes int64
+	Inflight     uint64
+	Appended     int64
+	Acked        int64
+	Dropped      int64
+	// Rows, RowBytes, MinSeq and MaxSeq are what the table holds for the wire.
+	Rows, RowBytes int64
+	MinSeq, MaxSeq uint64
+}
+
+// Probe reads the wire's table and counters. It is for a wire that looks
+// stuck, not for a hot path.
+func (q *WireQueue) Probe() (QueueProbe, error) {
+	p := QueueProbe{
+		Depth: q.depth.Load(), Bytes: q.bytes.Load(), Inflight: q.inflight.Load(),
+		Appended: q.appended.Load(), Acked: q.acked.Load(), Dropped: q.dropped.Load(),
+	}
+	var minSeq, maxSeq sql.NullInt64
+	err := q.s.db.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(LENGTH(body) + ?), 0), MIN(seq), MAX(seq) FROM wire_queue WHERE wire = ?`,
+		RowOverhead, q.id).Scan(&p.Rows, &p.RowBytes, &minSeq, &maxSeq)
+	p.MinSeq, p.MaxSeq = uint64(minSeq.Int64), uint64(maxSeq.Int64)
+	return p, err
+}
 
 // CountGaveUp is kept by the pump when it stops retrying a message.
 func (q *WireQueue) CountGaveUp() { q.gaveUp.Add(1) }

@@ -5,24 +5,18 @@
 // from the runtime to prove the wire is gone from the file too.
 
 import { expect, test } from '@playwright/test';
-import { canvasNode, deployed, focusCanvas, seed, signIn, tabState, threeNodes, topDeploy } from './helpers';
+import { canvasNode, stableCentre, deployed, focusCanvas, seed, signIn, tabState, threeNodes, topDeploy } from './helpers';
 
 const wires = (page: import('@playwright/test').Page) => page.locator('.canvas-host > .canvas path.wire');
 const wireEl = (page: import('@playwright/test').Page, from: string, to: string) =>
   page.locator(`.canvas-host > .canvas path.wire[data-from="${from}"][data-to="${to}"]`);
-
-/** The middle of a wire. The nodes sit on one row, so the middle of the line is on it. */
-async function middle(page: import('@playwright/test').Page, from: string, to: string): Promise<{ x: number; y: number }> {
-  const box = (await wireEl(page, from, to).boundingBox())!;
-  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-}
 
 test('alt-click deletes a wire, a plain click does not, and undo puts it back', async ({ page, request }) => {
   await seed(request, threeNodes());
   await signIn(page);
   await expect(wires(page)).toHaveCount(2);
 
-  const at = await middle(page, 'i1', 'c1');
+  const at = await stableCentre(page, wireEl(page, 'i1', 'c1'));
   await page.mouse.click(at.x, at.y);
   await expect(wires(page)).toHaveCount(2);
 

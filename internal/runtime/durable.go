@@ -605,6 +605,9 @@ func (w *durableWire) pump(ctx context.Context) {
 				w.setSpill(false)
 			}
 			w.mu.Unlock()
+			if w.q.Depth() > 0 {
+				w.checkStranded(ctx, cursor)
+			}
 			if !idle() {
 				return
 			}
@@ -614,6 +617,47 @@ func (w *durableWire) pump(ctx context.Context) {
 			return
 		}
 		cursor = e.Seq
+	}
+}
+
+// strandedRecheck is how long the pump waits before it believes a queue that
+// says it holds messages and yields none. An eviction deletes its row a moment
+// before it lowers the depth, and a sender's message counts only once it is
+// committed, so a look taken inside those moments is not a fault.
+const strandedRecheck = 20 * time.Millisecond
+
+// checkStranded runs when the pump found nothing after its cursor and the
+// wire's depth says something is waiting. If that is still true after a
+// recheck, the wire is stuck, and it is counted and described once per kind,
+// with the counters and the table side by side, so the cause can be read off
+// the log and not guessed from a hung test.
+func (w *durableWire) checkStranded(ctx context.Context, cursor uint64) {
+	if !sleepCtx(ctx, strandedRecheck) {
+		return
+	}
+	if _, ok, err := w.q.Next(cursor); err != nil || ok {
+		return
+	}
+	p, err := w.q.Probe()
+	if err != nil || p.Depth == 0 {
+		return
+	}
+	w.mu.Lock()
+	mem, pend := w.memInflight, w.pendingAppends
+	w.mu.Unlock()
+	if mem > 0 || pend > 0 {
+		return
+	}
+	kind := "rows-behind-the-cursor"
+	if p.Rows == 0 {
+		kind = "depth-without-rows"
+	} else if p.MinSeq > cursor {
+		return
+	}
+	w.q.CountStranded()
+	if _, seen := w.warned.LoadOrStore("stranded:"+kind, true); !seen {
+		w.logf("durable wire %s is stuck (%s): the pump has delivered through seq %d and finds nothing after it, the wire's depth is %d (%d bytes), and the table holds %d rows (%d bytes) from seq %d to %d; in flight %d, appended %d, delivered %d, dropped %d",
+			w.key, kind, cursor, p.Depth, p.Bytes, p.Rows, p.RowBytes, p.MinSeq, p.MaxSeq, p.Inflight, p.Appended, p.Acked, p.Dropped)
 	}
 }
 

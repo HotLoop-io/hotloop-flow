@@ -4,7 +4,7 @@
 // runs the flow: a wire that gives up hands the message to a Catch node.
 
 import { expect, test } from '@playwright/test';
-import { allNodes, canvasNode, deployed, dialog, focusCanvas, press, seed, select, signIn, tabState, threeNodes, topDeploy, type Entry } from './helpers';
+import { allNodes, stableCentre, canvasNode, deployed, dialog, focusCanvas, press, seed, select, signIn, tabState, threeNodes, topDeploy, type Entry } from './helpers';
 
 const wireEl = (page: import('@playwright/test').Page, from: string, to: string) =>
   page.locator(`.canvas-host > .canvas path.wire[data-from="${from}"][data-to="${to}"]`);
@@ -15,10 +15,10 @@ async function deploy(page: import('@playwright/test').Page): Promise<void> {
   await expect(tabState(page)).toHaveText('saved');
 }
 
-/** Double-clicks the middle of a wire. The nodes sit on one row, so the middle of the line is on it. */
+/** Double-clicks the middle of a wire, once the editor has stopped redrawing it. */
 async function openWire(page: import('@playwright/test').Page, from: string, to: string): Promise<void> {
-  const box = (await wireEl(page, from, to).boundingBox())!;
-  await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2);
+  const at = await stableCentre(page, wireEl(page, from, to));
+  await page.mouse.dblclick(at.x, at.y);
   await expect(dialog(page)).toContainText('Wire');
 }
 
