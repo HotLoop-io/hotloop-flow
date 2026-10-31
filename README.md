@@ -1686,10 +1686,12 @@ Secret, and every tool in HotLoop's MCP docs is there:
  "x": 300, "y": 100, "wires": [["use"]]}
 ```
 
-HotLoop sees the call as an MCP client's, under its own rules: writes from MCP
-are off unless HotLoop was told otherwise, and a `write_tag` it refuses comes
-back as the node's error in HotLoop's words. To write through HotLoop's gate
-from a flow without MCP, use the HotLoop nodes above.
+HotLoop sees the call as an MCP client's, under its own rules: MCP reads and
+writes, through the same gate as everybody else, so a `write_tag` to an armed tag
+in range goes through (once HotLoop's own writes are switched on) and one it
+refuses, a tag nobody marked writable say, comes back as the node's error in
+HotLoop's words. To write through HotLoop's gate from a flow without MCP, use
+the HotLoop nodes above.
 
 ### What it was tested against
 

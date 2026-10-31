@@ -95,16 +95,27 @@ func TestHotloopMCPClientNodeAgainstTheRealHotloop(t *testing.T) {
 	}
 	t.Logf("unknown tool: %v", err)
 
-	// A tool that reports an error raises one. HotLoop refuses an MCP write
-	// when MCP writes are off, in its own words, and the register does not move.
-	before := l.plc(t, "holding", hlSetpointAddr)
+	// MCP writes, as HotLoop ships it: through the write gate like everybody's.
+	// An armed tag takes the value and the register moves.
 	write := l.mcpClientNode(t, token, `{"server":"mcp","tool":"write_tag","arguments":"{\"tag\":\"flowtest/sp\",\"value\":50,\"reason\":\"flow test\"}","argumentsType":"json"}`)
-	e, err = send(t, write, msg(t, `{}`))
-	if err == nil {
-		t.Fatalf("write_tag with MCP writes off was accepted: %#v", e.on(0)[0].Payload())
+	if e, err = send(t, write, msg(t, `{}`)); err != nil {
+		t.Fatalf("write_tag to an armed tag through the node: %v", err)
 	}
-	t.Logf("write_tag: %v", err)
-	if got := l.plc(t, "holding", hlSetpointAddr); got != before {
+	t.Logf("write_tag: %#v", e.on(0)[0].Payload())
+	if got := l.plc(t, "holding", hlSetpointAddr); got != 50.0 {
+		t.Errorf("the PLC holds %v after an MCP write of 50", got)
+	}
+
+	// A tool that reports an error raises one. A tag nobody marked writable is
+	// refused in HotLoop's own words, and the register does not move.
+	before := l.plc(t, "holding", hlLockedAddr)
+	locked := l.mcpClientNode(t, token, `{"server":"mcp","tool":"write_tag","arguments":"{\"tag\":\"flowtest/locked\",\"value\":9,\"reason\":\"flow test\"}","argumentsType":"json"}`)
+	e, err = send(t, locked, msg(t, `{}`))
+	if err == nil || !strings.Contains(err.Error(), "not marked writable") {
+		t.Fatalf("write_tag to a tag that is not armed: err = %v", err)
+	}
+	t.Logf("write_tag to a locked tag: %v", err)
+	if got := l.plc(t, "holding", hlLockedAddr); got != before {
 		t.Errorf("the PLC moved from %v to %v on a refused MCP write", before, got)
 	}
 
