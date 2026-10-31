@@ -94,6 +94,46 @@ jobs:
           fails --set network.mode=macvlan --set network.macvlan.master=eth1
           fails --set discovery.enabled=true
 
+      # The same two checks ci.yml makes of the dashboard's side of the contract. This
+      # workflow is what a tag runs, and it ran none of them, so a tag cut from a chart
+      # that had stopped taking the dashboard's labels or key would have published it.
+      - name: Tenant labels reach every resource, and only when asked for
+        # The EmberNET dashboard passes tenantLabels on an App Store deploy and expects
+        # them on everything the chart renders. This chart ignored the value until
+        # 2.0.3, and nothing said so: the labels just were not there on the cluster.
+        # Seven places carry it: six resources, and the Deployment's pod template.
+        run: |
+          N=$(helm template t charts/hotloop-flow | grep -c 'embernet.ai/tenant' || true)
+          [ "$N" = 0 ] || { echo "::error::a default render carries a tenant label ($N)"; exit 1; }
+          helm template t charts/hotloop-flow --set-string 'tenantLabels.embernet\.ai/tenant=acme' > tenant.yaml
+          N=$(grep -c 'embernet.ai/tenant: "acme"' tenant.yaml || true)
+          [ "$N" = 7 ] || { echo "::error::expected the tenant label in 7 places, found $N"; exit 1; }
+
+      - name: Dashboard sign-in renders only when the key is passed
+        # The key is the dashboard's PUBLIC half, passed by the App Store. With
+        # none, nothing about sign-in may render, or an install from before the
+        # dashboard had a key would change on upgrade.
+        run: |
+          helm template t charts/hotloop-flow --namespace tenant-fir-001 > plain.yaml
+          if grep -q 'assertion\|embernet-signin\|embernet.ai/signin' plain.yaml; then
+            echo "::error::a render with no key carries sign-in"; exit 1
+          fi
+          openssl ecparam -name prime256v1 -genkey -noout | openssl ec -pubout -out pub.pem 2>/dev/null
+          helm template t charts/hotloop-flow --namespace tenant-fir-001 \
+            --set embernetSignin.driver=assertion --set-file embernetSignin.publicKey=pub.pem > signin.yaml
+          grep -q 'embernet.ai/signin: assertion' signin.yaml || { echo "::error::the Service does not say it signs in by assertion"; exit 1; }
+          grep -q 'audience: "fir-001/t"' signin.yaml || { echo "::error::the audience is not <tenant>/<service>"; exit 1; }
+          grep -q 'publicKeyFile: /etc/embernet-signin/public.pem' signin.yaml || { echo "::error::the key path is not in the config"; exit 1; }
+          grep -A3 -- '- name: embernet-signin' signin.yaml | grep -q 'readOnly: true' || { echo "::error::the key is not mounted read-only"; exit 1; }
+          grep -q 'BEGIN PUBLIC KEY' signin.yaml || { echo "::error::the public key is not in the ConfigMap"; exit 1; }
+          if grep -q 'PRIVATE KEY' signin.yaml; then echo "::error::a private key in the render"; exit 1; fi
+          # The admin login is still there: it is the break-glass.
+          grep -q 'HOTLOOP_FLOW_ADMIN_PASSWORD_HASH' signin.yaml || { echo "::error::no admin login to break glass with"; exit 1; }
+          if helm template t charts/hotloop-flow --namespace x \
+            --set embernetSignin.driver=assertion --set-file embernetSignin.publicKey=pub.pem >/dev/null 2>&1; then
+            echo "::error::a signed-in render with no audience was accepted"; exit 1
+          fi
+
   publish:
     name: Publish
     needs: lint
