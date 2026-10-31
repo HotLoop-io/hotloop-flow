@@ -11,9 +11,9 @@ Additional Use Grant: You may make production use of the Licensed Work in these 
 
 (1) Home and Lab Use. You may use the Licensed Work for personal, household, hobby, non-commercial, educational, evaluation, development and testing purposes. Evaluation, development and testing count as Home and Lab Use only while the Licensed Work is not running, monitoring or controlling live operations of a business.
 
-(2) Education, Nonprofit and Government Use. If you are an Educational Institution, a Nonprofit Organization or a Government Body, you may use the Licensed Work for your own operations and mission, anywhere, without running it through EmberNET. You may have a contractor install and operate the Licensed Work for you, on equipment you own or control.
+(2) Education, Nonprofit and Government Use. If you are an Educational Institution, a Nonprofit Organization or a Government Body, you may use the Licensed Work for your own operations and mission, anywhere, without running it through EmberNet. You may have a contractor install and operate the Licensed Work for you, on equipment you own or control.
 
-(3) Business Use through EmberNET. You may make Business Use of the Licensed Work if, and only if, you run it through EmberNET (https://embernet.ai), HotLoop's channel for business use, under the EmberNET terms in effect for the account you run it under.
+(3) Business Use through EmberNet. You may make Business Use of the Licensed Work if, and only if, you run it through EmberNet (https://embernet.ai), HotLoop's channel for business use, under the EmberNet terms in effect for the account you run it under.
 
 For purposes of this grant:
 
@@ -27,7 +27,7 @@ Each of the three is the institution itself. A for-profit subsidiary, affiliate 
 
 "Business Use" means any use by, for or on behalf of a company, partnership, sole proprietorship or other for-profit organization, or in the course of earning a living, to run, monitor, control or support its operations, facilities, products or services. It is Business Use whether the use is purely internal or reaches customers, and whether or not a fee is charged. Use that is not Home and Lab Use and is not covered by paragraph (2) is Business Use.
 
-"Run it through EmberNET" means that each copy of the Licensed Work used for Business Use is deployed and operated under an EmberNET account. The account may be the account of the organization the Licensed Work is operated for, or the account of a systems integrator that installs and operates it for that organization. Either one is acceptable. A "systems integrator" is a business that installs, configures and operates the Licensed Work for its customers on equipment or in cloud accounts that the customer owns or controls. A systems integrator may charge for its own services, such as installation, configuration and support, but not for the Licensed Work itself or for access to it.
+"Run it through EmberNet" means that each copy of the Licensed Work used for Business Use is deployed and operated under an EmberNet account. The account may be the account of the organization the Licensed Work is operated for, or the account of a systems integrator that installs and operates it for that organization. Either one is acceptable. A "systems integrator" is a business that installs, configures and operates the Licensed Work for its customers on equipment or in cloud accounts that the customer owns or controls. A systems integrator may charge for its own services, such as installation, configuration and support, but not for the Licensed Work itself or for access to it.
 
 This grant does not extend to any of the following: (a) offer the Licensed Work, or any of its functionality, to third parties as a hosted, managed or software-as-a-service offering; (b) sell, resell, sublicense, rent or lease the Licensed Work; (c) embed or bundle the Licensed Work in a product or service that you sell, license or otherwise provide for a fee; or (d) charge anyone for access to the Licensed Work.
 
