@@ -354,9 +354,9 @@
   }
 
   function addDiagram(): void {
-    const label = prompt('Name for the new diagram', `Diagram ${graph.tabs().length + 1}`);
+    const label = prompt('Name for the new FlowLab diagram', `Diagram ${graph.tabs().length + 1}`);
     if (!label) return;
-    const body = confirm('Is this the body of a loop? OK for a loop body, Cancel for a diagram you run.');
+    const body = confirm('Is this the body of a loop? OK for a loop body, Cancel for a FlowLab diagram you run.');
     const tab = graph.addTab(label);
     graph.makeDiagram(tab.id, body ? { role: 'body' } : {});
     bump();

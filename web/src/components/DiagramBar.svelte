@@ -29,6 +29,7 @@
 </script>
 
 <div class="diagram-bar" data-test="diagram-bar">
+  <span class="bar-tag mono" title="This tab is a FlowLab diagram">FlowLab</span>
   <button class="primary" data-test="diagram-run" disabled={running || problems.length > 0} onclick={onrun}>Run</button>
   <button class="ghost" data-test="diagram-stop" disabled={!running} onclick={onstop}>Stop</button>
   <span class="sep"></span>

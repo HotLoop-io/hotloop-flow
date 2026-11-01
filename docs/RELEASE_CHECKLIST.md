@@ -14,7 +14,7 @@ only on a tag, side by side, neither waiting for the other:
 
 | Workflow | What it does | Where it lands |
 |---|---|---|
-| `image-publish.yml` | Builds the one `Containerfile` with Podman, one platform at a time into one manifest list for linux/amd64 and linux/arm64, checks the list and each binary, and pushes `X.Y.Z`, `X.Y` and `X` | `ghcr.io/hotloop-io/hotloop-flow` |
+| `image-publish.yml` | Builds the one `Containerfile` with Podman, one platform at a time into one manifest list for the platforms in its `PLATFORMS` line, checks the list and each binary, and pushes `X.Y.Z`, `X.Y` and `X` (`build/publish-tags.sh`) | `ghcr.io/hotloop-io/hotloop-flow` |
 | `helm-publish.yml` | Lints the chart, packages it at the tag's version, rebuilds `index.yaml` from that version alone | gh-pages, served at `https://hotloop.io/hotloop-flow/` |
 
 They share nothing to race on: one writes ghcr, the other writes gh-pages.
@@ -138,6 +138,24 @@ no em or en dashes.
 
 The same notes go on the website in a second PR, after the release is public
 (section 9).
+
+## Two runs: amd64 first, then multi-arch
+
+A release builds amd64 only, reaches production, and has to read stable there.
+Then one small version bump with nothing else in it adds arm64. The platforms a
+tag builds are the one `PLATFORMS` line at the top of `image-publish.yml`: the
+release PR leaves it at `"amd64"`, and the follow-up changes it to
+`"amd64 arm64"` along with the version text and nothing else (Patrick, 2026-11-01).
+
+An amd64 run must not take an image away from a box on another architecture.
+`X.Y.Z` is new and holds what the run built. `X.Y` and `X` are tags other boxes
+follow, so `build/publish-tags.sh` puts the new amd64 image on them and keeps
+for every other platform the image the tag already points at. Flow publishes no
+`stable` tag: `X.Y` and `X` are the ones that float. A workflow was touched, so
+`actionlint .github/workflows/*.yml` runs with the gates in section 4.
+
+After the tag, section 8's manifest check reads the lists: `X.Y.Z` holds the
+platforms that run built, and `X` still holds an arm64 image.
 
 ## 4. Gates
 
@@ -359,7 +377,7 @@ curl -s -D - -o manifest.json -H "Authorization: Bearer $T" \
 python -c 'import json; print(sorted(p["platform"]["architecture"] for p in json.load(open("manifest.json"))["manifests"] if p["platform"]["architecture"] != "unknown"))'
 ```
 
-`200`, a digest, and `['amd64', 'arm64']`. A `401` means the package isn't public
+`200`, a digest, and the platforms this tag built: `['amd64']` for the first run of a release, `['amd64', 'arm64']` after the follow-up. For the floating tags, the platforms they held before still show: `curl` the same manifest for `X` and `X.Y` and for the previous release's tag, and nothing that was there may be gone. A `401` means the package isn't public
 (section 10). Then pull it for real with an empty auth file, so no stored login
 can help, and ask it what it is:
 

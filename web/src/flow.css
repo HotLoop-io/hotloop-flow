@@ -521,3 +521,4 @@ details[open] > summary::before { transform: rotate(90deg); }
 .probe-history li span { color: var(--hl-ink-soft); margin-right: 8px; }
 .wire.probed { stroke-dasharray: 2 4; }
 .canvas-host.has-bar > .canvas { margin-top: 84px; height: calc(100% - 84px); }
+.diagram-bar .bar-tag { color: var(--hl-ink-soft); letter-spacing: var(--hl-ls-label); text-transform: uppercase; font-size: var(--hl-fs-2xs); padding-right: 4px; }
