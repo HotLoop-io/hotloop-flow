@@ -366,6 +366,9 @@ func (s *StandInServer) control(p []byte, req taskReq, resp proto.Message, what 
 			return nil, CodeStandInFault, "stand-in: the task has no channels or no sample clock to start"
 		}
 		t.started = true
+		if t.mode == pb.AcquisitionType_ACQUISITION_TYPE_FINITE_SAMPS {
+			t.drawn = 0 // a finite task starts its acquisition over
+		}
 	case "stop":
 		t.started = false
 	case "clear":

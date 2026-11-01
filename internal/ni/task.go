@@ -132,14 +132,10 @@ type Thermocouple struct {
 
 // AddThermocouple adds temperature input channels.
 func (t *Task) AddThermocouple(ctx context.Context, tc Thermocouple) error {
-	typ, ok := map[string]int32{"B": tcB, "E": tcE, "J": tcJ, "K": tcK, "N": tcN, "R": tcR, "S": tcS, "T": tcT}[strings.ToUpper(tc.Type)]
-	if !ok {
-		return fmt.Errorf("ni: %q is not a thermocouple type (B, E, J, K, N, R, S, T)", tc.Type)
+	if err := CheckThermocouple(tc.Type, tc.Unit); err != nil {
+		return err
 	}
-	unit, ok := map[string]int32{"": tempC, "C": tempC, "F": tempF, "K": tempK, "R": tempR}[strings.ToUpper(tc.Unit)]
-	if !ok {
-		return fmt.Errorf("ni: %q is not a temperature unit (C, F, K, R)", tc.Unit)
-	}
+	typ, unit := thermocoupleTypes[strings.ToUpper(tc.Type)], temperatureUnits[strings.ToUpper(tc.Unit)]
 	c, n, err := t.common(tc.Channel)
 	if err != nil {
 		return err
@@ -315,4 +311,24 @@ func channelCount(s string) (int, error) {
 		total += b - a + 1
 	}
 	return total, nil
+}
+
+// CheckTerminal says whether t is a wiring setting the client knows, so a node
+// can refuse a wrong one when its diagram is checked, before any run.
+func CheckTerminal(t Terminal) (int32, error) { return t.enum() }
+
+var (
+	thermocoupleTypes = map[string]int32{"B": tcB, "E": tcE, "J": tcJ, "K": tcK, "N": tcN, "R": tcR, "S": tcS, "T": tcT}
+	temperatureUnits  = map[string]int32{"": tempC, "C": tempC, "F": tempF, "K": tempK, "R": tempR}
+)
+
+// CheckThermocouple says whether the type and unit are ones the client knows.
+func CheckThermocouple(typ, unit string) error {
+	if _, ok := thermocoupleTypes[strings.ToUpper(typ)]; !ok {
+		return fmt.Errorf("ni: %q is not a thermocouple type (B, E, J, K, N, R, S, T)", typ)
+	}
+	if _, ok := temperatureUnits[strings.ToUpper(unit)]; !ok {
+		return fmt.Errorf("ni: %q is not a temperature unit (C, F, K, R)", unit)
+	}
+	return nil
 }

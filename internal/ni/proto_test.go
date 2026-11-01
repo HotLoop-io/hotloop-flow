@@ -327,8 +327,10 @@ func TestEnumValuesAreNIs(t *testing.T) {
 			continue
 		}
 		v := e.Values().ByName(protoreflect.Name(c.value))
-		if v == nil || int32(v.Number()) != c.got {
-			t.Errorf("%s: wire.go sends %d, NI's file says %v", c.value, c.got, v)
+		if v == nil {
+			t.Errorf("%s is not in NI's file", c.value)
+		} else if int32(v.Number()) != c.got {
+			t.Errorf("%s: wire.go sends %d, NI's file says %d", c.value, c.got, v.Number())
 		}
 	}
 	if v := sess.Enums().ByName("SessionInitializationBehavior").Values().ByName("SESSION_INITIALIZATION_BEHAVIOR_INITIALIZE_NEW"); v == nil || v.Number() != sessionInitializeNew {
