@@ -75,6 +75,7 @@ Events for a run go out on the same socket as the editor's, as `diagram/<id>/nod
 | `dia-serial-open`, `dia-serial-read`, `dia-serial-write` | A serial port. Reads end at a terminator or a byte count. |
 | `dia-parse-reading`, `dia-stable` | Take a number and unit out of a line, and say whether the last few agree. |
 | `dia-log-text` | Appends a record as a row of a text file, with a time column. |
+| `dia-daq-read` | Reads samples from a data acquisition task on NI hardware, through NI's gRPC Device Server. See Data acquisition below. |
 | `dia-control`, `dia-indicator`, `dia-chart` | The panel. |
 | `dia-stats` | The mean, RMS, smallest, largest and standard deviation of an array. The standard deviation divides by n minus one, so it needs two readings. |
 | `dia-integral` | The area under an array by the trapezoid rule, as one number or as the running area at each sample. |
@@ -114,6 +115,63 @@ value arrives with none.
 A port that goes away, such as a pulled cable or an unplugged adapter, is a fault on
 the read's error wire. The next read tries to open it again, once a second, and counts
 the loss and the return. Flow control lines are not offered.
+
+### Data acquisition
+
+`dia-daq-read` reads a task from NI hardware, such as a CompactDAQ chassis, through
+NI's own open gRPC Device Server. Flow talks to that server over the network, so the
+hardware can be on a different machine from Flow, and Flow needs no NI driver and no
+vendor library of its own. It stays one static binary.
+
+**On the machine the hardware is attached to**, install NI's DAQmx driver and NI's
+gRPC Device Server (https://github.com/ni/grpc-device, MIT licensed). The server
+listens on that machine only (`localhost`, port 31763) until its configuration file
+says otherwise. To reach it from Flow on another machine, set `address` in its
+`server_config.json` to `[::]` or the interface you want, and turn on TLS by setting
+`server_cert`, `server_key`, and, for mutual TLS, `root_cert`, with the files in the
+`certs` folder beside the configuration. NI's README has the details for the version
+you run. Do not leave the server's default, unsecured port open on a plant network:
+anyone who can reach it can run the hardware.
+
+**In the node**, set:
+
+* `address` to `host:port` of the server.
+* `tls` to `off` (only for a server on the same machine), `on` (Flow checks the
+  server's certificate against `caFile`, or the system's authorities if that is
+  empty), or `mutual` (Flow also presents `certFile` and `keyFile`, which the server
+  checks against its `root_cert`). `serverName` is the name to look for in the
+  server's certificate when it is not the host in `address`.
+* `device` and `channels` to name the hardware, such as `cDAQ1Mod1` and `ai0:3`, or a
+  list like `ai0, ai2`. `kind` is `voltage`, `current`, or `thermocouple`, with `min`
+  and `max` for the range you expect and `terminal` for the wiring. Thermocouples take
+  a `tcType` and a `unit` and use the module's own cold junction compensation.
+* `mode`, `rate`, and `samples`. Finite mode takes one acquisition of `samples` per
+  channel at `rate` on every call, starting it again each time. Continuous mode starts
+  the task on the first call and each call reads the next `samples`, so a node in a
+  loop body reads a stream block by block. `trigger` starts the task on a digital edge
+  at a terminal such as `/cDAQ1/PFI0`.
+
+`y` is the samples as an array for one channel, or an array of arrays, one per channel
+in the order you named them. `dt` is the seconds between samples, one over the rate, so
+a block's length in seconds is its sample count times `dt`: 1,000 samples at 1,000
+samples a second cover 1.000 s. The device's own clock times the samples, as it always
+does. Flow only moves the data. A refusal from the server or the driver comes out on
+`err` with the driver's own code and text, and a server that does not answer in
+`callTimeoutSec` is a timeout. The task lives for the run and is cleared on the server
+when the run ends, so the hardware is free again.
+
+What is done: analog voltage in, analog current in, and thermocouple temperature in,
+finite or continuous, with a sample clock and an optional digital start trigger. What
+is not: digital in and out and counters use different read calls and are not built, and
+neither are writes, other trigger types, or scaling beyond what the module does.
+
+**This has not been run against NI's server.** There is no NI hardware, driver, or
+server in our lab. Every test runs against a stand-in server we wrote, which speaks
+the same calls and answers with a sine wave. What backs the wire format is a test that
+reads NI's own protocol files, kept in `third_party/ni-grpc-device/`, and checks that
+every message the client sends and reads has the same field numbers, names, and types.
+That shows we say the right words. It does not show NI's server behaves the way the
+stand-in does.
 
 ## The panel
 

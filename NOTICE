@@ -256,3 +256,53 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+--------------------------------------------------------------------------------
+ni/grpc-device
+--------------------------------------------------------------------------------
+
+The DAQ client (internal/ni/ and the dia-daq-read node) talks to the NI gRPC
+Device Server, which NI publishes at https://github.com/ni/grpc-device. HotLoop
+Flow is not affiliated with or endorsed by National Instruments. Nothing of NI's
+server or NI's drivers is included; only the description of its messages is.
+
+ni/grpc-device v2.20.0 (commit 65f4e23238e38525963996eac4f51814226c551e) and
+ni/ni-apis (commit 00356cce09dd61d15f6799a87c27460a7d7a0c24, the revision
+v2.20.0 pins)
+    https://github.com/ni/grpc-device
+    https://github.com/ni/ni-apis
+    Copyright (c) 2022, National Instruments Corp.
+    Licensed under the MIT License (the full text is below, and in
+    third_party/ni-grpc-device/LICENSE).
+    The files NI wrote are kept byte for byte in third_party/ni-grpc-device/ and
+    are not compiled into the binary. They are used by a test.
+    These files are derived from them, and each opens with a comment saying so:
+      internal/ni/proto/nidaqmx.proto and session.proto, cut down to the
+        messages and methods Flow calls, with NI's names and numbers kept
+      internal/ni/proto/nidaqmx.pb.go and session.pb.go, generated from those
+      internal/ni/wire.go, which writes and reads those messages by hand with
+        NI's field numbers and enum values
+    The binary carries only wire.go's constants and field numbers.
+
+MIT License
+
+Copyright (c) 2022, National Instruments Corp.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

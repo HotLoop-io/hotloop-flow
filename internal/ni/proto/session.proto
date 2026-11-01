@@ -1,0 +1,26 @@
+//---------------------------------------------------------------------
+// Ported from ni/ni-apis ni/grpcdevice/v1/session.proto at commit
+// 00356cce09dd61d15f6799a87c27460a7d7a0c24 (the revision ni/grpc-device v2.20.0
+// pins), MIT, Copyright (c) 2022, National Instruments Corp.
+//
+// Modified by HotLoop: option go_package is added. Nothing else is changed.
+//---------------------------------------------------------------------
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.ni.grpc.device";
+option java_outer_classname = "NiDevice";
+option csharp_namespace = "NationalInstruments.Grpc.Device";
+option go_package = "github.com/HotLoop-io/hotloop-flow/internal/ni/proto;proto";
+
+package nidevice_grpc;
+
+enum SessionInitializationBehavior {
+  SESSION_INITIALIZATION_BEHAVIOR_UNSPECIFIED = 0;
+  SESSION_INITIALIZATION_BEHAVIOR_INITIALIZE_NEW = 1;
+  SESSION_INITIALIZATION_BEHAVIOR_ATTACH_TO_EXISTING = 2;
+}
+
+message Session {
+  string name = 1;
+}
