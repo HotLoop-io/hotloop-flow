@@ -390,7 +390,7 @@ func parseMeta(b []byte, o binary.ByteOrder) ([]update, error) {
 			}
 			u.mode = 2
 			u.idx = rawIndex{dtype: dt.normal(), count: count, size: size}
-			if dt == TypeString && size < count*4 && count < 1<<60 {
+			if dt == TypeString && count > size/4 {
 				return nil, fmt.Errorf("%s is %d strings in %d bytes", u.path, count, size)
 			}
 		}

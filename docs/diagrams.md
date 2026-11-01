@@ -75,7 +75,46 @@ Events for a run go out on the same socket as the editor's, as `diagram/<id>/nod
 | `dia-serial-open`, `dia-serial-read`, `dia-serial-write` | A serial port. Reads end at a terminator or a byte count. |
 | `dia-parse-reading`, `dia-stable` | Take a number and unit out of a line, and say whether the last few agree. |
 | `dia-log-text` | Appends a record as a row of a text file, with a time column. |
+| `dia-log-tdms` | Appends a record to a TDMS file, one channel per field. See below. |
 | `dia-control`, `dia-indicator`, `dia-chart` | The panel. |
+
+### Log to TDMS
+
+`dia-log-tdms` writes the measurements a test bench takes to a TDMS file, the format
+that data acquisition and analysis tools open. Wire a record into `row`. Each field
+of the record is a channel in one group, so a record of `pressure`, `ok` and
+`operator` makes three channels. A number is stored as a 64 bit float, true or false
+as a bool, and anything else as text. A field that holds a list of numbers adds the
+whole list, which is how a block of samples goes in. Settings:
+
+| | |
+|---|---|
+| `path` | The file. A file that is already there is appended to, so one run after another builds one file. |
+| `group` | The group the channels go in. |
+| `columns` | The fields to log, in order. Empty logs every field, by name. |
+| `properties` | A JSON object of properties for the file, such as `{"title": "bench 4", "station": 4}`, written when the run starts. |
+| `sync` | On by default: each row reaches the disk before the node finishes. |
+
+Each row is one segment, written in one piece. If the power goes in the middle of
+one, the file shows where it was cut, a reader returns every row before it, and the
+next run repairs the end of the file and goes on. A field's type is set by the first
+row of a run. A later row that doesn't fit, such as text in a number column, goes
+to the error wire as a bad input and the file is left alone. A missing number is
+written as not-a-number.
+
+To open the file, use any TDMS reader. The library behind the node, `internal/tdms`,
+also writes an optional `.tdms_index` beside the file, and reads files without one.
+Channel properties such as `unit_string` and the waveform properties `wf_start_time`,
+`wf_increment` and `wf_samples` are supported by the library; the node does not set
+them yet.
+
+What the reader accepts: little and big endian segments, interleaved and contiguous
+data, meta data left out of a segment when it hasn't changed, a new object list, 8, 16,
+32 and 64 bit integers, 32 and 64 bit floats, bools, text and timestamps. What it
+refuses, by name and without half reading the file: raw data written by a data
+acquisition driver, scaled or compressed data, extended precision floats, fixed
+point and complex numbers. What the writer writes: little endian, contiguous
+data, and those same types. It does not write big endian.
 
 ### The error wire
 
