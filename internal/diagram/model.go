@@ -312,6 +312,9 @@ func compile(flows *engine.Flows, tabID string) *Diagram {
 		ins := wireInputs(n.Raw[InKey])
 		for oi, targets := range n.Wires {
 			if oi >= len(dn.Out) {
+				if len(targets) == 0 {
+					continue // an empty slot the editor padded, not a wire
+				}
 				d.Problems = append(d.Problems, Problem{Node: id, Text: fmt.Sprintf("wires from output %d, and the node has %d outputs", oi, len(dn.Out))})
 				continue
 			}

@@ -84,7 +84,7 @@
 
   const label = (t: PanelTerminal) => t.label || t.id;
   const fmt = (t: PanelTerminal, v: unknown): string => {
-    if (v === null || v === undefined) return '–';
+    if (v === null || v === undefined) return 'waiting';
     if (typeof v === 'number') return v.toFixed(t.digits ?? 2);
     if (typeof v === 'object') return JSON.stringify(v);
     return String(v);

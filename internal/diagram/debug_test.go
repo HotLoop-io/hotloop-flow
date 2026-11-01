@@ -295,3 +295,14 @@ func TestProblemsNameTheNodeAndInput(t *testing.T) {
 		t.Fatalf("a wire loop was not reported: %v", d.Problems)
 	}
 }
+
+// An output slot with no wire in it, past the last output, is padding and not a
+// mistake: the editor pads a node's wires to its default count.
+func TestEmptyPaddingPastTheLastOutputIsNotAProblem(t *testing.T) {
+	b := newFlow(t).tab("main", nil).node("main", "k", "dia-const", map[string]any{"value": "1"})
+	b.byID["k"]["wires"] = []any{[]any{}, []any{}, []any{}, []any{}, []any{}}
+	m := b.manager()
+	if d, _ := m.Diagram("main"); len(d.Problems) != 0 {
+		t.Fatalf("problems: %v", d.Problems)
+	}
+}

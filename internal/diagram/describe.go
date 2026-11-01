@@ -27,7 +27,7 @@ type Terminal struct {
 	Kind    string         `json:"kind,omitempty"`
 	Style   string         `json:"style,omitempty"`
 	Unit    string         `json:"unit,omitempty"`
-	Digits  int            `json:"digits,omitempty"`
+	Digits  int            `json:"digits"`
 	Min     *float64       `json:"min,omitempty"`
 	Max     *float64       `json:"max,omitempty"`
 	Step    *float64       `json:"step,omitempty"`

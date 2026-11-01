@@ -4,7 +4,7 @@
 // that ships.
 
 import { expect, test, type Page } from '@playwright/test';
-import { canvasNode, centre, deployed, drag, nodeBody, seed, signIn, topDeploy, type Entry } from './helpers';
+import { canvasNode, deployed, drag, nodeBody, seed, signIn, stableCentre, topDeploy, type Entry } from './helpers';
 
 // A counter loop: a carried sum of the pass numbers 0 to 9, which stops at ten
 // passes and gives 45. The main diagram shows both on indicators.
@@ -88,15 +88,19 @@ test('a wire is dropped on a named input, and the file says which', async ({ pag
   // Drag from each constant's value output to the input it should feed: two to a, one to b.
   const out = (id: string) => canvasNode(page, id).locator('.port-out').first();
   const input = (name: string) => canvasNode(page, 'sum').locator(`[data-in-port="${name}"]`);
-  await drag(page, await centre(out('two')), await centre(input('a')));
-  await drag(page, await centre(out('one')), await centre(input('b')));
-  await expect(page.locator('[data-test="diagram-problems"]')).toHaveCount(0);
+  await drag(page, await stableCentre(page, out('two')), await stableCentre(page, input('a')));
+  await drag(page, await stableCentre(page, out('one')), await stableCentre(page, input('b')));
+  // The bar speaks for what is deployed, and a diagram runs from that, so the
+  // problem stays until the fix is deployed.
+  await expect(page.locator('[data-test="diagram-problems"]')).toHaveCount(1);
 
   await topDeploy(page).click();
-  await page.locator('[data-test="review-note"]').fill('two minus one').catch(() => undefined);
-  await page.locator('button', { hasText: /^Deploy$/ }).last().click();
-  await expect.poll(async () => (await deployed(request)).find((e) => e.id === 'two')?.['ew_in']).toEqual([['a'], []]);
+  await page.locator('[data-test="deploy-note"]').fill('two minus one');
+  await page.locator('[data-test="deploy-confirm"]').click();
+  await expect(page.locator('[data-test="tab-state"]')).toHaveText('saved');
+  await expect(page.locator('[data-test="diagram-problems"]')).toHaveCount(0);
+  await expect.poll(async () => (await deployed(request)).find((e) => e.id === 'two')?.['ew_in']).toEqual([['a']]);
   const file = await deployed(request);
-  expect(file.find((e) => e.id === 'one')?.['ew_in']).toEqual([['b'], []]);
+  expect(file.find((e) => e.id === 'one')?.['ew_in']).toEqual([['b']]);
   expect(file.find((e) => e.id === 'two')?.wires?.[0]).toEqual(['sum']);
 });
