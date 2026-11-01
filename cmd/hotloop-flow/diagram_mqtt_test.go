@@ -185,7 +185,7 @@ func TestADiagramLosesNoMessagesAcrossABrokerOutage(t *testing.T) {
 
 	eventually(t, "forty messages", 20*time.Second, func() bool { return len(got.all()) >= 40 })
 	g.cut() // the broker goes away
-	time.Sleep(2500 * time.Millisecond)
+	time.Sleep(4 * time.Second)
 	g.restore(t)
 	waitState("done")
 
@@ -218,5 +218,5 @@ func TestADiagramLosesNoMessagesAcrossABrokerOutage(t *testing.T) {
 	if !ok || spilled == 0 || drained == 0 || depth != 0 {
 		t.Fatalf("outbox: ok=%v direct=%d spilled=%d drained=%d depth=%d; the outage should have spilled to disk and drained", ok, direct, spilled, drained, depth)
 	}
-	t.Logf("%d sent straight out, %d written to disk during the outage and delivered after, %d arrived twice", direct, spilled, dups)
+	t.Logf("%d sent straight out, %d went through disk, during the outage and behind it while the queue drained, %d arrived twice", direct, spilled, dups)
 }

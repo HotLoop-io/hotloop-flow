@@ -32,6 +32,12 @@ type outbox struct {
 	lastErr atomic.Value // string
 }
 
+// sendWait is how long one send may take before the message goes to disk
+// instead. A broker that has gone away must not hold the output for as long as
+// the client would wait for it. The client may still send the message when the
+// broker is back, so a message that timed out and was queued can arrive twice.
+const sendWait = 2 * time.Second
+
 func newOutbox(q *store.WireQueue, send func(ctx context.Context, body []byte) error) *outbox {
 	return &outbox{q: q, send: send, kick: make(chan struct{}, 1)}
 }
@@ -43,12 +49,14 @@ func (o *outbox) Put(ctx context.Context, body []byte) (sent bool, err error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.q.Depth() == 0 {
-		if err := o.send(ctx, body); err == nil {
+		sctx, cancel := context.WithTimeout(ctx, sendWait)
+		err := o.send(sctx, body)
+		cancel()
+		if err == nil {
 			o.direct.Add(1)
 			return true, nil
-		} else {
-			o.lastErr.Store(err.Error())
 		}
+		o.lastErr.Store(err.Error())
 	}
 	if _, err := o.q.Append(body); err != nil {
 		return false, err
@@ -96,7 +104,10 @@ func (o *outbox) deliverOne(ctx context.Context) bool {
 		return false
 	}
 	defer o.q.SetInflight(0)
-	if err := o.send(ctx, e.Body); err != nil {
+	sctx, cancel := context.WithTimeout(ctx, sendWait)
+	err = o.send(sctx, e.Body)
+	cancel()
+	if err != nil {
 		o.lastErr.Store(err.Error())
 		o.q.CountRetry()
 		return false

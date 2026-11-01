@@ -117,7 +117,7 @@ func (b *mqttV3Broker) LinkUp() bool {
 	return b.clientLocked().IsConnectionOpen()
 }
 
-func (b *mqttV3Broker) Publish(_ context.Context, m mqttMessage) error {
+func (b *mqttV3Broker) Publish(ctx context.Context, m mqttMessage) error {
 	b.mu.Lock()
 	client := b.clientLocked()
 	b.mu.Unlock()
@@ -127,7 +127,16 @@ func (b *mqttV3Broker) Publish(_ context.Context, m mqttMessage) error {
 	if m.QoS == 0 {
 		return nil
 	}
-	if !tok.WaitTimeout(10 * time.Second) {
+	// The caller's own deadline ends the wait early. A diagram's durable output
+	// uses that, so a publish that was in flight when the link went down does not
+	// hold the output for ten seconds; the message is queued on disk instead.
+	wait := 10 * time.Second
+	if d, ok := ctx.Deadline(); ok {
+		if left := time.Until(d); left < wait {
+			wait = left
+		}
+	}
+	if wait <= 0 || !tok.WaitTimeout(wait) {
 		return fmt.Errorf("timed out waiting for the broker to acknowledge")
 	}
 	return tok.Error()
