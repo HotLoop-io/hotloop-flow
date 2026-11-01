@@ -76,6 +76,7 @@ Events for a run go out on the same socket as the editor's, as `diagram/<id>/nod
 | `dia-parse-reading`, `dia-stable` | Take a number and unit out of a line, and say whether the last few agree. |
 | `dia-log-text` | Appends a record as a row of a text file, with a time column. |
 | `dia-daq-read` | Reads samples from a data acquisition task on NI hardware, through NI's gRPC Device Server. See Data acquisition below. |
+| `dia-mqtt-out` | Publishes its value through an MQTT server the flow file configures, the same connection the MQTT nodes use. Mark it durable and a message the broker misses is written to disk and sent, in order, when the broker is back, even across a restart. |
 | `dia-control`, `dia-indicator`, `dia-chart` | The panel. |
 | `dia-stats` | The mean, RMS, smallest, largest and standard deviation of an array. The standard deviation divides by n minus one, so it needs two readings. |
 | `dia-integral` | The area under an array by the trapezoid rule, as one number or as the running area at each sample. |
@@ -109,6 +110,10 @@ chain skips everything after it and shows up once at the end. Wire an error to a
 loop's `err` body out and the loop stops on it, with the error on the loop's error
 out. An error indicator on the panel goes red on a fault and clears when the next
 value arrives with none.
+
+### A target that goes down
+
+A durable `dia-mqtt-out` sends straight to the broker while it answers. When it doesn't, the message is committed to Flow's durable store before the node finishes, and a pump delivers the queue, oldest first, when the link is back. Anything put in while others wait goes behind them, so nothing overtakes. Delivery from the queue is at least once: the one message in flight when the connection was cut can arrive twice. The queue lives in the same store and under the same disk quota as a durable wire, and it drains after a restart with no run and no browser. Without durable, a message the broker misses is an error on the error wire.
 
 ### Serial
 

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/node"
+	"github.com/HotLoop-io/hotloop-flow/internal/store"
 )
 
 // ErrNoDiagram is returned for a diagram id that is not deployed.
@@ -19,6 +21,14 @@ var ErrBusy = errors.New("this diagram is already running")
 
 // Publisher carries an event to everyone watching, and must not block.
 type Publisher func(topic string, data map[string]any)
+
+// Services is what a diagram's nodes need from the rest of Flow: a running
+// configuration node by id, such as an MQTT broker, and the durable queue store.
+// Either may be missing, as in a test, and a node that needs one says so.
+type Services struct {
+	ConfigNode func(id string) (node.Node, bool)
+	Spool      *store.Spool
+}
 
 // Manager owns the diagrams of the deployed flow file and the runs of them.
 type Manager struct {
@@ -34,6 +44,11 @@ type Manager struct {
 	started bool
 	nextRun int64
 	flushWG sync.WaitGroup
+
+	services  Services
+	outboxes  map[string]*outbox
+	pumpStop  context.CancelFunc
+	pumpsDone sync.WaitGroup
 }
 
 // NewManager makes a manager. The publisher may be nil, and set later.
@@ -41,9 +56,74 @@ func NewManager(pub Publisher) *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{
 		set: &Set{Diagrams: map[string]*Diagram{}}, runs: map[string]*Run{}, panels: map[string]*Panel{},
-		pub: pub, probes: map[string]map[string]int{}, breaks: map[string][]string{}, bgCtx: ctx, bgStop: cancel,
+		pub: pub, probes: map[string]map[string]int{}, breaks: map[string][]string{}, outboxes: map[string]*outbox{}, bgCtx: ctx, bgStop: cancel,
 	}
 	return m
+}
+
+// SetServices gives the manager the rest of Flow. Call it before Apply.
+func (m *Manager) SetServices(s Services) {
+	m.mu.Lock()
+	m.services = s
+	m.mu.Unlock()
+}
+
+// configNode resolves a configuration node the flow file defines.
+func (m *Manager) configNode(id string) (node.Node, bool) {
+	m.mu.Lock()
+	f := m.services.ConfigNode
+	m.mu.Unlock()
+	if f == nil {
+		return nil, false
+	}
+	return f(id)
+}
+
+// outboxFor returns the durable outbox of a node, made when its diagram was
+// applied.
+func (m *Manager) outboxFor(tab, nodeID string) *outbox {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.outboxes[tab+"/"+nodeID]
+}
+
+// startOutboxes makes an outbox and a pump for every durable output of the
+// diagrams just applied, so a queue left by the last process drains with no run
+// and no browser. The pumps are the manager's, not a run's, because a queue has
+// to drain after the run that filled it has ended.
+func (m *Manager) startOutboxes(set *Set) {
+	m.mu.Lock()
+	if m.pumpStop != nil {
+		m.pumpStop()
+	}
+	m.mu.Unlock()
+	m.pumpsDone.Wait()
+
+	ctx, stop := context.WithCancel(m.bgCtx)
+	boxes := map[string]*outbox{}
+	m.mu.Lock()
+	sp := m.services.Spool
+	m.mu.Unlock()
+	for _, id := range set.Order {
+		d := set.Diagrams[id]
+		for _, nid := range d.Order {
+			dn := d.Nodes[nid]
+			if dn.Kind.Durable == nil || !dn.Kind.Durable(dn.Raw) || sp == nil {
+				continue
+			}
+			key := id + "/" + nid
+			b := newOutbox(sp.Wire("dia:"+key), dn.Kind.Deliver(m, dn.Raw))
+			boxes[key] = b
+			m.pumpsDone.Add(1)
+			go func() {
+				defer m.pumpsDone.Done()
+				b.pump(ctx)
+			}()
+		}
+	}
+	m.mu.Lock()
+	m.outboxes, m.pumpStop = boxes, stop
+	m.mu.Unlock()
 }
 
 // SetPublisher sets where events go.
@@ -88,6 +168,7 @@ func (m *Manager) Apply(flows *engine.Flows) {
 	for _, r := range old {
 		<-r.Done()
 	}
+	m.startOutboxes(set)
 
 	for _, id := range set.Order {
 		d := set.Diagrams[id]
@@ -119,6 +200,12 @@ func (m *Manager) Close() {
 	for _, r := range runs {
 		<-r.Done()
 	}
+	m.mu.Lock()
+	if m.pumpStop != nil {
+		m.pumpStop()
+	}
+	m.mu.Unlock()
+	m.pumpsDone.Wait()
 	m.bgStop()
 	m.flushWG.Wait()
 }
@@ -327,4 +414,14 @@ func (m *Manager) Breakpoints(id string) []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]string(nil), m.breaks[id]...)
+}
+
+// OutboxStats says how a durable output has done: what went straight out, what
+// was written to disk first, what the pump has delivered since, and what waits.
+func (m *Manager) OutboxStats(tab, nodeID string) (direct, spilled, drained, depth int64, ok bool) {
+	b := m.outboxFor(tab, nodeID)
+	if b == nil {
+		return 0, 0, 0, 0, false
+	}
+	return b.direct.Load(), b.spilled.Load(), b.drained.Load(), b.Depth(), true
 }

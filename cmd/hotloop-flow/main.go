@@ -362,6 +362,17 @@ func cmdServe(args []string) error {
 		Diagrams:     app.diagrams,
 	})
 	app.hub = srv.Hub()
+	// A diagram reaches the same brokers the flows do, and the same durable store.
+	app.diagrams.SetServices(diagram.Services{
+		ConfigNode: func(id string) (node.Node, bool) {
+			rt := app.currentRuntime()
+			if rt == nil {
+				return nil, false
+			}
+			return rt.ConfigNode(id)
+		},
+		Spool: spool,
+	})
 	app.diagrams.SetPublisher(func(topic string, data map[string]any) {
 		srv.Hub().Broadcast(runtime.Event{Topic: topic, Data: data, At: time.Now()})
 	})
@@ -827,10 +838,6 @@ func (a *application) apply(ctx context.Context, flows *engine.Flows, expectedRe
 	if err := a.creds.Save(); err != nil {
 		return api.DeployResult{}, fmt.Errorf("saving credentials: %w", err)
 	}
-	// The diagrams of the new file replace the old ones, and a run of an old one
-	// stops. Whether the rest of the file deploys in part or in full is the
-	// message runtime's business; a diagram is not in it.
-	a.diagrams.Apply(flows)
 
 	// Recorded after the save and before the swap. A log that can't be written
 	// doesn't stop the deploy: the flow file is already saved, and refusing now
@@ -871,6 +878,9 @@ func (a *application) apply(ctx context.Context, flows *engine.Flows, expectedRe
 			a.log.Error("node failed to start", "node", f.NodeID, "type", f.Type, "error", f.Err)
 		}
 		a.contexts.Clean(live, liveFlows)
+		// After the runtime has the new file, so a diagram that publishes
+		// through a broker finds the broker it was deployed with.
+		a.diagrams.Apply(flows)
 
 		a.log.Info("deployed", "kind", rec.Kind, "rev", rev, "deployment", seq, "user", rec.User, "type", string(mode),
 			"started", len(up.Started), "restarted", len(up.Restarted),
@@ -890,6 +900,7 @@ func (a *application) apply(ctx context.Context, flows *engine.Flows, expectedRe
 	// Start against the background context, not the request's: the request is
 	// about to complete and its cancellation must not tear down the flows.
 	failures := a.start(context.Background(), flows)
+	a.diagrams.Apply(flows)
 
 	a.log.Info("deployed", "kind", rec.Kind, "rev", rev, "deployment", seq, "user", rec.User,
 		"type", string(runtime.DeployFull), "failures", len(failures))

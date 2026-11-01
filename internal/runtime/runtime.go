@@ -1284,6 +1284,16 @@ func (s *services) ConfigNode(id string) (node.Node, bool) {
 	return n, ok
 }
 
+// ConfigNode returns a running configuration node by id. It is how code that is
+// not a message node, a FlowLab diagram, reaches a broker or a database the flow
+// file configures.
+func (rt *Runtime) ConfigNode(id string) (node.Node, bool) {
+	rt.configsMu.RLock()
+	defer rt.configsMu.RUnlock()
+	n, ok := rt.configs[id]
+	return n, ok
+}
+
 // Env resolves an environment variable, innermost scope first.
 //
 // For a node inside a subflow that means the instance's own properties, then the

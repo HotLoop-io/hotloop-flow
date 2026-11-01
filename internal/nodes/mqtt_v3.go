@@ -106,7 +106,18 @@ func (b *mqttV3Broker) Connected() bool {
 	return b.clientLocked().IsConnected()
 }
 
-func (b *mqttV3Broker) Publish(_ context.Context, m mqttMessage) error {
+// LinkUp is whether the connection is open right now. Connected is paho's
+// IsConnected, which stays true while it is reconnecting so that a message waits
+// in its memory for the link to come back. That is right for a node that wants
+// the message held, and wrong for one that keeps its own durable queue and needs
+// to know the broker is not answering.
+func (b *mqttV3Broker) LinkUp() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.clientLocked().IsConnectionOpen()
+}
+
+func (b *mqttV3Broker) Publish(ctx context.Context, m mqttMessage) error {
 	b.mu.Lock()
 	client := b.clientLocked()
 	b.mu.Unlock()
@@ -116,7 +127,16 @@ func (b *mqttV3Broker) Publish(_ context.Context, m mqttMessage) error {
 	if m.QoS == 0 {
 		return nil
 	}
-	if !tok.WaitTimeout(10 * time.Second) {
+	// The caller's own deadline ends the wait early. A diagram's durable output
+	// uses that, so a publish that was in flight when the link went down does not
+	// hold the output for ten seconds; the message is queued on disk instead.
+	wait := 10 * time.Second
+	if d, ok := ctx.Deadline(); ok {
+		if left := time.Until(d); left < wait {
+			wait = left
+		}
+	}
+	if wait <= 0 || !tok.WaitTimeout(wait) {
 		return fmt.Errorf("timed out waiting for the broker to acknowledge")
 	}
 	return tok.Error()
