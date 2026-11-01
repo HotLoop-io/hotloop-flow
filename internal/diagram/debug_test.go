@@ -306,3 +306,23 @@ func TestEmptyPaddingPastTheLastOutputIsNotAProblem(t *testing.T) {
 		t.Fatalf("problems: %v", d.Problems)
 	}
 }
+
+// Resume after a step runs at full speed to the end, with nothing left stepping.
+func TestResumeAfterAStepRunsToTheEnd(t *testing.T) {
+	m := counterLoop(t).manager()
+	m.SetBreakpoints("main", []string{"loop"})
+	r, err := m.Start("main", StartOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the pause before the loop", func() bool { return fmt.Sprint(r.Controller().Waiting()) == "[loop]" })
+	r.Controller().Step(StepOver)
+	waitFor(t, "the next pause", func() bool { w := r.Controller().Waiting(); return len(w) > 0 && w[0] != "loop" })
+	m.SetBreakpoints("main", nil)
+	r.Controller().Resume()
+	select {
+	case <-r.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatalf("still waiting before %v after resume", r.Controller().Waiting())
+	}
+}
