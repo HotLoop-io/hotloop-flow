@@ -7,9 +7,12 @@ import (
 
 // Summary is a diagram in the list.
 type Summary struct {
-	ID        string    `json:"id"`
-	Label     string    `json:"label"`
-	Role      string    `json:"role"`
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Role  string `json:"role"`
+	// Owner is the diagram to run to run this one. It is the diagram itself
+	// unless this is the body of a loop in another.
+	Owner     string    `json:"owner"`
 	Autostart bool      `json:"autostart"`
 	State     RunState  `json:"state"`
 	Problems  []Problem `json:"problems"`
@@ -83,7 +86,7 @@ func (m *Manager) summary(id string) (Summary, bool) {
 	if !ok {
 		return Summary{}, false
 	}
-	s := Summary{ID: id, Label: d.Label, Role: strProp(d.Settings, "role", "diagram"), State: "idle", Problems: d.Problems}
+	s := Summary{ID: id, Owner: m.ownerOf(id), Label: d.Label, Role: strProp(d.Settings, "role", "diagram"), State: "idle", Problems: d.Problems}
 	s.Autostart, _ = d.Settings["autostart"].(bool)
 	if s.Problems == nil {
 		s.Problems = []Problem{}
@@ -201,4 +204,10 @@ func terminalOf(t *DNode, order int) Terminal {
 	}
 	out.Layout, _ = r[PanelKey].(map[string]any)
 	return out
+}
+
+func (m *Manager) ownerOf(id string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.set.Owner(id)
 }

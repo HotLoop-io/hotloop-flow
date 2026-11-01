@@ -136,7 +136,7 @@
           {:else if t.kind === 'error'}
             {@const e = indicators[t.id] as { status?: boolean; code?: number; source?: string } | undefined}
             <span class="led" class:bad={e?.status === true} class:on={e !== undefined && e.status !== true}></span>
-            <div class="err-text" data-test="ind-value">{e?.status ? `${e.source} (code ${e.code})` : 'no error'}</div>
+            <div class:err-text={e?.status === true} data-test="ind-value">{e?.status ? `${e.source} (code ${e.code})` : 'no error'}</div>
           {:else if t.kind === 'number'}
             <div class="big-value" data-test="ind-value">{fmt(t, indicators[t.id])}{#if t.unit}<span class="unit">{t.unit}</span>{/if}</div>
           {:else}

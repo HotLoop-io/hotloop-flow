@@ -520,3 +520,4 @@ details[open] > summary::before { transform: rotate(90deg); }
 .probe-history { margin: 0; padding: 8px 8px 8px 24px; max-height: 220px; overflow: auto; background: var(--hl-sunken); border-radius: 8px; font-size: var(--hl-fs-xs); overflow-wrap: anywhere; }
 .probe-history li span { color: var(--hl-ink-soft); margin-right: 8px; }
 .wire.probed { stroke-dasharray: 2 4; }
+.canvas-host.has-bar > .canvas { margin-top: 84px; height: calc(100% - 84px); }

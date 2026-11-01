@@ -3,6 +3,7 @@ package diagram
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -147,7 +148,9 @@ func (c *Controller) shouldStopLocked(key string, depth int) bool {
 	if c.breakpoints[key] {
 		return true
 	}
-	if !c.stepping {
+	// Stepping goes node by node. A wire or the start of a pass is only a place
+	// to stop when somebody set a breakpoint there.
+	if !c.stepping || strings.HasPrefix(key, "wire:") || strings.HasPrefix(key, "diagram:") {
 		return false
 	}
 	switch c.step {

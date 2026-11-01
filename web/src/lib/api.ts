@@ -559,6 +559,7 @@ export interface DiagramSummary {
   id: string;
   label: string;
   role: string;
+  owner: string;
   autostart: boolean;
   state: string;
   problems: DiagramProblem[];

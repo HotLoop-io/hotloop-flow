@@ -250,6 +250,8 @@
   const litWires = new Set<string>();
   const wireValues = new Map<string, string>();
   const activeIsDiagram = $derived.by(() => { void rev; return !viewing && graph.isDiagramTab(graph.activeTab); });
+  /** The diagram a run belongs to: the one open, or the one that runs this loop body. */
+  const runId = $derived(diag?.owner ?? graph.activeTab);
   const diagState = $derived(diag?.run?.state ?? (diag ? diag.state : 'idle'));
   const diagProblems = $derived.by(() => {
     if (diagMissing) return [{ text: 'This diagram is not deployed yet. Deploy, then run it.' }];
@@ -264,17 +266,19 @@
   /** The wire key without its tab, which is how the editor and the run name it. */
   const bare = (key: string) => key.slice(key.indexOf('/') + 1);
 
+  // Redrawing the canvas replaces its nodes, so it is done a few times a second
+  // and not on every event, or a fast run would make the nodes hard to click.
   let liveQueued = false;
   function paintLive(): void {
     if (liveQueued) return;
     liveQueued = true;
-    requestAnimationFrame(() => {
+    window.setTimeout(() => {
       liveQueued = false;
       canvas.setRun({
         nodes: new Map(nodeStates), lit: new Set(litWires), values: new Map(wireValues),
         breakpoints: new Set(diag?.breakpoints ?? []), probed: new Set(diag?.probes ?? []),
       });
-    });
+    }, 120);
   }
 
   async function refreshDiagram(): Promise<void> {
@@ -282,6 +286,7 @@
     if (!graph.isDiagramTab(id)) { diag = null; return; }
     try {
       diag = await api.diagram(id);
+      if (diag.owner && diag.owner !== id) diag = await api.diagram(diag.owner);
       diagMissing = false;
       wireValues.clear();
       for (const [k, w] of Object.entries(diag.wires)) wireValues.set(bare(k), JSON.stringify(w.last));
@@ -294,7 +299,7 @@
 
   function onDiagramEvent(e: RuntimeEvent): void {
     const kind = e.topic.split('/')[2];
-    if (e.data.diagram !== graph.activeTab && !diag?.ports[String(e.data.node ?? '')]) return;
+    if (e.data.diagram !== runId && e.data.diagram !== graph.activeTab) return;
     if (kind === 'node') {
       const id = String(e.data.node), st = String(e.data.state);
       if (st === 'done') nodeStates.delete(id);
@@ -327,7 +332,7 @@
     if (!id || !diag) return;
     const keys = new Set(diag.breakpoints);
     if (keys.has(id)) keys.delete(id); else keys.add(id);
-    await diagAction(() => api.setBreakpoints(graph.activeTab, [...keys]));
+    await diagAction(() => api.setBreakpoints(runId, [...keys]));
   }
 
   async function probeWire(w: { from: FlowEntry; port: number; to: FlowEntry }): Promise<void> {
@@ -345,7 +350,7 @@
     if (r.probe) probes.add(full); else probes.delete(full);
     const bps = new Set(diag?.breakpoints ?? []);
     if (r.brk) bps.add(`wire:${full}`); else bps.delete(`wire:${full}`);
-    await diagAction(async () => { await api.setProbes(graph.activeTab, [...probes]); await api.setBreakpoints(graph.activeTab, [...bps]); });
+    await diagAction(async () => { await api.setProbes(runId, [...probes]); await api.setBreakpoints(runId, [...bps]); });
   }
 
   function addDiagram(): void {
@@ -451,7 +456,7 @@
 
   // ── Runtime stats ──────────────────────────────────────────────────────────
   let stats: NodeStat[] = $state.raw([]);
-  const nameOf = (id: string) => { const e = graph.byId(id); return e ? graph.label(e) : id; };
+  const nameOf = (id: string) => { const e = graph.byId(id); return e ? (e.type === 'tab' ? `the start of ${String(e.label ?? 'the diagram')}` : graph.label(e)) : id; };
 
   /** Selects a node on the canvas, going to its flow first. */
   function selectNode(id: string): void {
@@ -1080,18 +1085,18 @@
     }}
   />
 
-  <main class="canvas-host" class:viewing={viewing !== null} bind:this={host}>
+  <main class="canvas-host" class:viewing={viewing !== null} class:has-bar={activeIsDiagram} bind:this={host}>
     {#if activeIsDiagram}
       <DiagramBar
         runState={diagState} error={diag?.run?.error ?? ''} problems={diagProblems} highlight={highlightOn}
         waiting={diag?.run?.waiting ?? []} hasSelection={selectionSize > 0} {breakOnSelection}
-        panelHref={`panel/${encodeURIComponent(graph.activeTab)}`} nodeName={nameOf}
-        onrun={() => void diagAction(() => api.runDiagram(graph.activeTab, { highlightMs: highlightOn ? HIGHLIGHT_MS : 0 }))}
-        onstop={() => void diagAction(() => api.stopDiagram(graph.activeTab))}
-        onhighlight={(on) => { highlightOn = on; void diagAction(() => api.debugDiagram(graph.activeTab, 'highlight', on ? HIGHLIGHT_MS : 0)); }}
-        onpause={() => void diagAction(() => api.debugDiagram(graph.activeTab, 'pause'))}
-        onresume={() => void diagAction(() => api.debugDiagram(graph.activeTab, 'resume'))}
-        onstep={(m) => void diagAction(() => api.debugDiagram(graph.activeTab, `step-${m}`))}
+        panelHref={`panel/${encodeURIComponent(runId)}`} nodeName={nameOf}
+        onrun={() => void diagAction(() => api.runDiagram(runId, { highlightMs: highlightOn ? HIGHLIGHT_MS : 0 }))}
+        onstop={() => void diagAction(() => api.stopDiagram(runId))}
+        onhighlight={(on) => { highlightOn = on; void diagAction(() => api.debugDiagram(runId, 'highlight', on ? HIGHLIGHT_MS : 0)); }}
+        onpause={() => void diagAction(() => api.debugDiagram(runId, 'pause'))}
+        onresume={() => void diagAction(() => api.debugDiagram(runId, 'resume'))}
+        onstep={(m) => void diagAction(() => api.debugDiagram(runId, `step-${m}`))}
         onbreak={() => void toggleBreakOnSelection()}
         onproblem={(id) => selectNode(id)}
       />

@@ -156,6 +156,17 @@ type Set struct {
 	// bodyOf maps a structure node to the diagram it runs. A loop names its body
 	// by the tab's id or, since nobody can read an id, by its name.
 	bodyOf map[string]string
+	// owner maps a body to the diagram you run to run it.
+	owner map[string]string
+}
+
+// Owner returns the diagram that is run to run this one: itself, unless it is
+// the body of a structure in another.
+func (s *Set) Owner(id string) string {
+	if o, ok := s.owner[id]; ok {
+		return o
+	}
+	return id
 }
 
 // Body returns the id of the diagram a structure node runs, and whether there is one.
@@ -166,7 +177,7 @@ func (s *Set) Body(node string) (string, bool) {
 
 // CompileAll compiles every diagram tab in the flow file.
 func CompileAll(flows *engine.Flows) *Set {
-	s := &Set{Diagrams: map[string]*Diagram{}, bodyOf: map[string]string{}}
+	s := &Set{Diagrams: map[string]*Diagram{}, bodyOf: map[string]string{}, owner: map[string]string{}}
 	if flows == nil {
 		return s
 	}
@@ -213,6 +224,20 @@ func CompileAll(flows *engine.Flows) *Set {
 			if b, ok := s.bodyOf[nid]; ok {
 				d.Bodies = append(d.Bodies, b)
 			}
+		}
+	}
+	var own func(top, tab string)
+	own = func(top, tab string) {
+		for _, b := range s.Diagrams[tab].Bodies {
+			if _, seen := s.owner[b]; !seen && b != top {
+				s.owner[b] = top
+				own(top, b)
+			}
+		}
+	}
+	for _, id := range s.Order {
+		if role, _ := s.Diagrams[id].Settings["role"].(string); role != "body" {
+			own(id, id)
 		}
 	}
 	for _, id := range s.Order {

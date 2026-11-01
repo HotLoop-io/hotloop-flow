@@ -3,7 +3,10 @@
 package diagram
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -127,5 +130,61 @@ func TestErrorWireSkipsStopsTheLoopAndKeepsTheSource(t *testing.T) {
 	}
 	if count("parse", "done") != 3 || count("parse", "skipped") != 1 {
 		t.Fatalf("parse: %d done, %d skipped; with an error in, parse must not run", count("parse", "done"), count("parse", "skipped"))
+	}
+}
+
+// The cable is pulled and put back: the read says so on its error wire, the next
+// read opens the port again, frames carry on, and both events are counted.
+func TestSerialSessionReconnectsAfterAPull(t *testing.T) {
+	dir := t.TempDir()
+	link := dir + "/tty"
+	masterA, slaveA := ptyPair(t)
+	if err := os.Symlink(slaveA, link); err != nil {
+		t.Fatal(err)
+	}
+	s := &serialSession{cfg: SerialConfig{Device: link, Baud: 9600, DataBits: 8, StopBits: 1, Parity: "N"}}
+	t.Cleanup(func() { _ = s.Close() })
+	s.mu.Lock()
+	err := s.ensure()
+	s.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitOpened(t, masterA)
+	read := func() (string, error) {
+		b, err := s.read(context.Background(), []byte("\n"), 0, 2*time.Second)
+		return string(b), err
+	}
+	fmt.Fprint(masterA, "one\n")
+	if got, err := read(); err != nil || got != "one" {
+		t.Fatalf("first read: %q, %v", got, err)
+	}
+
+	_ = masterA.Close() // pulled
+	_, err = read()
+	var f *Fault
+	if !errors.As(err, &f) || f.Code != CodeDevice {
+		t.Fatalf("a pulled cable gave %v, want a device error", err)
+	}
+	if l, r := s.Counts(); l != 1 || r != 0 {
+		t.Fatalf("after the pull: %d lost, %d reconnected", l, r)
+	}
+
+	masterB, slaveB := ptyPair(t) // put back, as a new terminal behind the same name
+	_ = os.Remove(link)
+	if err := os.Symlink(slaveB, link); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		// The first read after the pull opens the port; write once it has.
+		waitOpened(t, masterB)
+		fmt.Fprint(masterB, "two\n")
+	}()
+	got, err := read()
+	if err != nil || got != "two" {
+		t.Fatalf("read after the cable came back: %q, %v", got, err)
+	}
+	if l, r := s.Counts(); l != 1 || r != 1 {
+		t.Fatalf("after the return: %d lost, %d reconnected, want 1 and 1", l, r)
 	}
 }
