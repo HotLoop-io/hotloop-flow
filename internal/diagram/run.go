@@ -42,6 +42,8 @@ type Run struct {
 	// highlight is how long, in nanoseconds, each node waits before it runs, so a
 	// person can follow the run. Zero is full speed.
 	highlight atomic.Int64
+	hlMu      sync.Mutex
+	hlTimer   *time.Timer
 
 	wires    wireStore
 	sessions sessions
@@ -137,8 +139,28 @@ func (r *Run) Stop() {
 	r.cancel()
 }
 
-// SetHighlight sets the pause before each node, as highlight execution does.
-func (r *Run) SetHighlight(d time.Duration) { r.highlight.Store(int64(d)) }
+// HighlightLimit is how long highlight execution stays on without being asked
+// for again. It slows every node of a run, so one left on by a browser that went
+// away would quietly slow a logger on a box with no screen.
+const HighlightLimit = 10 * time.Minute
+
+// SetHighlight sets the pause before each node, as highlight execution does. It
+// turns itself off after HighlightLimit.
+func (r *Run) SetHighlight(d time.Duration) {
+	r.highlight.Store(int64(d))
+	r.hlMu.Lock()
+	defer r.hlMu.Unlock()
+	if r.hlTimer != nil {
+		r.hlTimer.Stop()
+		r.hlTimer = nil
+	}
+	if d > 0 {
+		r.hlTimer = time.AfterFunc(HighlightLimit, func() {
+			r.highlight.Store(0)
+			r.emit("run", map[string]any{"run": r.ID, "state": string(StateRunning), "highlight": "off"})
+		})
+	}
+}
 
 // Controller is the run's debugger: breakpoints, stepping and the pause state.
 func (r *Run) Controller() *Controller { return r.ctl }
@@ -165,6 +187,7 @@ func (r *Run) finish(err error) {
 	r.mu.Unlock()
 	r.sessions.closeAll()
 	r.closeLocals()
+	r.SetHighlight(0)
 	data := map[string]any{"run": r.ID, "state": string(st)}
 	if rerr != nil {
 		data["error"] = rerr.Error()

@@ -188,3 +188,22 @@ func TestSerialSessionReconnectsAfterAPull(t *testing.T) {
 		t.Fatalf("after the return: %d lost, %d reconnected, want 1 and 1", l, r)
 	}
 }
+
+// A port that is not there is retried once a second, not as fast as the loop can
+// go, and every attempt is a fault on the error wire.
+func TestAMissingPortIsNotRetriedInATightLoop(t *testing.T) {
+	s := &serialSession{cfg: SerialConfig{Device: t.TempDir() + "/nothing", Baud: 9600, DataBits: 8, StopBits: 1, Parity: "N"}, lost: true}
+	start := time.Now()
+	attempts := 0
+	for time.Since(start) < 2500*time.Millisecond {
+		_, err := s.read(context.Background(), []byte("\n"), 0, time.Second)
+		var f *Fault
+		if !errors.As(err, &f) || f.Code != CodeDevice {
+			t.Fatalf("got %v, want a device fault", err)
+		}
+		attempts++
+	}
+	if attempts > 4 {
+		t.Fatalf("%d attempts in 2.5 s; a missing port should be tried about once a second", attempts)
+	}
+}

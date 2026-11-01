@@ -78,6 +78,22 @@ func (s *serialSession) ensure() error {
 	return nil
 }
 
+// reopenWait is how long a call that finds the port gone waits before it says so.
+// A loop that reads in a cycle would otherwise spin as fast as it can on a port
+// that is not there, and fill the error wire and the metrics with the same fault.
+const reopenWait = time.Second
+
+// cannotOpen waits a moment, unless the run stops, and returns the fault.
+func (s *serialSession) cannotOpen(ctx context.Context, err error) error {
+	t := time.NewTimer(reopenWait)
+	defer t.Stop()
+	select {
+	case <-t.C:
+	case <-ctx.Done():
+	}
+	return &Fault{Code: CodeDevice, Source: err.Error()}
+}
+
 // lose drops a port that failed and notes it, so the next call opens it again.
 func (s *serialSession) lose() {
 	s.drop()
@@ -108,7 +124,7 @@ func (s *serialSession) read(ctx context.Context, term []byte, n int, timeout ti
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ensure(); err != nil {
-		return nil, &Fault{Code: CodeDevice, Source: err.Error()}
+		return nil, s.cannotOpen(ctx, err)
 	}
 	deadline := time.Now().Add(timeout)
 	chunk := make([]byte, 256)
@@ -168,7 +184,7 @@ func (s *serialSession) write(data []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ensure(); err != nil {
-		return &Fault{Code: CodeDevice, Source: err.Error()}
+		return s.cannotOpen(context.Background(), err)
 	}
 	if _, err := s.port.Write(data); err != nil {
 		s.lose()
