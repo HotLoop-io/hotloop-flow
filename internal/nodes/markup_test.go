@@ -68,7 +68,7 @@ func TestXMLDecodesToTheXML2JSShape(t *testing.T) {
 	svc := newTestServices()
 	n := build(t, "xml", `{}`, svc)
 
-	doc := `<readings site="ut3"><reading unit="bar">4.2</reading>` +
+	doc := `<readings site="site1"><reading unit="bar">4.2</reading>` +
 		`<reading unit="bar">4.5</reading></readings>`
 	cfg, err := jsonConfig(map[string]any{"payload": doc})
 	if err != nil {
@@ -88,7 +88,7 @@ func TestXMLDecodesToTheXML2JSShape(t *testing.T) {
 		t.Fatalf("readings is %#v", root["readings"])
 	}
 	attrs, ok := readings["$"].(map[string]any)
-	if !ok || attrs["site"] != "ut3" {
+	if !ok || attrs["site"] != "site1" {
 		t.Fatalf("attributes = %#v, want them under $", readings["$"])
 	}
 	// Every child is an array, which is xml2js's explicitArray default and what
@@ -151,7 +151,7 @@ func TestXMLRoundTrips(t *testing.T) {
 	svc := newTestServices()
 	n := build(t, "xml", `{}`, svc)
 
-	doc := `<readings site="ut3"><reading unit="bar">4.2</reading><reading unit="bar">4.5</reading></readings>`
+	doc := `<readings site="site1"><reading unit="bar">4.2</reading><reading unit="bar">4.5</reading></readings>`
 	cfg, err := jsonConfig(map[string]any{"payload": doc})
 	if err != nil {
 		t.Fatal(err)
