@@ -146,12 +146,17 @@ func TestSpansReachARealCollector(t *testing.T) {
 		t.Fatalf("only %d hops were written down", len(wants))
 	}
 
-	var got map[string]collected
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		raw, _ := os.ReadFile(logPath)
-		got = map[string]collected{}
-		for _, c := range parseCollector(string(raw)) {
+	// What the collector wrote is read from a file that its log follower fills in
+	// as the collector writes, and a follower that is starved of CPU is behind. A
+	// span can be in the file with only the first lines of its attributes, so the
+	// whole comparison is made again on each read until it holds or the time is up.
+	// Checking that a span has arrived and then comparing it once compared half a
+	// span on a slow runner and failed on an attribute the collector had not
+	// finished printing.
+	verify := func(raw string) []string {
+		var problems []string
+		got := map[string]collected{}
+		for _, c := range parseCollector(raw) {
 			got[c.trace+"/"+c.id] = c
 		}
 		missing := 0
@@ -160,54 +165,64 @@ func TestSpansReachARealCollector(t *testing.T) {
 				missing++
 			}
 		}
-		if missing == 0 {
+		if missing > 0 {
+			return []string{fmt.Sprintf("%d of %d spans never showed up in the collector's output (%d spans seen in all)", missing, len(wants), len(got))}
+		}
+		if !strings.Contains(raw, "service.name: Str("+service+")") {
+			problems = append(problems, fmt.Sprintf("the collector never saw service.name %s on a resource", service))
+		}
+		joinParents := 0
+		sawError := false
+		for _, w := range wants {
+			c := got[w.trace+"/"+w.tr.SpanID(w.hop.ID)]
+			if c.name != w.hop.Type+" "+w.hop.Node {
+				problems = append(problems, fmt.Sprintf("hop %d: the collector has the span named %q, want %q", w.hop.ID, c.name, w.hop.Type+" "+w.hop.Node))
+			}
+			wantParent := ""
+			if len(w.hop.Parents) > 0 {
+				wantParent = w.tr.SpanID(w.hop.Parents[0])
+			}
+			if c.parent != wantParent {
+				problems = append(problems, fmt.Sprintf("hop %d (%s): parent %q, want %q", w.hop.ID, w.hop.Node, c.parent, wantParent))
+			}
+			if len(w.hop.Parents) > 1 {
+				if len(c.links) != len(w.hop.Parents)-1 {
+					problems = append(problems, fmt.Sprintf("hop %d (%s): %d links, want %d", w.hop.ID, w.hop.Node, len(c.links), len(w.hop.Parents)-1))
+				}
+				joinParents = max(joinParents, len(w.hop.Parents))
+			}
+			if c.attrs["flow.node.id"] != w.hop.Node || c.attrs["flow.node.type"] != w.hop.Type || c.attrs["flow.message.id"] != w.hop.MsgID {
+				problems = append(problems, fmt.Sprintf("hop %d (%s): attributes %v", w.hop.ID, w.hop.Node, c.attrs))
+			}
+			if w.hop.Error != "" {
+				sawError = true
+				if c.status != "Error" || !strings.Contains(c.message, "reading out of range") {
+					problems = append(problems, fmt.Sprintf("the failing hop arrived as status %q %q", c.status, c.message))
+				}
+			}
+		}
+		if joinParents < 3 {
+			problems = append(problems, fmt.Sprintf("no span with a join's three parents reached the collector (most parents seen: %d)", joinParents))
+		}
+		if !sawError {
+			problems = append(problems, "the failing hop wasn't in the trace")
+		}
+		return problems
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		raw, _ := os.ReadFile(logPath)
+		problems := verify(string(raw))
+		if len(problems) == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%d of %d spans never showed up in the collector's output (%d spans seen in all)", missing, len(wants), len(got))
+			for _, p := range problems {
+				t.Error(p)
+			}
+			t.FailNow()
 		}
 		time.Sleep(200 * time.Millisecond)
-	}
-
-	if raw, _ := os.ReadFile(logPath); !strings.Contains(string(raw), "service.name: Str("+service+")") {
-		t.Errorf("the collector never saw service.name %s on a resource", service)
-	}
-
-	joinParents := 0
-	sawError := false
-	for _, w := range wants {
-		c := got[w.trace+"/"+w.tr.SpanID(w.hop.ID)]
-		if c.name != w.hop.Type+" "+w.hop.Node {
-			t.Errorf("hop %d: the collector has the span named %q, want %q", w.hop.ID, c.name, w.hop.Type+" "+w.hop.Node)
-		}
-		wantParent := ""
-		if len(w.hop.Parents) > 0 {
-			wantParent = w.tr.SpanID(w.hop.Parents[0])
-		}
-		if c.parent != wantParent {
-			t.Errorf("hop %d (%s): parent %q, want %q", w.hop.ID, w.hop.Node, c.parent, wantParent)
-		}
-		if len(w.hop.Parents) > 1 {
-			if len(c.links) != len(w.hop.Parents)-1 {
-				t.Errorf("hop %d (%s): %d links, want %d", w.hop.ID, w.hop.Node, len(c.links), len(w.hop.Parents)-1)
-			}
-			joinParents = max(joinParents, len(w.hop.Parents))
-		}
-		if c.attrs["flow.node.id"] != w.hop.Node || c.attrs["flow.node.type"] != w.hop.Type || c.attrs["flow.message.id"] != w.hop.MsgID {
-			t.Errorf("hop %d (%s): attributes %v", w.hop.ID, w.hop.Node, c.attrs)
-		}
-		if w.hop.Error != "" {
-			sawError = true
-			if c.status != "Error" || !strings.Contains(c.message, "reading out of range") {
-				t.Errorf("the failing hop arrived as status %q %q", c.status, c.message)
-			}
-		}
-	}
-	if joinParents < 3 {
-		t.Errorf("no span with a join's three parents reached the collector (most parents seen: %d)", joinParents)
-	}
-	if !sawError {
-		t.Error("the failing hop wasn't in the trace")
 	}
 	if st := exp.Stats(); st.Exported != int64(len(wants)) || st.Failed != 0 || st.Dropped != 0 {
 		t.Errorf("the exporter says %+v for %d spans", st, len(wants))

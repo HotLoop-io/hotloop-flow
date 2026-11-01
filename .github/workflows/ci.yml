@@ -295,7 +295,7 @@ jobs:
           HOTLOOP_FLOW_TEST_MQTT_PASSWORD: ci-broker-pass
         run: |
           OUT=$(go test ./cmd/hotloop-flow/ -count=1 -v \
-            -run 'TestIntegrationRollbackLogsBackInToARealBroker|TestIntegrationPasswordFromAMountedSecret' 2>&1)
+            -run 'TestIntegrationRollbackLogsBackInToARealBroker|TestIntegrationPasswordFromAMountedSecret' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::a broker test was skipped"; exit 1
@@ -312,7 +312,7 @@ jobs:
         # tests behind the security claims in the README, so assert they
         # executed rather than trusting that they did.
         run: |
-          OUT=$(go test ./internal/wasmhost/ -count=1 -v -run TestWasm 2>&1)
+          OUT=$(go test ./internal/wasmhost/ -count=1 -v -run TestWasm 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | tail -20
           if echo "$OUT" | grep -q "SKIP"; then
             echo "::error::wasmhost tests were skipped; the guest did not build"
@@ -326,7 +326,7 @@ jobs:
         # pass, so list what has to have passed and fail on any skip.
         run: |
           OUT=$(go test ./internal/wasmhost/ ./internal/plugin/ ./cmd/hotloop-flow/ -count=1 -v \
-            -run 'TestGuest|TestOneGuest|TestContext|TestWith|TestWithout|TestAGuest|TestAPlugin|TestAnUnsigned|TestATampered|TestAdding|TestAsking|TestTheRust|TestTheTinyGo|TestPlugin' 2>&1)
+            -run 'TestGuest|TestOneGuest|TestContext|TestWith|TestWithout|TestAGuest|TestAPlugin|TestAnUnsigned|TestATampered|TestAdding|TestAsking|TestTheRust|TestTheTinyGo|TestPlugin' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(--- |ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::a plugin test was skipped"; exit 1
@@ -346,7 +346,7 @@ jobs:
         env:
           HOTLOOP_FLOW_TEST_MQTT: localhost:1883
         run: |
-          OUT=$(go test ./cmd/hotloop-flow/ ./internal/nodes/ -count=1 -v -run 'MQTT' 2>&1)
+          OUT=$(go test ./cmd/hotloop-flow/ ./internal/nodes/ -count=1 -v -run 'MQTT' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::an MQTT test skipped; the broker is not reachable"
@@ -368,7 +368,7 @@ jobs:
           HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
           HOTLOOP_FLOW_TEST_OPCUA: 127.0.0.1:4840
         run: |
-          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'Modbus|OPCUA' 2>&1)
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'Modbus|OPCUA' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::a Modbus or OPC UA test skipped; the simulator is not reachable"
@@ -398,7 +398,7 @@ jobs:
           HOTLOOP_FLOW_TEST_MQTT: localhost:1883
           HOTLOOP_FLOW_TEST_MQTT2: localhost:1885
         run: |
-          OUT=$(go test ./internal/nodes/ -count=1 -v -run Sparkplug 2>&1)
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run Sparkplug 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::a Sparkplug test skipped; the broker or the schema is missing"
@@ -429,7 +429,7 @@ jobs:
         # site's IT department uses, not from the library that reads it back.
         # Without openssl it skips, and a skip reads as a pass.
         run: |
-          OUT=$(go test ./internal/nodes/ -count=1 -v -run TestTLSConfigReadsWhatOpenSSLWrites 2>&1)
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run TestTLSConfigReadsWhatOpenSSLWrites 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::the OpenSSL interop test skipped"; exit 1
@@ -443,7 +443,7 @@ jobs:
           HOTLOOP_FLOW_TEST_OTLP: localhost:4318
           HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
         run: |
-          OUT=$(go test ./internal/otlp/ -count=1 -v -run TestSpansReachARealCollector 2>&1)
+          OUT=$(go test ./internal/otlp/ -count=1 -v -run TestSpansReachARealCollector 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E 'reached the collector|^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::the collector test skipped; the collector is not reachable"; exit 1
@@ -470,7 +470,7 @@ jobs:
         # A missing suite turns the test into a skip, and a skip reads as a
         # pass. The count is the claim the README makes, so check it here.
         run: |
-          OUT=$(go test ./internal/jsonata/ -count=1 -v -run TestPublishedJSONataSuite 2>&1)
+          OUT=$(go test ./internal/jsonata/ -count=1 -v -run TestPublishedJSONataSuite 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E 'published suite|^(---|ok|FAIL)'
           echo "$OUT" | grep -q -- "--- PASS: TestPublishedJSONataSuite" || {
             echo "::error::the JSONata suite did not run and pass"; exit 1; }
@@ -485,7 +485,7 @@ jobs:
           HOTLOOP_FLOW_TEST_S7: localhost:1102
           HOTLOOP_FLOW_TEST_ENIP: localhost:44818
         run: |
-          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'S7|EtherNetIP' 2>&1)
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'S7|EtherNetIP' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::an S7 or EtherNet/IP test skipped; the simulator is not reachable"
@@ -511,7 +511,7 @@ jobs:
         env:
           HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
         run: |
-          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'Hotloop' 2>&1)
+          OUT=$(go test ./internal/nodes/ -count=1 -v -run 'Hotloop' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::a HotLoop test skipped; HotLoop is not reachable"
@@ -534,7 +534,7 @@ jobs:
         # a real HotLoop is the HotLoop step's, above, and is left out here
         # because this step doesn't start the Modbus server it provisions.
         run: |
-          OUT=$(go test ./internal/mcphost/ -count=1 -v 2>&1; go test ./internal/api/ ./internal/nodes/ ./internal/flowtest/ -count=1 -v -run 'MCP' -skip 'TestHotloopMCP' 2>&1)
+          OUT=$(go test ./internal/mcphost/ -count=1 -v 2>&1; go test ./internal/api/ ./internal/nodes/ ./internal/flowtest/ -count=1 -v -run 'MCP' -skip 'TestHotloopMCP' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(---|ok|FAIL)' | grep -v -- '--- PASS' || true
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::an MCP test skipped"
@@ -583,7 +583,7 @@ jobs:
         env:
           HOTLOOP_FLOW_TEST_HELM: "1"
         run: |
-          OUT=$(go test ./internal/config/ -count=1 -v -run TestChart 2>&1)
+          OUT=$(go test ./internal/config/ -count=1 -v -run TestChart 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E "^(---|ok|FAIL)"
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::a chart config test skipped"; exit 1
