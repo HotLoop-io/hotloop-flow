@@ -71,7 +71,7 @@
   <input type="search" placeholder="Filter…" aria-label="Filter the palette" bind:value={filter} />
   <div class="palette-list">
     {#each groups as [cat, list] (cat)}
-      <div class="palette-cat">{cat}</div>
+      <div class="palette-cat">{cat === 'diagram' ? 'FlowLab' : cat}</div>
       {#each list as d (d.type)}
         <div
           class="palette-item"
