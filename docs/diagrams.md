@@ -76,6 +76,28 @@ Events for a run go out on the same socket as the editor's, as `diagram/<id>/nod
 | `dia-parse-reading`, `dia-stable` | Take a number and unit out of a line, and say whether the last few agree. |
 | `dia-log-text` | Appends a record as a row of a text file, with a time column. |
 | `dia-control`, `dia-indicator`, `dia-chart` | The panel. |
+| `dia-stats` | The mean, RMS, smallest, largest and standard deviation of an array. The standard deviation divides by n minus one, so it needs two readings. |
+| `dia-integral` | The area under an array by the trapezoid rule, as one number or as the running area at each sample. |
+| `dia-derivative` | The slope at each sample of an array. |
+| `dia-filter` | A lowpass, highpass, bandpass or bandstop Butterworth filter of order 1 to 10 with a cutoff in hertz. |
+
+### Filters
+
+The filter node is a Butterworth filter: flat where it passes, no ripple, and 3 dB
+down at the cutoff. It is designed from the analog filter by the bilinear transform
+with the cutoff prewarped, so the 3 dB point lands on the frequency you typed, and it
+runs as a chain of second-order sections so a high order stays accurate. A bandpass or
+bandstop of order n has 2n poles. A cutoff has to be above zero and below half the
+sample rate, and a design that cannot be built is listed in the problems before the run.
+The sample rate is a property, or an input that wins over it. The filter keeps its
+memory from call to call inside a run, so an array cut into pieces by a loop comes out
+as if it had been filtered whole, and every new run starts from rest.
+
+What it can't do: it is not a linear-phase filter, so it delays different frequencies
+by different amounts, and it has no zero-phase mode that filters forward and back. Where
+the timing between two signals has to line up, or a waveform's shape has to survive,
+that is the wrong filter. Integral and derivative take the time between samples from a
+`dt` input in seconds, a `rate` input in hertz, or the Samples per second property.
 
 ### The error wire
 
