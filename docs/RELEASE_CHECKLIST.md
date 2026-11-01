@@ -151,13 +151,8 @@ An amd64 run must not take an image away from a box on another architecture.
 `X.Y.Z` is new and holds what the run built. `X.Y` and `X` are tags other boxes
 follow, so `build/publish-tags.sh` puts the new amd64 image on them and keeps
 for every other platform the image the tag already points at. Flow publishes no
-`stable` tag: `X.Y` and `X` are the ones that float. The script is proven against
-a registry of its own, and has to be before the release PR goes up:
-
-```bash
-build/test-publish-tags.sh      # ends with PUBLISH TAGS OK
-actionlint .github/workflows/image-publish.yml
-```
+`stable` tag: `X.Y` and `X` are the ones that float. A workflow was touched, so
+`actionlint .github/workflows/*.yml` runs with the gates in section 4.
 
 After the tag, section 8's manifest check reads the lists: `X.Y.Z` holds the
 platforms that run built, and `X` still holds an arm64 image.
