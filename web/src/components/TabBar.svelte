@@ -37,7 +37,7 @@
   {#if editing}
     <button class="tab tab-add" data-test="tab-add" title="Add a flow" aria-label="Add a flow" onclick={onaddflow}><Icon name="plus" /></button>
     <button class="tab tab-add" data-test="tab-add-subflow" title="Add a subflow" onclick={onaddsubflow}><Icon name="plus" />subflow</button>
-    <button class="tab tab-add" data-test="tab-add-diagram" title="Add a FlowLab diagram: nodes that run when all their inputs are ready, with a panel" onclick={onadddiagram}><Icon name="plus" />diagram</button>
+    <button class="tab tab-add" data-test="tab-add-diagram" title="Add a FlowLab diagram: nodes that run when all their inputs are ready, with a panel" onclick={onadddiagram}><Icon name="plus" />FlowLab</button>
   {/if}
   <div class="spacer"></div>
   {#if editing}
