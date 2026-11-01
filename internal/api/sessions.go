@@ -33,6 +33,11 @@ type tokenStore struct {
 	find   func(string) (config.User, bool)
 	log    *slog.Logger
 	issued map[string]session // keyed by the token's hash
+
+	// readFile reads the sessions file; nil is os.ReadFile. A test swaps it.
+	readFile func(string) ([]byte, error)
+	// unread is why the file could not be read at start, and holds writes off.
+	unread error
 }
 
 type session struct {
@@ -41,10 +46,16 @@ type session struct {
 }
 
 func newTokenStore(ttl time.Duration, path string, find func(string) (config.User, bool), log *slog.Logger) *tokenStore {
+	return newTokenStoreReading(ttl, path, find, log, nil)
+}
+
+// newTokenStoreReading is newTokenStore with the file reader named; nil is
+// os.ReadFile. A test uses it to make the first read fail.
+func newTokenStoreReading(ttl time.Duration, path string, find func(string) (config.User, bool), log *slog.Logger, read func(string) ([]byte, error)) *tokenStore {
 	if ttl <= 0 {
 		ttl = 7 * 24 * time.Hour
 	}
-	t := &tokenStore{ttl: ttl, path: path, find: find, log: log, issued: map[string]session{}}
+	t := &tokenStore{ttl: ttl, path: path, find: find, log: log, issued: map[string]session{}, readFile: read}
 	t.load()
 	return t
 }
@@ -58,17 +69,35 @@ func (t *tokenStore) load() {
 	if t.path == "" {
 		return
 	}
-	data, err := os.ReadFile(t.path)
+	read := t.readFile
+	if read == nil {
+		read = os.ReadFile
+	}
+	data, err := read(t.path)
 	if os.IsNotExist(err) {
 		return
 	}
-	if err == nil {
-		err = json.Unmarshal(data, &t.issued)
-	}
 	if err != nil {
-		// Losing sessions signs people out; it never lets anybody in. So a
-		// bad file is a warning and a fresh start, not a refusal to boot.
-		t.log.Warn("sign-in sessions could not be read; everybody signs in again", "path", t.path, "error", err)
+		// The file is there and could not be read (a volume that is not up
+		// yet, EIO, permissions). Losing the in-memory view signs people out,
+		// but overwriting the file as well would lose the sessions for good, and
+		// the volume may be fine a moment later. So: serve with what can be
+		// read (nothing), leave the file alone, say so loudly, and look again
+		// before any write (saveLocked).
+		t.unread = err
+		t.log.Error("sign-in sessions could not be read; everybody signs in again until the file can be read, and it will not be overwritten before then", "path", t.path, "error", err)
+		return
+	}
+	if err := json.Unmarshal(data, &t.issued); err != nil {
+		// Unreadable content is not coming back by waiting. Keep it beside the
+		// original rather than writing over it, and start fresh.
+		aside := t.path + ".unreadable-" + time.Now().UTC().Format("20060102T150405Z")
+		if werr := os.WriteFile(aside, data, 0o600); werr != nil {
+			t.unread = werr
+			t.log.Error("sign-in sessions are unreadable and could not be set aside; the file will not be overwritten", "path", t.path, "error", err, "aside_error", werr)
+		} else {
+			t.log.Warn("sign-in sessions are unreadable; kept a copy and everybody signs in again", "path", t.path, "copy", aside, "error", err)
+		}
 		t.issued = map[string]session{}
 		return
 	}
@@ -77,11 +106,47 @@ func (t *tokenStore) load() {
 	t.mu.Unlock()
 }
 
+// unreadLocked says whether the sessions file may be written. After a read that
+// failed, it looks again: if the file reads now, its sessions are merged in and
+// writing is fine; if not, nothing is written, so a file that is only
+// temporarily unreadable is never replaced by the sessions of one process.
+func (t *tokenStore) unreadLocked() bool {
+	if t.unread == nil {
+		return false
+	}
+	read := t.readFile
+	if read == nil {
+		read = os.ReadFile
+	}
+	data, err := read(t.path)
+	if os.IsNotExist(err) {
+		t.unread = nil
+		return false
+	}
+	if err != nil {
+		t.log.Error("sign-in sessions still cannot be read; not overwriting the file", "path", t.path, "error", err)
+		return true
+	}
+	var onDisk map[string]session
+	if err := json.Unmarshal(data, &onDisk); err != nil {
+		t.log.Error("sign-in sessions on disk are unreadable; not overwriting the file", "path", t.path, "error", err)
+		return true
+	}
+	now := time.Now()
+	for k, s := range onDisk {
+		if _, have := t.issued[k]; !have && now.Before(s.Expires) {
+			t.issued[k] = s
+		}
+	}
+	t.unread = nil
+	return false
+}
+
 // saveLocked writes the sessions. A failed write is logged and the session
 // still works until the next restart, because refusing a sign-in over a full
 // disk helps nobody.
 func (t *tokenStore) saveLocked() {
-	if t.path == "" {
+	if t.path == "" || t.unreadLocked() {
 		return
 	}
 	data, err := json.Marshal(t.issued)
