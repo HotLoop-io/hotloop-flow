@@ -1,6 +1,6 @@
-# Diagrams
+# FlowLab: diagrams
 
-A diagram is the other way Flow runs a tab. In a flow, a message goes through a node
+FlowLab is the part of Flow for test benches and data loggers, and a diagram is its unit: the other way Flow runs a tab. In a flow, a message goes through a node
 and any input wakes it. In a diagram, each node runs once per run, when every input
 that has a wire holds a value. Two nodes with no wire between them run at the same
 time. That is how you build a test bench or a data logger: read a device, parse it,

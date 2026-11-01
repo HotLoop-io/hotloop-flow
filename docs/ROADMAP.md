@@ -4,7 +4,7 @@ What HotLoop Flow is going to be, in the order it gets built. If it isn't on thi
 list it isn't getting done, so put it on the list.
 
 **None of this starts until HotLoop's own roadmap is done.** Flow waits its turn.
-The one exception is Phase 9, diagrams. I'm building it now because it is a separate
+The one exception is Phase 9, FlowLab and its diagrams. I'm building it now because it is a separate
 pack that sits beside the message runtime and doesn't take anything from HotLoop's
 own roadmap.
 
@@ -230,7 +230,7 @@ around them is Svelte.
 Flow stays its own product through all of this. It shares the look with HotLoop,
 not the code, and it is never embedded in HotLoop.
 
-### Phase 9: diagrams
+### Phase 9: FlowLab, diagrams
 
 A second way to run a tab, beside messages and never in place of them. In a diagram
 every node runs once, when each of its wired inputs has a value, and branches with
