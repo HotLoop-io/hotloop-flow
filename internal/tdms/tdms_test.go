@@ -763,3 +763,25 @@ func TestManySegments(t *testing.T) {
 		t.Errorf("%d segments", n)
 	}
 }
+
+// Found by the fuzzer: a string channel that claims more strings than its bytes
+// could hold once overflowed the offset table's size and sliced out of range.
+func TestStringCountPastItsBytes(t *testing.T) {
+	for _, count := range []byte{0x02, 0x7F} {
+		meta := cat(hx("01 00 00 00 // one object"), pathCh1, hx(
+			"1C 00 00 00 // length of the index",
+			"20 00 00 00 // string", "01 00 00 00 // dimension",
+		), []byte{2, 0, 0, 0, 0, 0, 0, count}, hx(
+			"0B 00 00 00 00 00 00 00 // total bytes, 11",
+			"00 00 00 00 // no properties",
+		))
+		raw := make([]byte, 11)
+		lead := hx("54 44 53 6D", "0E 00 00 00", "69 12 00 00")
+		lead = binary.LittleEndian.AppendUint64(lead, uint64(len(meta)+len(raw)))
+		lead = binary.LittleEndian.AppendUint64(lead, uint64(len(meta)))
+		data := cat(lead, meta, raw)
+		if _, err := Read(bytes.NewReader(data), int64(len(data))); err == nil || !errors.Is(err, ErrCorrupt) {
+			t.Errorf("count byte %#x: err = %v", count, err)
+		}
+	}
+}
