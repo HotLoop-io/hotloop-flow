@@ -34,6 +34,8 @@ const (
 	CategoryStorage  Category = "storage"
 	CategoryDiscover Category = "discover"
 	CategoryConfig   Category = "config"
+	// CategoryDiagram is the palette section of nodes that run in a diagram.
+	CategoryDiagram Category = "diagram"
 )
 
 // PropKind is the editing affordance the editor renders for a property.
@@ -183,6 +185,15 @@ type Descriptor struct {
 	LabelProp    string `json:"labelProp,omitempty"`
 	PaletteLabel string `json:"paletteLabel,omitempty"`
 
+	// InputPorts and OutputPorts name the ports of a node that runs in a
+	// diagram, where a node may have several named inputs and a run starts a
+	// node once every wired input holds a value. A name ending in "?" is an
+	// optional input. A name starting with "@" is a property whose
+	// comma-separated value lists more ports, so a loop's ports follow its
+	// carried values. Messages mode ignores both.
+	InputPorts  []string `json:"inputPorts,omitempty"`
+	OutputPorts []string `json:"outputPorts,omitempty"`
+
 	InputLabels  []string `json:"inputLabels,omitempty"`
 	OutputLabels []string `json:"outputLabels,omitempty"`
 
@@ -259,6 +270,9 @@ func (d *Descriptor) Validate() error {
 	}
 	if d.Category == "" {
 		return fmt.Errorf("%s: no category", d.Type)
+	}
+	if len(d.InputPorts) > 0 && d.Inputs != 1 {
+		return fmt.Errorf("%s: a node with named input ports has inputs = 1", d.Type)
 	}
 	if d.Inputs < 0 || d.Inputs > 1 {
 		return fmt.Errorf("%s: inputs = %d, must be 0 or 1", d.Type, d.Inputs)

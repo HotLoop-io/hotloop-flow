@@ -23,6 +23,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/api"
 	"github.com/HotLoop-io/hotloop-flow/internal/audit"
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
+	"github.com/HotLoop-io/hotloop-flow/internal/diagram"
 	"github.com/HotLoop-io/hotloop-flow/internal/discover"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/filescope"
@@ -269,6 +270,7 @@ func cmdServe(args []string) error {
 		spool:     spool,
 		tests:     newTestSuite(cfg),
 		capture:   runtime.NewCapture(runtime.DefaultCaptureSize, runtime.DefaultCaptureMaxBytes),
+		diagrams:  diagram.NewManager(nil),
 	}
 
 	// The git mirror, if one is configured. Built before the server so a
@@ -357,8 +359,12 @@ func cmdServe(args []string) error {
 		FlowRoutes:   nodes.Routes,
 		MCP:          nodes.MCPTools,
 		Version:      version,
+		Diagrams:     app.diagrams,
 	})
 	app.hub = srv.Hub()
+	app.diagrams.SetPublisher(func(topic string, data map[string]any) {
+		srv.Hub().Broadcast(runtime.Event{Topic: topic, Data: data, At: time.Now()})
+	})
 
 	// Load and start whatever is on disk before opening the port, so the first
 	// request never races the runtime coming up.
@@ -402,6 +408,9 @@ func cmdServe(args []string) error {
 	// one bad node still runs the other nodes, and refusing to boot over a
 	// single typo would take a line down for no reason.
 	app.start(ctx, flows)
+	// A diagram that says autostart is running before the first request, the way a
+	// logger on a box with no screen has to be.
+	app.diagrams.Apply(flows)
 
 	httpServer := &http.Server{
 		Addr:         cfg.Addr(),
@@ -432,6 +441,7 @@ func cmdServe(args []string) error {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Warn("http shutdown did not complete cleanly", "error", err)
 	}
+	app.diagrams.Close()
 	app.stop(shutdownCtx)
 	if exporter != nil {
 		// After the flows stop, so the last hops they finish are in the batch
@@ -471,6 +481,9 @@ type application struct {
 	// deploys, so a message from before a deploy can still be looked at
 	// after it. Nil when tracing is off.
 	tracer *engine.Tracer
+	// diagrams runs the flow file's diagrams: the tabs that run when each node's
+	// inputs are ready instead of as messages.
+	diagrams *diagram.Manager
 
 	mu      sync.Mutex
 	rt      *runtime.Runtime
@@ -814,6 +827,10 @@ func (a *application) apply(ctx context.Context, flows *engine.Flows, expectedRe
 	if err := a.creds.Save(); err != nil {
 		return api.DeployResult{}, fmt.Errorf("saving credentials: %w", err)
 	}
+	// The diagrams of the new file replace the old ones, and a run of an old one
+	// stops. Whether the rest of the file deploys in part or in full is the
+	// message runtime's business; a diagram is not in it.
+	a.diagrams.Apply(flows)
 
 	// Recorded after the save and before the swap. A log that can't be written
 	// doesn't stop the deploy: the flow file is already saved, and refusing now

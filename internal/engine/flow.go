@@ -135,6 +135,29 @@ type Tab struct {
 	Raw      map[string]any
 }
 
+// DiagramKey is the key on a tab that makes it a diagram: a graph whose nodes
+// run when every input has a value, in a run of its own, not as messages. The
+// value is an object of settings, and a tab that carries it is left alone by the
+// message runtime. A file with the key still loads and saves byte for byte, since
+// the key is just another property of the tab.
+const DiagramKey = "ew_diagram"
+
+// IsDiagram reports whether the tab is a diagram.
+func (t *Tab) IsDiagram() bool {
+	_, ok := t.Raw[DiagramKey]
+	return ok
+}
+
+// Diagram returns the tab's diagram settings, and whether it is a diagram.
+func (t *Tab) Diagram() (map[string]any, bool) {
+	v, ok := t.Raw[DiagramKey]
+	if !ok {
+		return nil, false
+	}
+	m, _ := v.(map[string]any)
+	return m, true
+}
+
 // Subflow is a subflow template. Instances of it appear in the graph as nodes
 // with type "subflow:<ID>".
 type Subflow struct {
