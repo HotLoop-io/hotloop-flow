@@ -1,7 +1,7 @@
 # Deploying HotLoop Flow
 
 Three ways in, all from the same image, `ghcr.io/hotloop-io/hotloop-flow`, built
-for amd64 and arm64:
+for amd64, with arm64 following in 2.7.1:
 
 | You have | Use |
 |---|---|

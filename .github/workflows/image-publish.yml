@@ -29,6 +29,12 @@ permissions:
 
 env:
   IMAGE: ghcr.io/hotloop-io/hotloop-flow
+  # The platforms this tag builds. A release builds amd64 only, it reaches
+  # production and reads stable, and then one small version bump with nothing else
+  # in it adds arm64 here. A run that builds fewer platforms than the tags it
+  # moves never takes an image away from a box on another architecture:
+  # build/publish-tags.sh keeps what X.Y and X already hold for the rest.
+  PLATFORMS: "amd64"
 
 jobs:
   build:
@@ -54,6 +60,7 @@ jobs:
           fi
 
       - name: Teach the runner to run arm64
+        if: contains(env.PLATFORMS, 'arm64')
         # What the usual qemu setup action does, with Podman: tonistiigi/binfmt
         # registers qemu-user for arm64 with the kernel, and the F flag lets it
         # work inside a build container. Pinned to a release.
@@ -80,7 +87,8 @@ jobs:
           REVISION=$(git rev-parse HEAD)
           CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           podman manifest create localhost/hotloop-flow-release
-          for ARCH in amd64 arm64; do
+          read -ra PLAT <<< "$PLATFORMS"
+          for ARCH in "${PLAT[@]}"; do
             podman build \
               --platform "linux/$ARCH" \
               --build-arg "VERSION=$TAG" \
@@ -93,19 +101,23 @@ jobs:
           done
           df -h / | tail -1
 
-      - name: The list holds exactly amd64 and arm64
+      - name: The list holds exactly the platforms this tag builds
         run: |
           podman manifest inspect localhost/hotloop-flow-release > list.json
           jq -r '.manifests[] | [.platform.os, .platform.architecture, (.platform.variant // "none"), .digest] | @tsv' list.json
-          test "$(jq '.manifests | length' list.json)" = 2
-          test "$(jq -r '[.manifests[] | .platform.os + "/" + .platform.architecture] | sort | join(",")' list.json)" = "linux/amd64,linux/arm64"
-          test "$(jq '[.manifests[] | [.platform.architecture, (.platform.variant // "")]] | unique | length' list.json)" = 2
-          test "$(jq '[.manifests[].digest] | unique | length' list.json)" = 2
+          read -ra PLAT <<< "$PLATFORMS"
+          N=${#PLAT[@]}
+          WANT=$(printf 'linux/%s\n' "${PLAT[@]}" | sort | paste -sd, -)
+          test "$(jq '.manifests | length' list.json)" = "$N"
+          test "$(jq -r '[.manifests[] | .platform.os + "/" + .platform.architecture] | sort | join(",")' list.json)" = "$WANT"
+          test "$(jq '[.manifests[] | [.platform.architecture, (.platform.variant // "")]] | unique | length' list.json)" = "$N"
+          test "$(jq '[.manifests[].digest] | unique | length' list.json)" = "$N"
 
       - name: Each platform's binary starts and reports the tag
         run: |
           TAG='${{ inputs.tag || github.ref_name }}'
-          for ARCH in amd64 arm64; do
+          read -ra PLAT <<< "$PLATFORMS"
+          for ARCH in "${PLAT[@]}"; do
             GOT=$(podman run --rm "localhost/hotloop-flow:$ARCH" version)
             echo "$ARCH: $GOT"
             test "$GOT" = "$TAG" || { echo "::error::$ARCH reports '$GOT', not '$TAG'"; exit 1; }
@@ -115,21 +127,12 @@ jobs:
         # The tags the old metadata action's semver patterns made: the full
         # version always, X.Y and X only for a release and not a prerelease, and
         # no bare X for a 0.x. No branch tag and no bare sha tag: both produce
-        # images that are not a released version.
+        # images that are not a released version. X.Y and X keep the image they
+        # already hold for any platform this run did not build.
         run: |
           VERSION='${{ inputs.tag || github.ref_name }}'
-          VERSION="${VERSION#v}"
-          TAGS="$VERSION"
-          case "$VERSION" in
-            *-*) ;;
-            *) MINOR="${VERSION%.*}"; MAJOR="${VERSION%%.*}"
-               TAGS="$TAGS $MINOR"
-               [ "$MAJOR" = 0 ] || TAGS="$TAGS $MAJOR" ;;
-          esac
-          for T in $TAGS; do
-            podman manifest push --all localhost/hotloop-flow-release "docker://$IMAGE:$T"
-          done
-          echo "pushed: $TAGS"
+          read -ra PLAT <<< "$PLATFORMS"
+          build/publish-tags.sh "$IMAGE" "${VERSION#v}" localhost/hotloop-flow-release "${PLAT[@]}"
 
       - name: Report image size
         # The whole premise is that this is small. If it stops being small,
