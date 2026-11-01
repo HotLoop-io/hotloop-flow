@@ -1,0 +1,265 @@
+//---------------------------------------------------------------------
+// Ported from ni/grpc-device generated/nidaqmx/nidaqmx.proto at v2.20.0
+// (commit 65f4e23238e38525963996eac4f51814226c551e), MIT,
+// Copyright (c) 2022, National Instruments Corp.
+//
+// Modified by HotLoop: cut down to the enums, messages and service methods that
+// Flow's DAQ client calls. Every message, field, enum value and method keeps NI's
+// name and number, so the bytes on the wire are the same as NI's. The test
+// TestTrimmedMatchesNI compiles NI's whole file, kept verbatim in
+// third_party/ni-grpc-device, and fails if any of it drifts. The two import lines
+// for types the client never uses, and the options for other languages, are
+// dropped; option go_package is added.
+//---------------------------------------------------------------------
+syntax = "proto3";
+
+option go_package = "github.com/HotLoop-io/hotloop-flow/internal/ni/proto;proto";
+
+package nidaqmx_grpc;
+
+import "session.proto";
+
+service NiDAQmx {
+  rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
+  rpc CreateAIVoltageChan(CreateAIVoltageChanRequest) returns (CreateAIVoltageChanResponse);
+  rpc CreateAICurrentChan(CreateAICurrentChanRequest) returns (CreateAICurrentChanResponse);
+  rpc CreateAIThrmcplChan(CreateAIThrmcplChanRequest) returns (CreateAIThrmcplChanResponse);
+  rpc CfgSampClkTiming(CfgSampClkTimingRequest) returns (CfgSampClkTimingResponse);
+  rpc CfgDigEdgeStartTrig(CfgDigEdgeStartTrigRequest) returns (CfgDigEdgeStartTrigResponse);
+  rpc StartTask(StartTaskRequest) returns (StartTaskResponse);
+  rpc ReadAnalogF64(ReadAnalogF64Request) returns (ReadAnalogF64Response);
+  rpc StopTask(StopTaskRequest) returns (StopTaskResponse);
+  rpc ClearTask(ClearTaskRequest) returns (ClearTaskResponse);
+}
+
+enum AcquisitionType {
+  ACQUISITION_TYPE_UNSPECIFIED = 0;
+  ACQUISITION_TYPE_FINITE_SAMPS = 10178;
+  ACQUISITION_TYPE_CONT_SAMPS = 10123;
+  ACQUISITION_TYPE_HW_TIMED_SINGLE_POINT = 12522;
+}
+
+enum Edge1 {
+  EDGE1_UNSPECIFIED = 0;
+  EDGE1_RISING = 10280;
+  EDGE1_FALLING = 10171;
+}
+
+enum InputTermCfgWithDefault {
+  INPUT_TERM_CFG_WITH_DEFAULT_UNSPECIFIED = 0;
+  INPUT_TERM_CFG_WITH_DEFAULT_CFG_DEFAULT = -1;
+  INPUT_TERM_CFG_WITH_DEFAULT_RSE = 10083;
+  INPUT_TERM_CFG_WITH_DEFAULT_NRSE = 10078;
+  INPUT_TERM_CFG_WITH_DEFAULT_DIFF = 10106;
+  INPUT_TERM_CFG_WITH_DEFAULT_PSEUDO_DIFF = 12529;
+}
+
+enum VoltageUnits2 {
+  VOLTAGE_UNITS2_UNSPECIFIED = 0;
+  VOLTAGE_UNITS2_VOLTS = 10348;
+  VOLTAGE_UNITS2_FROM_CUSTOM_SCALE = 10065;
+}
+
+enum CurrentUnits2 {
+  CURRENT_UNITS2_UNSPECIFIED = 0;
+  CURRENT_UNITS2_AMPS = 10342;
+  CURRENT_UNITS2_FROM_CUSTOM_SCALE = 10065;
+}
+
+enum CurrentShuntResistorLocationWithDefault {
+  CURRENT_SHUNT_RESISTOR_LOCATION_WITH_DEFAULT_UNSPECIFIED = 0;
+  CURRENT_SHUNT_RESISTOR_LOCATION_WITH_DEFAULT_DEFAULT = -1;
+  CURRENT_SHUNT_RESISTOR_LOCATION_WITH_DEFAULT_INTERNAL = 10200;
+  CURRENT_SHUNT_RESISTOR_LOCATION_WITH_DEFAULT_EXTERNAL = 10167;
+}
+
+enum TemperatureUnits {
+  TEMPERATURE_UNITS_UNSPECIFIED = 0;
+  TEMPERATURE_UNITS_DEG_C = 10143;
+  TEMPERATURE_UNITS_DEG_F = 10144;
+  TEMPERATURE_UNITS_KELVINS = 10325;
+  TEMPERATURE_UNITS_DEG_R = 10145;
+}
+
+enum ThermocoupleType1 {
+  THERMOCOUPLE_TYPE1_UNSPECIFIED = 0;
+  THERMOCOUPLE_TYPE1_J_TYPE_TC = 10072;
+  THERMOCOUPLE_TYPE1_K_TYPE_TC = 10073;
+  THERMOCOUPLE_TYPE1_N_TYPE_TC = 10077;
+  THERMOCOUPLE_TYPE1_R_TYPE_TC = 10082;
+  THERMOCOUPLE_TYPE1_S_TYPE_TC = 10085;
+  THERMOCOUPLE_TYPE1_T_TYPE_TC = 10086;
+  THERMOCOUPLE_TYPE1_B_TYPE_TC = 10047;
+  THERMOCOUPLE_TYPE1_E_TYPE_TC = 10055;
+  THERMOCOUPLE_TYPE1_A_TYPE_TC = 16208;
+  THERMOCOUPLE_TYPE1_C_TYPE_TC = 16209;
+}
+
+enum CJCSource1 {
+  CJC_SOURCE1_UNSPECIFIED = 0;
+  CJC_SOURCE1_BUILT_IN = 10200;
+  CJC_SOURCE1_CONST_VAL = 10116;
+  CJC_SOURCE1_CHAN = 10113;
+}
+
+enum GroupBy {
+  GROUP_BY_GROUP_BY_CHANNEL = 0;
+  GROUP_BY_GROUP_BY_SCAN_NUMBER = 1;
+}
+
+message CreateTaskRequest {
+  string session_name = 1;
+  nidevice_grpc.SessionInitializationBehavior initialization_behavior = 2;
+}
+
+message CreateTaskResponse {
+  int32 status = 1;
+  nidevice_grpc.Session task = 2;
+  bool new_session_initialized = 3;
+}
+
+message CreateAIVoltageChanRequest {
+  nidevice_grpc.Session task = 1;
+  string physical_channel = 2;
+  string name_to_assign_to_channel = 3;
+  oneof terminal_config_enum {
+    InputTermCfgWithDefault terminal_config = 4;
+    int32 terminal_config_raw = 5;
+  }
+  double min_val = 6;
+  double max_val = 7;
+  oneof units_enum {
+    VoltageUnits2 units = 8;
+    int32 units_raw = 9;
+  }
+  string custom_scale_name = 10;
+}
+
+message CreateAIVoltageChanResponse {
+  int32 status = 1;
+}
+
+message CreateAICurrentChanRequest {
+  nidevice_grpc.Session task = 1;
+  string physical_channel = 2;
+  string name_to_assign_to_channel = 3;
+  oneof terminal_config_enum {
+    InputTermCfgWithDefault terminal_config = 4;
+    int32 terminal_config_raw = 5;
+  }
+  double min_val = 6;
+  double max_val = 7;
+  oneof units_enum {
+    CurrentUnits2 units = 8;
+    int32 units_raw = 9;
+  }
+  oneof shunt_resistor_loc_enum {
+    CurrentShuntResistorLocationWithDefault shunt_resistor_loc = 10;
+    int32 shunt_resistor_loc_raw = 11;
+  }
+  double ext_shunt_resistor_val = 12;
+  string custom_scale_name = 13;
+}
+
+message CreateAICurrentChanResponse {
+  int32 status = 1;
+}
+
+message CreateAIThrmcplChanRequest {
+  nidevice_grpc.Session task = 1;
+  string physical_channel = 2;
+  string name_to_assign_to_channel = 3;
+  double min_val = 4;
+  double max_val = 5;
+  oneof units_enum {
+    TemperatureUnits units = 6;
+    int32 units_raw = 7;
+  }
+  oneof thermocouple_type_enum {
+    ThermocoupleType1 thermocouple_type = 8;
+    int32 thermocouple_type_raw = 9;
+  }
+  oneof cjc_source_enum {
+    CJCSource1 cjc_source = 10;
+    int32 cjc_source_raw = 11;
+  }
+  double cjc_val = 12;
+  string cjc_channel = 13;
+}
+
+message CreateAIThrmcplChanResponse {
+  int32 status = 1;
+}
+
+message CfgSampClkTimingRequest {
+  nidevice_grpc.Session task = 1;
+  string source = 2;
+  double rate = 3;
+  oneof active_edge_enum {
+    Edge1 active_edge = 4;
+    int32 active_edge_raw = 5;
+  }
+  oneof sample_mode_enum {
+    AcquisitionType sample_mode = 6;
+    int32 sample_mode_raw = 7;
+  }
+  uint64 samps_per_chan = 8;
+}
+
+message CfgSampClkTimingResponse {
+  int32 status = 1;
+}
+
+message CfgDigEdgeStartTrigRequest {
+  nidevice_grpc.Session task = 1;
+  string trigger_source = 2;
+  oneof trigger_edge_enum {
+    Edge1 trigger_edge = 3;
+    int32 trigger_edge_raw = 4;
+  }
+}
+
+message CfgDigEdgeStartTrigResponse {
+  int32 status = 1;
+}
+
+message StartTaskRequest {
+  nidevice_grpc.Session task = 1;
+}
+
+message StartTaskResponse {
+  int32 status = 1;
+}
+
+message ReadAnalogF64Request {
+  nidevice_grpc.Session task = 1;
+  int32 num_samps_per_chan = 2;
+  double timeout = 3;
+  oneof fill_mode_enum {
+    GroupBy fill_mode = 4;
+    int32 fill_mode_raw = 5;
+  }
+  uint32 array_size_in_samps = 6;
+}
+
+message ReadAnalogF64Response {
+  int32 status = 1;
+  repeated double read_array = 2;
+  int32 samps_per_chan_read = 3;
+}
+
+message StopTaskRequest {
+  nidevice_grpc.Session task = 1;
+}
+
+message StopTaskResponse {
+  int32 status = 1;
+}
+
+message ClearTaskRequest {
+  nidevice_grpc.Session task = 1;
+}
+
+message ClearTaskResponse {
+  int32 status = 1;
+}
