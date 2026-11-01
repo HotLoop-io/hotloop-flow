@@ -37,6 +37,11 @@ type Kind struct {
 	Structure bool
 	// Terminal is true for a control or an indicator: something on the panel.
 	Terminal bool
+	// Durable, when set, says whether this node's settings ask for a durable
+	// path, and Deliver builds the function that sends one queued message, for
+	// the manager's pump. A node with both writes to a target that can be down.
+	Durable func(raw map[string]any) bool
+	Deliver func(m *Manager, raw map[string]any) func(ctx context.Context, body []byte) error
 	// TakesErrors is true for a node that runs even when an error comes in,
 	// because looking at the error is its job.
 	TakesErrors bool

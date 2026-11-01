@@ -106,6 +106,17 @@ func (b *mqttV3Broker) Connected() bool {
 	return b.clientLocked().IsConnected()
 }
 
+// LinkUp is whether the connection is open right now. Connected is paho's
+// IsConnected, which stays true while it is reconnecting so that a message waits
+// in its memory for the link to come back. That is right for a node that wants
+// the message held, and wrong for one that keeps its own durable queue and needs
+// to know the broker is not answering.
+func (b *mqttV3Broker) LinkUp() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.clientLocked().IsConnectionOpen()
+}
+
 func (b *mqttV3Broker) Publish(_ context.Context, m mqttMessage) error {
 	b.mu.Lock()
 	client := b.clientLocked()
