@@ -4,6 +4,9 @@ What HotLoop Flow is going to be, in the order it gets built. If it isn't on thi
 list it isn't getting done, so put it on the list.
 
 **None of this starts until HotLoop's own roadmap is done.** Flow waits its turn.
+The one exception is Phase 9, diagrams. I'm building it now because it is a separate
+pack that sits beside the message runtime and doesn't take anything from HotLoop's
+own roadmap.
 
 ## What Flow is for
 
@@ -226,6 +229,38 @@ around them is Svelte.
 
 Flow stays its own product through all of this. It shares the look with HotLoop,
 not the code, and it is never embedded in HotLoop.
+
+### Phase 9: diagrams
+
+A second way to run a tab, beside messages and never in place of them. In a diagram
+every node runs once, when each of its wired inputs has a value, and branches with
+no wire between them run at the same time. That is what a test bench or a data
+logger needs: loops that carry a value from one pass to the next, an error that
+travels on a wire of its own, a panel an operator can open on a phone, and a
+debugger that can pause a run and show what is on every wire. Existing flows don't
+change, and the flow file still loads and saves byte for byte: a diagram is a tab
+with an `ew_diagram` key, and which input a wire lands on is kept in `ew_in` on the
+node it leaves. [diagrams.md](diagrams.md) has the rest.
+
+- [x] The scheduler: all wired inputs ready, independent branches in parallel,
+      and an `after` wire for order where no data flows
+- [x] While and for loops with carried values, and an error wire that skips the
+      nodes after a fault, stops a loop and carries its source and code
+- [x] A serial port, with reads to a terminator or a byte count, a timeout on the
+      error wire, and a port that is opened again after a pulled cable and counted
+- [x] A reading parser, stable-value detection, and a text log with a time column
+- [x] A panel served by Flow: controls, indicators and a chart or graph, open on a
+      phone while a run is live
+- [x] Run, stop, highlight execution, probes on any wire, breakpoints on nodes,
+      wires and passes, and step into, over and out
+- [x] The editor draws named ports and wires to the one you drop on, and the same
+      page runs and debugs
+- [ ] Case structure, records and shared types, waveforms
+- [ ] TDMS and binary logging, and a database and MQTT out
+- [ ] Instrument sessions and a data acquisition client
+- [ ] Analysis: statistics and filters
+- [ ] Sub-diagrams, an error list in CI, and the editor's zoom and layout work
+- [ ] Proven on a Pi for a day, which needs the board and a long run
 
 ---
 
