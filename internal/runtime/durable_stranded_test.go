@@ -49,13 +49,16 @@ func TestDurablePumpCountsAWireItFindsStuck(t *testing.T) {
 	w.notify()
 
 	waitFor(t, "the pump to count the stuck wire", func() bool { return q.Stranded() > 0 })
-	var said bool
-	for _, e := range rig.el.byTopic(TopicLog) {
-		if m, _ := e.Data["message"].(string); strings.Contains(m, "is stuck (depth-without-rows)") {
-			said = true
+	// The pump counts the wire and then logs, and the log reaches the test through
+	// the runtime's event channel, so the count can be seen a moment before the
+	// line is. Reading the log once, right after the count, failed on a slow
+	// runner with "counted but did not say why". It says why a moment later.
+	waitFor(t, "the pump to say why in the log", func() bool {
+		for _, e := range rig.el.byTopic(TopicLog) {
+			if m, _ := e.Data["message"].(string); strings.Contains(m, "is stuck (depth-without-rows)") {
+				return true
+			}
 		}
-	}
-	if !said {
-		t.Fatal("the pump counted the wire but did not say why in the log")
-	}
+		return false
+	})
 }
