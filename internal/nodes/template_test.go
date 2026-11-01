@@ -182,7 +182,7 @@ func TestTemplateReadsContextAndEnvironment(t *testing.T) {
 	if err := svc.Context("flow").Set("setpoint", 72.5); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.Context("global").Set("site", map[string]any{"name": "ut3"}); err != nil {
+	if err := svc.Context("global").Set("site", map[string]any{"name": "site1"}); err != nil {
 		t.Fatal(err)
 	}
 	svc.env["LINE"] = "3"
@@ -194,7 +194,7 @@ func TestTemplateReadsContextAndEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("receive: %v", err)
 	}
-	if got := e.on(0)[0].Payload(); got != "72.5 ut3 3" {
+	if got := e.on(0)[0].Payload(); got != "72.5 site1 3" {
 		t.Fatalf("rendered %q", got)
 	}
 }

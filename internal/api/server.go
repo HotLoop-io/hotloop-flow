@@ -16,6 +16,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/assertion"
 	"github.com/HotLoop-io/hotloop-flow/internal/audit"
 	"github.com/HotLoop-io/hotloop-flow/internal/config"
+	"github.com/HotLoop-io/hotloop-flow/internal/diagram"
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowdiff"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
@@ -41,6 +42,11 @@ const (
 	PermSettings   = "settings.read"
 	PermInject     = "inject.write"
 	PermAuditRead  = "audit.read"
+	// PermDiagramRun covers pressing run and stop on a diagram, setting a
+	// control on its panel, and debugging a run. Reading a panel needs only
+	// status.read, so an operator can be given a panel to watch and a panel to
+	// run without being given the flows.
+	PermDiagramRun = "diagram.run"
 	// PermMCP is what a caller needs to reach the MCP endpoint, where flows are
 	// served as tools. A tool can ask for more.
 	PermMCP = mcphost.Permission
@@ -117,6 +123,9 @@ type Deps struct {
 	// Metrics are extra families for /metrics, from the parts of the process
 	// that aren't nodes.
 	Metrics []metrics.Family
+
+	// Diagrams runs the flow file's diagrams. Nil turns the diagram routes off.
+	Diagrams *diagram.Manager
 }
 
 // DeployRequest is a deploy and everything the deployment log records about it.
@@ -295,6 +304,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET "+s.path("/runtime/stats"), s.auth(PermStatusRead, s.handleStats))
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))
+	s.diagramRoutes()
 	if s.deps.MCP != nil {
 		// POST for every request, and GET and DELETE for the handshake revisions
 		// of MCP, which open a stream and end a session with them. Each is named

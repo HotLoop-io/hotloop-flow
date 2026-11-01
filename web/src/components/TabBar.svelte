@@ -19,11 +19,12 @@
     onedit: (id: string) => void;
     onaddflow: () => void;
     onaddsubflow: () => void;
+    onadddiagram: () => void;
     ontosubflow: () => void;
     onflowprops: () => void;
     onsubflowprops: () => void;
   }
-  let { flows, subflows, active, changed, editing, canMakeSubflow, showFlowProps, showSubflowProps, state, dirty, onpick, onedit, onaddflow, onaddsubflow, ontosubflow, onflowprops, onsubflowprops }: Props = $props();
+  let { flows, subflows, active, changed, editing, canMakeSubflow, showFlowProps, showSubflowProps, state, dirty, onpick, onedit, onaddflow, onaddsubflow, onadddiagram, ontosubflow, onflowprops, onsubflowprops }: Props = $props();
 </script>
 
 <div class="tabbar">
@@ -36,6 +37,7 @@
   {#if editing}
     <button class="tab tab-add" data-test="tab-add" title="Add a flow" aria-label="Add a flow" onclick={onaddflow}><Icon name="plus" /></button>
     <button class="tab tab-add" data-test="tab-add-subflow" title="Add a subflow" onclick={onaddsubflow}><Icon name="plus" />subflow</button>
+    <button class="tab tab-add" data-test="tab-add-diagram" title="Add a FlowLab diagram: nodes that run when all their inputs are ready, with a panel" onclick={onadddiagram}><Icon name="plus" />diagram</button>
   {/if}
   <div class="spacer"></div>
   {#if editing}

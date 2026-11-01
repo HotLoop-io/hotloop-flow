@@ -8,6 +8,7 @@
   import { Api, ApiError, type Descriptor, type Settings } from '../lib/api';
   import { applyTheme, followParentTheme, initialTheme, watchSystemTheme } from '../lib/theme';
   import Editor from './Editor.svelte';
+  import Panel from './Panel.svelte';
   import SignIn from './SignIn.svelte';
 
   const api = new Api('');
@@ -18,6 +19,12 @@
     | { kind: 'dashboard' }
     | { kind: 'editor'; settings: Settings; descriptors: Descriptor[] };
   let view: View = $state({ kind: 'boot' });
+  // A panel address is the editor's address with #/panel/<diagram>, so an
+  // operator signs in the same way and gets the page without the editor.
+  const panelId = (): string | null => {
+    const m = /^#\/panel\/(.+)$/.exec(location.hash);
+    return m ? decodeURIComponent(m[1]!) : null;
+  };
 
   async function start(): Promise<void> {
     // Remembered before the calls, because a 401 drops the token: a stale one
@@ -66,6 +73,8 @@
       <p>Open this from the EmberCORE dashboard. If you were signed in there and still see this, your role does not include Flow.</p>
     </div>
   </div>
+{:else if view.kind === 'editor' && panelId()}
+  <Panel {api} id={panelId()!} onsessionlost={() => (view = { kind: 'login', message: 'Session expired. Sign in again.' })} />
 {:else if view.kind === 'editor'}
   <!-- With authentication off there is nobody to sign out and no screen to sign
        back in on, so the editor gets no Sign out button at all. Nor when the

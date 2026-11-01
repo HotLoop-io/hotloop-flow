@@ -62,6 +62,14 @@ export class Canvas {
   private testMarks = new Map<string, TestMark>();
   private wireClashes = new Map<string, string[]>();
   private trace: TraceOverlay | null = null;
+  /** Where a diagram run is: node id to start, ready, done, skipped, error. */
+  private nodeStates = new Map<string, string>();
+  /** Wires a token just crossed, by wire key, while highlight execution is on. */
+  private litWires = new Set<string>();
+  /** The last value on a wire, by wire key, for the tooltip. */
+  private probeValues: Map<string, string> | null = null;
+  private breakpoints = new Set<string>();
+  private probed = new Set<string>();
   private readonly readOnly: boolean;
   private lastPress = { id: '', at: 0 };
   /** Where the pointer last was over the canvas, in canvas coordinates. */
@@ -334,7 +342,8 @@ export class Canvas {
       const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-node-id]');
       if (target) {
         const toId = target.getAttribute('data-node-id')!;
-        this.graph.connect(this.mode.fromId, this.mode.port, toId);
+        const inEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-in-port]');
+        this.graph.connect(this.mode.fromId, this.mode.port, toId, inEl?.getAttribute('data-in-port') ?? undefined);
       }
     } else if (this.mode.kind === 'drag') {
       if (this.mode.moved) {
@@ -478,6 +487,16 @@ export class Canvas {
     if (sameClashes(this.wireClashes, next)) return;
     this.wireClashes = next;
     this.renderWires();
+  }
+
+  /** The state of a diagram run, drawn on the nodes and wires. */
+  setRun(opts: { nodes?: Map<string, string>; lit?: Set<string>; values?: Map<string, string>; breakpoints?: Set<string>; probed?: Set<string> }): void {
+    if (opts.nodes) this.nodeStates = opts.nodes;
+    if (opts.lit) this.litWires = opts.lit;
+    if (opts.values) this.probeValues = opts.values;
+    if (opts.breakpoints) this.breakpoints = opts.breakpoints;
+    if (opts.probed) this.probed = opts.probed;
+    this.render();
   }
 
   setTestMarks(marks: Map<string, TestMark> | null): void {
@@ -658,9 +677,11 @@ export class Canvas {
     const chips: SVGGElement[] = [];
 
     for (const { from, port, to } of this.graph.wiresOn(this.graph.activeTab)) {
-      const total = this.graph.outputCount(from);
+      const inK = this.graph.inIndex(from, port, to);
+      const a = this.graph.outPos(from, port);
+      const b = this.graph.inPos(to, inK);
       const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('d', wirePath(outputPort(from, port, total), inputPort(to)));
+      path.setAttribute('d', wirePath(a, b));
       const added = this.diff?.addedWires.has(wireKey(from.id, port, to.id));
       const lit = this.trace?.edges.get(`${from.id}>${to.id}`);
       const durable = this.graph.wireSettings(from.id, to.id).durable;
@@ -668,6 +689,17 @@ export class Canvas {
       path.setAttribute('data-from', from.id);
       path.setAttribute('data-port', String(port));
       path.setAttribute('data-to', to.id);
+      if (this.graph.ports(to)) path.setAttribute('data-in', String(inK));
+      const lastSeen = this.probeValues?.get(`${from.id}.${this.graph.ports(from)?.out[port] ?? ''}>${to.id}.${this.graph.ports(to)?.in[inK] ?? ''}`);
+      if (lastSeen !== undefined) {
+        const tip = document.createElementNS(SVG_NS, 'title');
+        tip.textContent = lastSeen;
+        path.append(tip);
+        path.setAttribute('data-last', lastSeen);
+      }
+      const wkey = `${from.id}.${this.graph.ports(from)?.out[port] ?? ''}>${to.id}.${this.graph.ports(to)?.in[inK] ?? ''}`;
+      if (this.litWires.has(wkey)) path.classList.add('live');
+      if (this.probed.has(`${this.graph.activeTab}/${wkey}`)) path.classList.add('probed');
 
       // The type on the wire, when either end declares one: a chip at the
       // middle of the curve, and the whole story as the wire's tooltip. The chip
@@ -680,7 +712,7 @@ export class Canvas {
         path.setAttribute('data-type-state', typed.state);
         frag.append(path);
 
-        const mid = wireMid(outputPort(from, port, total), inputPort(to));
+        const mid = wireMid(a, b);
         const text = truncate(typed.text, 26);
         const width = Math.max(18, text.length * 6.4 + 12);
         const chip = document.createElementNS(SVG_NS, 'g');
@@ -748,14 +780,16 @@ export class Canvas {
 
     const g = document.createElementNS(SVG_NS, 'g');
     const mark = this.diff?.marks.get(n.id);
-    g.setAttribute('class', `node${selected ? ' selected' : ''}${n.d ? ' disabled' : ''}${mark ? ` diff-${mark}` : ''}`);
+    const runState = this.nodeStates.get(n.id);
+    g.setAttribute('class', `node${selected ? ' selected' : ''}${n.d ? ' disabled' : ''}${mark ? ` diff-${mark}` : ''}${runState ? ` run-${runState}` : ''}${this.breakpoints.has(n.id) ? ' has-break' : ''}`);
     g.setAttribute('data-node-id', n.id);
 
+    const H = this.graph.nodeHeight(n);
     const body = document.createElementNS(SVG_NS, 'rect');
     body.setAttribute('x', String(x - NODE_WIDTH / 2));
-    body.setAttribute('y', String(y - NODE_HEIGHT / 2));
+    body.setAttribute('y', String(y - H / 2));
     body.setAttribute('width', String(NODE_WIDTH));
-    body.setAttribute('height', String(NODE_HEIGHT));
+    body.setAttribute('height', String(H));
     body.setAttribute('rx', '6');
     body.setAttribute('class', 'node-body');
     // Unknown types render grey rather than vanishing, so a flow using a node
@@ -769,9 +803,9 @@ export class Canvas {
     // label reads the same in light and dark.
     const r = 6;
     const x0 = x - NODE_WIDTH / 2;
-    const y0 = y - NODE_HEIGHT / 2;
+    const y0 = y - H / 2;
     const strip = document.createElementNS(SVG_NS, 'path');
-    strip.setAttribute('d', `M${x0 + r} ${y0}H${x0 + 6}V${y0 + NODE_HEIGHT}H${x0 + r}A${r} ${r} 0 0 1 ${x0} ${y0 + NODE_HEIGHT - r}V${y0 + r}A${r} ${r} 0 0 1 ${x0 + r} ${y0}Z`);
+    strip.setAttribute('d', `M${x0 + r} ${y0}H${x0 + 6}V${y0 + H}H${x0 + r}A${r} ${r} 0 0 1 ${x0} ${y0 + H - r}V${y0 + r}A${r} ${r} 0 0 1 ${x0 + r} ${y0}Z`);
     strip.setAttribute('class', 'node-strip');
     strip.setAttribute('fill', d?.color ?? '#9e9e9e');
     g.append(strip);
@@ -785,20 +819,43 @@ export class Canvas {
 
     const label = document.createElementNS(SVG_NS, 'text');
     label.setAttribute('x', String(x + 3));
-    label.setAttribute('y', String(y + 4));
+    label.setAttribute('y', String(this.graph.ports(n) ? y - H / 2 - 5 : y + 4));
     label.setAttribute('class', 'node-label');
     label.setAttribute('text-anchor', 'middle');
     label.textContent = truncate(this.graph.label(n), 18);
     g.append(label);
 
     // Ports.
-    if (this.graph.inputCount(n) > 0) {
+    const named = this.graph.ports(n);
+    if (named) {
+      named.in.forEach((name, k) => {
+        const p = this.graph.inPos(n, k);
+        const c = this.portCircle(p, 'port-in');
+        c.setAttribute('data-in-port', name);
+        c.setAttribute('data-node', n.id);
+        const t = document.createElementNS(SVG_NS, 'text');
+        t.setAttribute('x', String(p.x + 8));
+        t.setAttribute('y', String(p.y + 3));
+        t.setAttribute('class', 'port-name');
+        t.textContent = name;
+        g.append(c, t);
+      });
+    } else if (this.graph.inputCount(n) > 0) {
       const p = inputPort(n);
       g.append(this.portCircle(p, 'port-in'));
     }
     const outputs = this.graph.outputCount(n);
     for (let i = 0; i < outputs; i++) {
-      const p = outputPort(n, i, outputs);
+      const p = this.graph.outPos(n, i);
+      if (named) {
+        const t = document.createElementNS(SVG_NS, 'text');
+        t.setAttribute('x', String(p.x - 8));
+        t.setAttribute('y', String(p.y + 3));
+        t.setAttribute('text-anchor', 'end');
+        t.setAttribute('class', 'port-name');
+        t.textContent = named.out[i] ?? '';
+        g.append(t);
+      }
       const c = this.portCircle(p, 'port-out');
       c.setAttribute('data-port', String(i));
       c.setAttribute('data-node', n.id);
@@ -881,9 +938,8 @@ export class Canvas {
     if (this.mode.kind === 'wire') {
       const from = this.graph.byId(this.mode.fromId);
       if (!from) return;
-      const total = this.graph.outputCount(from);
       const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('d', wirePath(outputPort(from, this.mode.port, total), this.mode.cursor));
+      path.setAttribute('d', wirePath(this.graph.outPos(from, this.mode.port), this.mode.cursor));
       path.setAttribute('class', 'wire wire-pending');
       this.layers.overlay.append(path);
       return;

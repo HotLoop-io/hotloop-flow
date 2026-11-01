@@ -251,7 +251,7 @@ func TestHTTPResponseHeadersFromTheNodeAndTheMessage(t *testing.T) {
 	go func() {
 		waitForCount(e, 1, 5*time.Second)
 		m := e.on(0)[0]
-		m.Data["headers"] = map[string]any{"X-Site": "ut3"}
+		m.Data["headers"] = map[string]any{"X-Site": "site1"}
 		m.Data["statusCode"] = float64(418)
 		m.SetPayload("teapot")
 		_ = resp.Receive(t.Context(), m, newTestEmitter())
@@ -261,7 +261,7 @@ func TestHTTPResponseHeadersFromTheNodeAndTheMessage(t *testing.T) {
 	if rec.Header().Get("X-Line") != "3" {
 		t.Errorf("the node's header is missing: %v", rec.Header())
 	}
-	if rec.Header().Get("X-Site") != "ut3" {
+	if rec.Header().Get("X-Site") != "site1" {
 		t.Errorf("the message's header is missing: %v", rec.Header())
 	}
 	// The node's own status code is empty here, so msg.statusCode wins.

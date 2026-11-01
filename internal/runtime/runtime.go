@@ -376,7 +376,14 @@ func (rt *Runtime) Start(ctx context.Context) []StartError {
 // shouldRun reports whether a flow node is meant to be running in this graph:
 // not a config node, not disabled, and not on a disabled tab.
 func (g *graph) shouldRun(n *engine.Node) bool {
-	return !n.IsConfig && !n.Disabled && g.scopeEnabled(n.Z)
+	return !n.IsConfig && !n.Disabled && g.scopeEnabled(n.Z) && !g.onDiagram(n.Z)
+}
+
+// onDiagram reports whether a node's tab is a diagram. Its nodes run in a run of
+// their own, started by the diagram engine, and never as messages.
+func (g *graph) onDiagram(z string) bool {
+	tab, ok := g.flows.Tabs[z]
+	return ok && tab.IsDiagram()
 }
 
 // scopeEnabled reports whether a node's containing tab is enabled. A node on a

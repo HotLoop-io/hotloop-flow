@@ -1,0 +1,363 @@
+[
+    {
+        "id": "scale-logger",
+        "type": "tab",
+        "label": "Scale logger",
+        "disabled": false,
+        "info": "",
+        "ew_diagram": {
+            "autostart": true
+        }
+    },
+    {
+        "id": "scale-body",
+        "type": "tab",
+        "label": "Scale logger body",
+        "disabled": false,
+        "info": "",
+        "ew_diagram": {
+            "role": "body"
+        }
+    },
+    {
+        "id": "port",
+        "type": "dia-serial-open",
+        "z": "scale-logger",
+        "x": 200,
+        "y": 160,
+        "wires": [
+            [
+                "loop"
+            ],
+            [],
+            []
+        ],
+        "name": "Scale port",
+        "device": "/tmp/scale-tty",
+        "baud": 9600,
+        "data": "8",
+        "parity": "none",
+        "stop": "1",
+        "ew_in": [
+            [
+                "session"
+            ],
+            [],
+            []
+        ]
+    },
+    {
+        "id": "loop",
+        "type": "dia-while",
+        "z": "scale-logger",
+        "x": 520,
+        "y": 160,
+        "wires": [],
+        "name": "Read the scale",
+        "body": "Scale logger body",
+        "carried": "window",
+        "start": "{\"window\": []}",
+        "ins": "session",
+        "outs": "",
+        "maxIterations": 0
+    },
+    {
+        "id": "session",
+        "type": "dia-body-in",
+        "z": "scale-body",
+        "x": 120,
+        "y": 140,
+        "wires": [
+            [
+                "read"
+            ],
+            []
+        ],
+        "name": "session",
+        "ew_in": [
+            [
+                "session"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "window",
+        "type": "dia-body-in",
+        "z": "scale-body",
+        "x": 120,
+        "y": 380,
+        "wires": [
+            [
+                "stable"
+            ],
+            []
+        ],
+        "name": "window",
+        "ew_in": [
+            [
+                "window"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "read",
+        "type": "dia-serial-read",
+        "z": "scale-body",
+        "x": 340,
+        "y": 140,
+        "wires": [
+            [
+                "parse"
+            ],
+            [
+                "parse"
+            ],
+            []
+        ],
+        "terminator": "\\n",
+        "bytes": 0,
+        "timeoutMs": 3000,
+        "ew_in": [
+            [
+                "line"
+            ],
+            [
+                "err"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "parse",
+        "type": "dia-parse-reading",
+        "z": "scale-body",
+        "x": 600,
+        "y": 140,
+        "wires": [
+            [
+                "stable",
+                "bundle",
+                "weight",
+                "trend"
+            ],
+            [
+                "bundle",
+                "unit"
+            ],
+            [],
+            [
+                "stable"
+            ],
+            []
+        ],
+        "name": "Parse the frame",
+        "ew_in": [
+            [
+                "value",
+                "weight",
+                "value",
+                "y"
+            ],
+            [
+                "unit",
+                "value"
+            ],
+            [],
+            [
+                "err"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "stable",
+        "type": "dia-stable",
+        "z": "scale-body",
+        "x": 880,
+        "y": 160,
+        "wires": [
+            [
+                "bundle",
+                "led"
+            ],
+            [
+                "windowOut"
+            ],
+            [],
+            [],
+            [
+                "bundle"
+            ],
+            []
+        ],
+        "size": 5,
+        "tolerance": 0.02,
+        "ew_in": [
+            [
+                "stable",
+                "value"
+            ],
+            [
+                "value"
+            ],
+            [],
+            [],
+            [
+                "err"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "bundle",
+        "type": "dia-bundle",
+        "z": "scale-body",
+        "x": 1140,
+        "y": 160,
+        "wires": [
+            [
+                "log"
+            ],
+            [
+                "log"
+            ],
+            []
+        ],
+        "names": "weight,unit,stable",
+        "ew_in": [
+            [
+                "row"
+            ],
+            [
+                "err"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "log",
+        "type": "dia-log-text",
+        "z": "scale-body",
+        "x": 1400,
+        "y": 160,
+        "wires": [
+            [],
+            [
+                "status"
+            ],
+            []
+        ],
+        "path": "scale-log.csv",
+        "columns": "weight,unit,stable",
+        "delimiter": "comma",
+        "timeName": "time",
+        "ew_in": [
+            [],
+            [
+                "value"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "weight",
+        "type": "dia-indicator",
+        "z": "scale-body",
+        "x": 1140,
+        "y": 420,
+        "wires": [],
+        "label": "Weight",
+        "kind": "number",
+        "style": "big",
+        "unit": "kg",
+        "digits": 2
+    },
+    {
+        "id": "unit",
+        "type": "dia-indicator",
+        "z": "scale-body",
+        "x": 1140,
+        "y": 500,
+        "wires": [],
+        "label": "Unit",
+        "kind": "string",
+        "style": "plain"
+    },
+    {
+        "id": "led",
+        "type": "dia-indicator",
+        "z": "scale-body",
+        "x": 1140,
+        "y": 580,
+        "wires": [],
+        "label": "Stable",
+        "kind": "bool",
+        "style": "led"
+    },
+    {
+        "id": "status",
+        "type": "dia-indicator",
+        "z": "scale-body",
+        "x": 1400,
+        "y": 420,
+        "wires": [],
+        "label": "Status",
+        "kind": "error",
+        "style": "plain"
+    },
+    {
+        "id": "trend",
+        "type": "dia-chart",
+        "z": "scale-body",
+        "x": 880,
+        "y": 440,
+        "wires": [],
+        "label": "Trend",
+        "mode": "chart",
+        "history": 1024,
+        "unit": "kg"
+    },
+    {
+        "id": "stopctl",
+        "type": "dia-control",
+        "z": "scale-body",
+        "x": 600,
+        "y": 520,
+        "wires": [
+            [
+                "stop"
+            ],
+            []
+        ],
+        "label": "Stop",
+        "kind": "bool",
+        "style": "switch",
+        "default": "false",
+        "ew_in": [
+            [
+                "value"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "stop",
+        "type": "dia-body-out",
+        "z": "scale-body",
+        "x": 880,
+        "y": 640,
+        "wires": [],
+        "name": "stop"
+    },
+    {
+        "id": "windowOut",
+        "type": "dia-body-out",
+        "z": "scale-body",
+        "x": 1140,
+        "y": 660,
+        "wires": [],
+        "name": "window"
+    }
+]
