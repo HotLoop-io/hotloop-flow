@@ -29,6 +29,9 @@ export interface Descriptor {
   align?: string;
   isConfig?: boolean;
   hasButton?: boolean;
+  /** Named ports of a node that runs in a diagram. "@prop" lists more from a property; a trailing "?" is optional. */
+  inputPorts?: string[];
+  outputPorts?: string[];
   inputLabels?: string[];
   outputLabels?: string[];
   props?: PropDef[];
@@ -453,6 +456,39 @@ export class Api {
     return this.send('POST', `/traces/${traceId}/replay`, flows ? { flows } : {});
   }
 
+  // ── Diagrams ───────────────────────────────────────────────────────────────
+  diagrams(): Promise<{ diagrams: DiagramSummary[] }> {
+    return this.get('/diagrams');
+  }
+
+  diagram(id: string): Promise<DiagramDescription> {
+    return this.get(`/diagrams/${encodeURIComponent(id)}`);
+  }
+
+  runDiagram(id: string, opts: { highlightMs?: number; pause?: boolean } = {}): Promise<{ run: string }> {
+    return this.send('POST', `/diagrams/${encodeURIComponent(id)}/run`, opts);
+  }
+
+  stopDiagram(id: string): Promise<unknown> {
+    return this.send('POST', `/diagrams/${encodeURIComponent(id)}/stop`, {});
+  }
+
+  debugDiagram(id: string, action: string, highlightMs = 0): Promise<unknown> {
+    return this.send('POST', `/diagrams/${encodeURIComponent(id)}/debug`, { action, highlightMs });
+  }
+
+  setControl(id: string, node: string, value: unknown): Promise<{ value: unknown }> {
+    return this.send('PUT', `/diagrams/${encodeURIComponent(id)}/controls/${encodeURIComponent(node)}`, { value });
+  }
+
+  setBreakpoints(id: string, keys: string[]): Promise<unknown> {
+    return this.send('PUT', `/diagrams/${encodeURIComponent(id)}/breakpoints`, { keys });
+  }
+
+  setProbes(id: string, wires: string[], depth = 100): Promise<unknown> {
+    return this.send('PUT', `/diagrams/${encodeURIComponent(id)}/probes`, { wires, depth });
+  }
+
   /**
    * Opens the event stream.
    *
@@ -515,6 +551,49 @@ export class Api {
       socket?.close();
     };
   }
+}
+
+export interface DiagramProblem { node?: string; port?: string; text: string }
+
+export interface DiagramSummary {
+  id: string;
+  label: string;
+  role: string;
+  autostart: boolean;
+  state: string;
+  problems: DiagramProblem[];
+}
+
+export interface PanelTerminal {
+  id: string;
+  type: string;
+  diagram: string;
+  label: string;
+  kind?: string;
+  style?: string;
+  unit?: string;
+  digits?: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  options?: string[];
+  default?: unknown;
+  mode?: string;
+  history?: number;
+}
+
+export interface PanelChart { mode: string; history: number; t?: number[]; x?: number[]; y: number[]; dropped: number }
+
+export interface WireSnapshot { last: unknown; at: string; count: number; history?: { value: unknown; at: string }[] }
+
+export interface DiagramDescription extends DiagramSummary {
+  terminals: PanelTerminal[];
+  panel: { controls: Record<string, unknown>; indicators: Record<string, unknown>; charts: Record<string, PanelChart> };
+  run?: { id: string; state: string; error?: string; waiting?: string[]; nodeRuns: number; errors: number };
+  breakpoints: string[];
+  probes: string[];
+  wires: Record<string, WireSnapshot>;
+  ports: Record<string, { in: string[]; out: string[] }>;
 }
 
 /** One node handling one message, as GET /traces serves it. */

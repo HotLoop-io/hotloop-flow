@@ -56,14 +56,23 @@ func init() {
 				prop("unit", "Unit", node.PropString, ""),
 				prop("digits", "Decimal places", node.PropNumber, 2),
 			},
-			Help: "An output on the panel. It shows the last value that reached it. A value that is nothing, such as what a node that skipped for an error hands on, leaves it as it was.",
+			Help: "An output on the panel. It shows the last value that reached it. A value that is nothing, such as what a node that skipped for an error hands on, leaves it as it was. An error indicator takes nothing to mean no error.",
 		},
-		New: fixed(opFunc(func(_ context.Context, rc *Ctx, in map[string]any) (map[string]any, error) {
-			if v := in["value"]; v != nil {
-				rc.Run.Panel().SetIndicator(rc.Node.ID, v)
-			}
-			return nil, nil
-		})),
+		New: func(raw map[string]any) (Op, error) {
+			isErr := strProp(raw, "kind", "number") == "error"
+			return opFunc(func(_ context.Context, rc *Ctx, in map[string]any) (map[string]any, error) {
+				v := in["value"]
+				if v == nil && isErr {
+					// Nothing on an error wire is no error, which clears a
+					// red indicator once the fault has gone.
+					v = Error{}
+				}
+				if v != nil {
+					rc.Run.Panel().SetIndicator(rc.Node.ID, v)
+				}
+				return nil, nil
+			}), nil
+		},
 	})
 
 	register(Kind{

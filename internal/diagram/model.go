@@ -153,11 +153,20 @@ func (p Problem) String() string {
 type Set struct {
 	Diagrams map[string]*Diagram
 	Order    []string
+	// bodyOf maps a structure node to the diagram it runs. A loop names its body
+	// by the tab's id or, since nobody can read an id, by its name.
+	bodyOf map[string]string
+}
+
+// Body returns the id of the diagram a structure node runs, and whether there is one.
+func (s *Set) Body(node string) (string, bool) {
+	id, ok := s.bodyOf[node]
+	return id, ok
 }
 
 // CompileAll compiles every diagram tab in the flow file.
 func CompileAll(flows *engine.Flows) *Set {
-	s := &Set{Diagrams: map[string]*Diagram{}}
+	s := &Set{Diagrams: map[string]*Diagram{}, bodyOf: map[string]string{}}
 	if flows == nil {
 		return s
 	}
@@ -176,6 +185,35 @@ func CompileAll(flows *engine.Flows) *Set {
 	for _, id := range ids {
 		s.Diagrams[id] = compile(flows, id)
 		s.Order = append(s.Order, id)
+	}
+	// Resolve each structure's body: an id, or a name that only one diagram has.
+	byName := map[string][]string{}
+	for _, id := range s.Order {
+		byName[s.Diagrams[id].Label] = append(byName[s.Diagrams[id].Label], id)
+	}
+	for _, id := range s.Order {
+		d := s.Diagrams[id]
+		d.Bodies = nil
+		for _, nid := range d.Order {
+			dn := d.Nodes[nid]
+			if !dn.Kind.Structure {
+				continue
+			}
+			name, _ := dn.Raw["body"].(string)
+			switch {
+			case s.Diagrams[name] != nil:
+				s.bodyOf[nid] = name
+			case len(byName[name]) == 1:
+				s.bodyOf[nid] = byName[name][0]
+			case len(byName[name]) > 1:
+				d.Problems = append(d.Problems, Problem{Node: nid, Text: fmt.Sprintf("%d diagrams are named %q, so the body is ambiguous", len(byName[name]), name)})
+			default:
+				d.Problems = append(d.Problems, Problem{Node: nid, Text: fmt.Sprintf("the body %q is not a diagram", name)})
+			}
+			if b, ok := s.bodyOf[nid]; ok {
+				d.Bodies = append(d.Bodies, b)
+			}
+		}
 	}
 	for _, id := range s.Order {
 		d := s.Diagrams[id]
@@ -198,7 +236,8 @@ func CompileAll(flows *engine.Flows) *Set {
 					if !dn.Kind.Structure {
 						continue
 					}
-					b, ok := s.Diagrams[strProp(dn.Raw, "body", "")]
+					bid, _ := s.Body(nid)
+					b, ok := s.Diagrams[bid]
 					if !ok || len(b.Problems) == 0 || hasProblem(d, nid, "the body") {
 						continue
 					}
@@ -211,15 +250,6 @@ func CompileAll(flows *engine.Flows) *Set {
 			}
 		}
 	}()
-	// A structure names its body by tab id, so check each body is a diagram.
-	for _, id := range s.Order {
-		d := s.Diagrams[id]
-		for _, b := range d.Bodies {
-			if _, ok := s.Diagrams[b]; !ok {
-				d.Problems = append(d.Problems, Problem{Text: fmt.Sprintf("a structure names the body %q, which is not a diagram", b)})
-			}
-		}
-	}
 	return s
 }
 
@@ -311,9 +341,6 @@ func compile(flows *engine.Flows, tabID string) *Diagram {
 				d.Problems = append(d.Problems, Problem{Node: id, Text: err.Error()})
 			}
 			dn.Op = op
-		}
-		if b, ok := dn.Raw["body"].(string); ok && b != "" && dn.Kind.Structure {
-			d.Bodies = append(d.Bodies, b)
 		}
 	}
 	d.Problems = append(d.Problems, cycles(d)...)

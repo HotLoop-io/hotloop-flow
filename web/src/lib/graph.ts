@@ -20,6 +20,12 @@ export const SUBFLOW_PREFIX = 'subflow:';
  * refuse a message before the wire gives up on it.
  */
 export const DURABLE_KEY = 'ew_durable';
+/** On a tab: it is a diagram, whose nodes run when all their inputs are ready. */
+export const DIAGRAM_KEY = 'ew_diagram';
+/** On a node: for each output, the input port name of each wire. */
+export const IN_KEY = 'ew_in';
+export const AFTER_PORT = 'after';
+export const DONE_PORT = 'done';
 export const DURABLE_ATTEMPTS_KEY = 'ew_durable_attempts';
 
 const PORT_ID = /^@(in|out):(.+):([0-9]+)$/;
@@ -124,6 +130,26 @@ export const GRID = 10;
 /** Room a group leaves around what it holds, and for its label above it. */
 export const GROUP_PAD = 16;
 export const GROUP_HEAD = 22;
+
+/** Spacing between ports on a node that has named ports. */
+export const PORT_STEP = 14;
+
+/** How tall a node with this many rows of ports is. */
+export function nodeHeightFor(rows: number): number {
+  return Math.max(NODE_HEIGHT, rows * PORT_STEP + 10);
+}
+
+/** Where a named input port sits, counting from the top of the node. */
+export function namedInputPort(node: FlowEntry, k: number, rows: number): Point {
+  const h = nodeHeightFor(rows);
+  return { x: (node.x ?? 0) - NODE_WIDTH / 2, y: (node.y ?? 0) - h / 2 + 12 + k * PORT_STEP };
+}
+
+/** Where a named output port sits. */
+export function namedOutputPort(node: FlowEntry, k: number, rows: number): Point {
+  const h = nodeHeightFor(rows);
+  return { x: (node.x ?? 0) + NODE_WIDTH / 2, y: (node.y ?? 0) - h / 2 + 12 + k * PORT_STEP };
+}
 
 /** Where an output port sits on a node. */
 export function outputPort(node: FlowEntry, port: number, total: number): Point {
@@ -359,8 +385,62 @@ export class Graph {
     return this.desc(type);
   }
 
+  /**
+   * The named ports of a node that runs in a diagram, or null for any other node.
+   * Mirrors the runtime: the type's ports, then after in and done out.
+   */
+  ports(e: FlowEntry): { in: string[]; out: string[] } | null {
+    const d = this.desc(e.type);
+    if (!d || (!d.inputPorts && !d.outputPorts)) return null;
+    const expand = (spec: string[] | undefined): string[] => {
+      const out: string[] = [];
+      for (let s of spec ?? []) {
+        s = s.replace(/\?$/, '');
+        if (s.startsWith('@')) {
+          const v = e[s.slice(1)];
+          for (const n of typeof v === 'string' ? v.split(',') : []) if (n.trim() && !out.includes(n.trim())) out.push(n.trim());
+        } else if (!out.includes(s)) out.push(s);
+      }
+      return out;
+    };
+    return { in: [...expand(d.inputPorts), AFTER_PORT], out: [...expand(d.outputPorts), DONE_PORT] };
+  }
+
+  /** Height of a node: taller when it has several named ports. */
+  nodeHeight(e: FlowEntry): number {
+    const p = this.ports(e);
+    return p ? nodeHeightFor(Math.max(p.in.length, p.out.length)) : NODE_HEIGHT;
+  }
+
+  /** The input port a wire lands on: its index in the target's ports. */
+  inIndex(from: FlowEntry, port: number, to: FlowEntry): number {
+    const p = this.ports(to);
+    if (!p) return 0;
+    const targets = from.wires?.[port] ?? [];
+    const names = ((from[IN_KEY] as string[][] | undefined)?.[port]) ?? [];
+    const i = targets.indexOf(to.id);
+    const k = p.in.indexOf(names[i] ?? '');
+    return k < 0 ? 0 : k;
+  }
+
+  /** Where an output port is drawn. */
+  outPos(e: FlowEntry, port: number): Point {
+    const p = this.ports(e);
+    if (p) return namedOutputPort(e, port, Math.max(p.in.length, p.out.length));
+    return outputPort(e, port, this.outputCount(e));
+  }
+
+  /** Where an input port is drawn. */
+  inPos(e: FlowEntry, k = 0): Point {
+    const p = this.ports(e);
+    if (p) return namedInputPort(e, k, Math.max(p.in.length, p.out.length));
+    return inputPort(e);
+  }
+
   /** How many outputs a node has, honouring a configurable count. */
   outputCount(e: FlowEntry): number {
+    const named = this.ports(e);
+    if (named) return named.out.length;
     const d = this.desc(e.type);
     if (d?.outputsProp) {
       const v = e[d.outputsProp];
@@ -372,6 +452,8 @@ export class Graph {
   }
 
   inputCount(e: FlowEntry): number {
+    const named = this.ports(e);
+    if (named) return named.in.length;
     return this.desc(e.type)?.inputs ?? 0;
   }
 
@@ -449,7 +531,7 @@ export class Graph {
       z: this.activeTab,
       x: snap(at.x),
       y: snap(at.y),
-      wires: Array.from({ length: d?.outputs ?? 0 }, () => []),
+      wires: Array.from({ length: d?.outputPorts ? (d.outputs ?? 0) : (d?.outputs ?? 0) }, () => []),
     };
 
     // Seed declared defaults so a freshly dropped node behaves as its dialog
@@ -582,7 +664,7 @@ export class Graph {
   }
 
   /** Connects an output port to a node's input. */
-  connect(fromId: string, port: number, toId: string): boolean {
+  connect(fromId: string, port: number, toId: string, inPort?: string): boolean {
     const from = this.byId(fromId);
     const to = this.byId(toId);
     if (!from || !to || fromId === toId) return false;
@@ -601,6 +683,19 @@ export class Graph {
     // A duplicate wire would deliver the message twice, which is almost never
     // what somebody dragging a second time intended.
     if (existing.includes(toId)) return false;
+    const tp = this.ports(to);
+    if (tp) {
+      // A diagram input takes one wire. The port is the one dropped on, or the
+      // first that nothing is wired to.
+      const taken = this.takenInputs(to);
+      const name = inPort && tp.in.includes(inPort) ? inPort : tp.in.find((n) => !taken.has(n));
+      if (!name || taken.has(name)) return false;
+      const ins = this.inNames(from);
+      while (ins.length <= port) ins.push([]);
+      while (ins[port]!.length < existing.length) ins[port]!.push('');
+      ins[port]!.push(name);
+      from[IN_KEY] = ins;
+    }
     existing.push(toId);
     this.touch();
     return true;
@@ -657,11 +752,49 @@ export class Graph {
     const from = this.byId(fromId);
     if (!from?.wires?.[port]) return;
     this.checkpoint('disconnect');
+    const at = from.wires[port]!.indexOf(toId);
+    if (at >= 0 && Array.isArray(from[IN_KEY]) && (from[IN_KEY] as string[][])[port]) {
+      (from[IN_KEY] as string[][])[port]!.splice(at, 1);
+      if ((from[IN_KEY] as string[][]).every((l) => l.length === 0)) delete from[IN_KEY];
+    }
     from.wires[port] = from.wires[port]!.filter((id) => id !== toId);
     // The durable mark is on the pair of nodes, so it goes with the last wire
     // between them and not before.
     if (!from.wires.some((targets) => targets.includes(toId))) this.forgetDurable(from, (id) => id === toId);
     this.touch();
+  }
+
+  private inNames(e: FlowEntry): string[][] {
+    const cur = e[IN_KEY];
+    return Array.isArray(cur) ? (cur as string[][]).map((l) => [...l]) : [];
+  }
+
+  /** The input ports of a diagram node that already have a wire. */
+  takenInputs(to: FlowEntry): Set<string> {
+    const taken = new Set<string>();
+    for (const e of this.entries) {
+      if (e.z !== to.z) continue;
+      e.wires?.forEach((targets, port) => {
+        targets.forEach((id, i) => {
+          if (id === to.id) taken.add(((e[IN_KEY] as string[][] | undefined)?.[port]?.[i]) ?? this.ports(to)?.in[0] ?? '');
+        });
+      });
+    }
+    return taken;
+  }
+
+  /** Makes a tab a diagram, or a diagram body. */
+  makeDiagram(tabId: string, settings: Record<string, unknown> = {}): void {
+    const t = this.byId(tabId);
+    if (!t || t.type !== 'tab') return;
+    this.checkpoint('make diagram');
+    t[DIAGRAM_KEY] = settings;
+    this.touch();
+  }
+
+  isDiagramTab(tabId: string): boolean {
+    const t = this.byId(tabId);
+    return !!t && t.type === 'tab' && DIAGRAM_KEY in t;
   }
 
   /** Applies edited properties to a node. */

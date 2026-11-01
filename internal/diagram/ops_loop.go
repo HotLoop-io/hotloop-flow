@@ -125,7 +125,8 @@ type loop struct {
 
 func (l *loop) Run(ctx context.Context, rc *Ctx, in map[string]any) (map[string]any, error) {
 	r := rc.Run
-	body, ok := r.set.Diagrams[l.body]
+	bid, _ := r.set.Body(rc.Node.ID)
+	body, ok := r.set.Diagrams[bid]
 	if !ok {
 		return nil, &Fault{Code: CodeBadInput, Source: fmt.Sprintf("the body %q is not a diagram", l.body)}
 	}
@@ -256,8 +257,8 @@ func asFault(err error, f **Fault) bool {
 // stop, and a carried value the body does not send back.
 func checkLoop(isFor bool) func(*Set, *Diagram, *DNode) []Problem {
 	return func(s *Set, _ *Diagram, n *DNode) []Problem {
-		name, _ := n.Raw["body"].(string)
-		body, ok := s.Diagrams[name]
+		bid, _ := s.Body(n.ID)
+		body, ok := s.Diagrams[bid]
 		if !ok {
 			return nil // reported once for the diagram
 		}

@@ -147,7 +147,7 @@ func init() {
 	register(Kind{
 		Descriptor: node.Descriptor{
 			Type: "dia-bundle", Color: "#d9d2c3", Icon: "bundle", PaletteLabel: "bundle", LabelProp: "names",
-			InputPorts: []string{"@names"}, OutputPorts: []string{"record"},
+			InputPorts: []string{"@names", "err?"}, OutputPorts: []string{"record", "err"},
 			Props: []node.Prop{prop("names", "Field names, comma separated", node.PropString, "a,b")},
 			Help:  "Gathers values into one record with a named field for each input.",
 		},
