@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
@@ -10,6 +11,12 @@ import (
 // These are the way code that is not a message node, a FlowLab diagram, reaches
 // a running mqtt-broker config node: the same connection, credentials and TLS
 // the MQTT nodes use, so a diagram never holds a second set of them.
+
+// ErrPublishUnconfirmed marks a publish that was handed to the client and then
+// did not report back in time. The client may still deliver it, so a caller that
+// keeps the message and sends it again can cause a duplicate. A publish refused
+// before it reached the client, because the link is down, never carries it.
+var ErrPublishUnconfirmed = errors.New("the broker did not confirm the publish, and the client may still deliver it")
 
 // PublishMQTT publishes through a running mqtt-broker config node. It fails when
 // the connection is down rather than queueing behind the caller's back.
@@ -39,7 +46,7 @@ func PublishMQTT(ctx context.Context, cfg node.Node, topic string, qos byte, ret
 		return fmt.Errorf("broker is not connected")
 	}
 	if err := b.Publish(ctx, mqttMessage{Topic: topic, QoS: qos, Retain: retain, Payload: payload}); err != nil {
-		return fmt.Errorf("publishing to %q: %w", topic, err)
+		return fmt.Errorf("publishing to %q: %w: %w", topic, ErrPublishUnconfirmed, err)
 	}
 	return nil
 }

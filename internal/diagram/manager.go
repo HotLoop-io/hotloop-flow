@@ -416,6 +416,17 @@ func (m *Manager) Breakpoints(id string) []string {
 	return append([]string(nil), m.breaks[id]...)
 }
 
+// OutboxUnconfirmedSends is how many sends of a durable output were taken by the
+// client and not confirmed. A message can arrive twice only if a send of it was
+// one of these, so it bounds the duplicates.
+func (m *Manager) OutboxUnconfirmedSends(tab, nodeID string) int64 {
+	b := m.outboxFor(tab, nodeID)
+	if b == nil {
+		return 0
+	}
+	return b.unconfirmed.Load()
+}
+
 // OutboxStats says how a durable output has done: what went straight out, what
 // was written to disk first, what the pump has delivered since, and what waits.
 func (m *Manager) OutboxStats(tab, nodeID string) (direct, spilled, drained, depth int64, ok bool) {
