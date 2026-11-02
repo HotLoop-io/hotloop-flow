@@ -234,7 +234,7 @@ func TestOPCUAReadAndWriteUnderAFlowTestNeverTouchTheNetwork(t *testing.T) {
 // with testdata/plant/opcplc_nodes.json and a login of flowuser/flowpass. The CI
 // workflow has the exact command.
 //
-//	HOTLOOP_FLOW_TEST_OPCUA=localhost:50000 go test ./internal/nodes/ -run OPCUA -v
+//	HOTLOOP_FLOW_TEST_OPCUA=localhost:4840 go test ./internal/nodes/ -run OPCUA -v
 
 const (
 	opcInt32  = "ns=3;s=Int32Tag"

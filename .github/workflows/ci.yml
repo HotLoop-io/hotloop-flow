@@ -172,14 +172,14 @@ jobs:
           sudo podman run -d --name modbus -p 5020:5020 \
             -v "$PWD/testdata/plant/modbus_server.json:/app/modbus_server.json:ro" \
             docker.io/oitc/modbus-server:2.3.0
-          sudo podman run -d --name opcplc -p 50000:50000 \
+          sudo podman run -d --name opcplc -p 4840:4840 \
             -v "$PWD/testdata/plant/opcplc_nodes.json:/cfg/nodes.json:ro" \
             mcr.microsoft.com/iotedge/opc-plc:2.15.11 \
-            --pn=50000 --autoaccept --unsecuretransport \
+            --pn=4840 --autoaccept --unsecuretransport \
             --defaultuser=flowuser --defaultpassword=flowpass \
             --heartbeats --nodesfile=/cfg/nodes.json \
             --fastnodes=1 --fastrate=1 --fasttype=UInt --slownodes=1 --slowrate=1 --slowtype=UInt
-          for p in 5020 50000; do
+          for p in 5020 4840; do
             for i in $(seq 1 60); do nc -z localhost $p && break; sleep 1; done
             nc -z localhost $p || { sudo podman logs modbus; sudo podman logs opcplc; echo "::error::nothing on $p"; exit 1; }
           done
@@ -280,7 +280,7 @@ jobs:
           # 127.0.0.1 and not localhost: the runner resolves localhost to ::1
           # first, Podman publishes the port on IPv4 only, and with localhost
           # the OPC UA client was refused on [::1].
-          HOTLOOP_FLOW_TEST_OPCUA: 127.0.0.1:50000
+          HOTLOOP_FLOW_TEST_OPCUA: 127.0.0.1:4840
           HOTLOOP_FLOW_TEST_S7: localhost:1102
           HOTLOOP_FLOW_TEST_ENIP: localhost:44818
         run: go test -race -count=1 -coverprofile=coverage.out ./...
@@ -366,7 +366,7 @@ jobs:
         # turns every one of these into a skip, and a skip reads as a pass.
         env:
           HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
-          HOTLOOP_FLOW_TEST_OPCUA: 127.0.0.1:50000
+          HOTLOOP_FLOW_TEST_OPCUA: 127.0.0.1:4840
         run: |
           OUT=$(go test ./internal/nodes/ -count=1 -v -run 'Modbus|OPCUA' 2>&1)
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
