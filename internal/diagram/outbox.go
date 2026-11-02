@@ -2,10 +2,12 @@ package diagram
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/HotLoop-io/hotloop-flow/internal/nodes"
 	"github.com/HotLoop-io/hotloop-flow/internal/store"
 )
 
@@ -26,10 +28,11 @@ type outbox struct {
 	cursor uint64
 	kick   chan struct{}
 
-	direct  atomic.Int64
-	spilled atomic.Int64
-	drained atomic.Int64
-	lastErr atomic.Value // string
+	direct      atomic.Int64
+	spilled     atomic.Int64
+	unconfirmed atomic.Int64 // sends the client took and did not confirm, each of which may still arrive
+	drained     atomic.Int64
+	lastErr     atomic.Value // string
 }
 
 // sendWait is how long one send may take before the message goes to disk
@@ -57,6 +60,7 @@ func (o *outbox) Put(ctx context.Context, body []byte) (sent bool, err error) {
 			return true, nil
 		}
 		o.lastErr.Store(err.Error())
+		o.noteFailure(err)
 	}
 	if _, err := o.q.Append(body); err != nil {
 		return false, err
@@ -67,6 +71,14 @@ func (o *outbox) Put(ctx context.Context, body []byte) (sent bool, err error) {
 	default:
 	}
 	return false, nil
+}
+
+// noteFailure counts a failed send as a possible duplicate only when the client
+// had taken the message, which is the only way it can arrive after being queued.
+func (o *outbox) noteFailure(err error) {
+	if errors.Is(err, nodes.ErrPublishUnconfirmed) {
+		o.unconfirmed.Add(1)
+	}
 }
 
 // Depth is how many messages wait.
@@ -109,6 +121,7 @@ func (o *outbox) deliverOne(ctx context.Context) bool {
 	cancel()
 	if err != nil {
 		o.lastErr.Store(err.Error())
+		o.noteFailure(err)
 		o.q.CountRetry()
 		return false
 	}

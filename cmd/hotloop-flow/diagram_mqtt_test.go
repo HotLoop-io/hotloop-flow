@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -27,6 +26,7 @@ type gate struct {
 	conns  []net.Conn
 	target string
 	addr   string
+	silent bool // bytes are read and thrown away, and no connection is closed
 }
 
 func newGate(t *testing.T, target string) *gate {
@@ -60,11 +60,36 @@ func (g *gate) serve(ln net.Listener) {
 			g.mu.Lock()
 			g.conns = append(g.conns, c, up)
 			g.mu.Unlock()
-			go func() { _, _ = io.Copy(up, c); up.Close(); c.Close() }()
-			go func() { _, _ = io.Copy(c, up); up.Close(); c.Close() }()
+			go func() { g.copy(up, c); up.Close(); c.Close() }()
+			go func() { g.copy(c, up); up.Close(); c.Close() }()
 		}
 	}()
 }
+
+// copy forwards bytes until the connection ends, or throws them away while the
+// gate is silent, which is a link that has died without telling either end.
+func (g *gate) copy(dst, src net.Conn) {
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			g.mu.Lock()
+			silent := g.silent
+			g.mu.Unlock()
+			if !silent {
+				if _, werr := dst.Write(buf[:n]); werr != nil {
+					return
+				}
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// stall makes the link dead without closing it: neither side sees a close.
+func (g *gate) stall() { g.mu.Lock(); g.silent = true; g.mu.Unlock() }
 
 // cut closes the listener and every connection through it.
 func (g *gate) cut() {
@@ -78,6 +103,7 @@ func (g *gate) cut() {
 		c.Close()
 	}
 	g.conns = nil
+	g.silent = false
 }
 
 // restore listens on the same address again.
@@ -101,6 +127,18 @@ func (g *gate) restore(t *testing.T) {
 // counter to a real broker through a connection that is cut for a while in the
 // middle of the run, and every number arrives, once and in order.
 func TestADiagramLosesNoMessagesAcrossABrokerOutage(t *testing.T) {
+	outageRun(t, false)
+}
+
+// The same run, but the link dies without a close, so the client still believes
+// it is up. Publishes are handed to it, time out, and are queued on disk, and
+// the client delivers them when it reconnects: several messages arrive twice,
+// each one covered by a send that was not confirmed.
+func TestADiagramDuplicatesAreCoveredByUnconfirmedSends(t *testing.T) {
+	outageRun(t, true)
+}
+
+func outageRun(t *testing.T, stalled bool) {
 	addr := os.Getenv("HOTLOOP_FLOW_TEST_MQTT")
 	if addr == "" {
 		t.Skip("set HOTLOOP_FLOW_TEST_MQTT=host:port to run this against a real broker")
@@ -184,8 +222,15 @@ func TestADiagramLosesNoMessagesAcrossABrokerOutage(t *testing.T) {
 	}
 
 	eventually(t, "forty messages", 20*time.Second, func() bool { return len(got.all()) >= 40 })
-	g.cut() // the broker goes away
-	time.Sleep(4 * time.Second)
+	if stalled {
+		g.stall()
+		time.Sleep(8 * time.Second) // four send timeouts
+		g.cut()
+		time.Sleep(time.Second)
+	} else {
+		g.cut() // the broker goes away
+		time.Sleep(4 * time.Second)
+	}
 	g.restore(t)
 	waitState("done")
 
@@ -194,6 +239,7 @@ func TestADiagramLosesNoMessagesAcrossABrokerOutage(t *testing.T) {
 	msgs := got.all()
 	next := 0
 	dups := 0
+	var dupAt []int
 	for _, m := range msgs {
 		n, err := strconv.Atoi(m)
 		if err != nil {
@@ -203,6 +249,7 @@ func TestADiagramLosesNoMessagesAcrossABrokerOutage(t *testing.T) {
 		case n == next:
 			next++
 		case n == next-1:
+			dupAt = append(dupAt, n)
 			dups++ // delivered twice around the cut: at least once, never lost
 		default:
 			t.Fatalf("out of order or missing: got %d after %d", n, next-1)
@@ -211,12 +258,17 @@ func TestADiagramLosesNoMessagesAcrossABrokerOutage(t *testing.T) {
 	if next != total {
 		t.Fatalf("got %d distinct messages in order, want %d", next, total)
 	}
-	if dups > 1 {
-		t.Fatalf("%d messages arrived twice; at most the one in flight when the connection was cut may", dups)
+	// At least once: a message can arrive twice only if a send of it was an
+	// unconfirmed send, because the client may still deliver it after the outbox
+	// stopped waiting. How many sends time out depends on how slow the machine
+	// is, so the bound is the number of unconfirmed sends, not a fixed one.
+	unconfirmed := app.diagrams.OutboxUnconfirmedSends("body", "pub")
+	if int64(dups) > unconfirmed {
+		t.Fatalf("%d messages arrived twice (%v) but only %d sends were unconfirmed; a duplicate with no unconfirmed send is a bug", dups, dupAt, unconfirmed)
 	}
 	direct, spilled, drained, depth, ok := app.diagrams.OutboxStats("body", "pub")
 	if !ok || spilled == 0 || drained == 0 || depth != 0 {
 		t.Fatalf("outbox: ok=%v direct=%d spilled=%d drained=%d depth=%d; the outage should have spilled to disk and drained", ok, direct, spilled, drained, depth)
 	}
-	t.Logf("%d sent straight out, %d went through disk, during the outage and behind it while the queue drained, %d arrived twice", direct, spilled, dups)
+	t.Logf("%d sent straight out, %d went through disk, during the outage and behind it while the queue drained, %d arrived twice, %d sends were unconfirmed", direct, spilled, dups, unconfirmed)
 }
