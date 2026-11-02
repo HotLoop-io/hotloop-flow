@@ -152,7 +152,7 @@ value arrives with none.
 
 ### A target that goes down
 
-A durable `dia-mqtt-out` sends straight to the broker while it answers. When it doesn't, the message is committed to Flow's durable store before the node finishes, and a pump delivers the queue, oldest first, when the link is back. Anything put in while others wait goes behind them, so nothing overtakes. Delivery from the queue is at least once: the one message in flight when the connection was cut can arrive twice. The queue lives in the same store and under the same disk quota as a durable wire, and it drains after a restart with no run and no browser. Without durable, a message the broker misses is an error on the error wire.
+A durable `dia-mqtt-out` sends straight to the broker while it answers. When it doesn't, the message is committed to Flow's durable store before the node finishes, and a pump delivers the queue, oldest first, when the link is back. Anything put in while others wait goes behind them, so nothing overtakes. Delivery from the queue is at least once: a message whose send timed out because the client had not noticed the link was gone can still be delivered when the client reconnects, so it can arrive twice, once for each send that timed out. The queue lives in the same store and under the same disk quota as a durable wire, and it drains after a restart with no run and no browser. Without durable, a message the broker misses is an error on the error wire.
 
 ### Serial
 
