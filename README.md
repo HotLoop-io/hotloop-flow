@@ -39,10 +39,10 @@ What that means on a bad night:
 It runs your existing flows unchanged, too. That's [further down](#bring-your-flows),
 because it's a feature, not the point.
 
-Current release is `2.7.1`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.7.1`
-for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
+Current release is `2.8.0`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.8.0`
+for amd64 (arm64 follows in 2.8.1), the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-104,000 lines of Go, a little under 40 percent of it tests, 79 node types for messages and 21 for FlowLab diagrams, and the race
+104,000 lines of Go, a little under 40 percent of it tests, 79 node types for messages and 28 for FlowLab diagrams, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
 business use is free through EmberNET, under HotLoop's Business Source License.
 
@@ -108,8 +108,8 @@ re-measured below. Three runs each, and the range is what's printed.
 
 | | |
 |---|---|
-| Binary, linux/amd64, static | **41.4 MB** |
-| Image, `2.7.0` amd64, as `podman image inspect` reports it | **45.34 MB** |
+| Binary, linux/amd64, static | **41.7 MB** |
+| Image, `2.8.0` amd64, as `podman image inspect` reports it | **45.64 MB** |
 | Start to answering its first request | **0.05 s** |
 | RSS, idle | **16.4 to 16.7 MiB** |
 | RSS, peak under the HTTP load below | **26.4 to 28.5 MiB** |
@@ -117,16 +117,16 @@ re-measured below. Three runs each, and the range is what's printed.
 | HTTP latency p50 / p99 | **0.39 to 0.41 ms / 1.78 to 4.03 ms** |
 | Engine, five-node chain, no I/O | **2.20 to 3.11 µs a message**, 3.9 KB allocated |
 
-The binary row is the 2.7.0 tree built the way the table's heading says,
-`CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"`, on 2026-11-01: 41,402,530
-bytes, on The Beast. The 2.5.0 number, 41,144,480, was taken on another machine,
-so I don't read the gap between them as growth. On The Beast, FlowLab added about
-370 KB to the binary: 41,025,698 before it and 41,398,434 after. The image row is the
-`2.7.0` amd64 image built from the release tree the way the release workflow
-builds it, `podman build --platform linux/amd64 --build-arg VERSION=v2.7.0 .`, read
+The binary row is the 2.8.0 tree built the way the table's heading says,
+`CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"`, on 2026-11-01: 41,693,346
+bytes, on The Beast. The 2.7.0 number, 41,402,530, was taken on the same machine the
+same way, so the 290 KB between them is what the statistics, integral, derivative and
+filter nodes, the DAQ client, the MQTT output and the TDMS log added. The image row is the
+`2.8.0` amd64 image built from the release tree the way the release workflow
+builds it, `podman build --platform linux/amd64 --build-arg VERSION=v2.8.0 .`, read
 on 2026-11-01 with `podman image inspect <that image> --format '{{.Size}}'`
-(45,342,406 bytes). It was not read from ghcr.io, because the tag wasn't pushed
-yet. It was 44.95 MB at `2.5.0`, 44.8 MB at `2.3.0`, 39.1 MB at `2.2.0`, 32.1 MB at
+(45,635,783 bytes). It was not read from ghcr.io, because the tag wasn't pushed
+yet. It was 45.34 MB at `2.7.0`, 44.95 MB at `2.5.0`, 44.8 MB at `2.3.0`, 39.1 MB at `2.2.0`, 32.1 MB at
 `2.1.0` and 25.4 MB at `2.0.5`. The other rows are still the 2026-10-02 build.
 
 The start, memory and HTTP rows are one command against
@@ -1273,7 +1273,7 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**79 node types for messages, and 21 more for FlowLab diagrams.**
+**79 node types for messages, and 28 more for FlowLab diagrams.**
 
 | Category | Nodes |
 |---|---|
@@ -1285,7 +1285,7 @@ constructor-chain escape to prove it reaches nothing.
 | Storage | file, file in, watch, influxdb out, postgres |
 | Discover | scan, netinfo, for inventorying an OT segment |
 | Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug, hotloop, mcp-server |
-| FlowLab | constant, math, compare, logic, wait, bundle, field, build array, while loop, for loop, body in, body out, serial port, serial read, serial write, parse reading, stable value, log to text file, control, indicator, chart |
+| FlowLab | constant, math, compare, logic, wait, bundle, field, build array, while loop, for loop, body in, body out, serial port, serial read, serial write, parse reading, stable value, log to text file, log to TDMS file, statistics, integral, derivative, filter, read DAQ task, mqtt out, control, indicator, chart |
 
 The FlowLab row is a different kind of node. It runs on a tab that is a diagram, where
 a node runs once when every input has a value, and never takes a message. What
@@ -1985,10 +1985,10 @@ podman run --rm -p 1880:1880 -v hotloop-flow-data:/data \
   -e HOTLOOP_FLOW_ADMIN_USER=admin \
   -e HOTLOOP_FLOW_ADMIN_PASSWORD_HASH='<bcrypt hash>' \
   -e HOTLOOP_FLOW_CREDENTIAL_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/hotloop-io/hotloop-flow:2.7.1
+  ghcr.io/hotloop-io/hotloop-flow:2.8.0
 ```
 
-Generate the hash with `podman run --rm ghcr.io/hotloop-io/hotloop-flow:2.7.1
+Generate the hash with `podman run --rm ghcr.io/hotloop-io/hotloop-flow:2.8.0
 hash-password -password 'something-long'`. The image is distroless nonroot with
 no shell in it, so there is nothing to `exec` into and nothing for anybody who
 gets code execution to pivot with.
