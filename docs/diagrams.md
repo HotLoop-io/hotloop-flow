@@ -73,6 +73,7 @@ Events for a run go out on the same socket as the editor's, as `diagram/<id>/nod
 | `dia-while`, `dia-for` | Loops. The body is a diagram of its own, named by its tab. Carried values start from a wire or from Start values and come out as they were on the last pass. A for loop takes a count or an array. A while loop runs at least once. |
 | `dia-body-in`, `dia-body-out` | The two ends of a body. `iter` is the pass number. `stop` ends a while loop. A carried value's name sends it round. |
 | `dia-serial-open`, `dia-serial-read`, `dia-serial-write` | A serial port. Reads end at a terminator or a byte count. |
+| `dia-instr-open`, `dia-instr-query`, `dia-scpi-parse` | A test instrument by address. See Instruments below. |
 | `dia-parse-reading`, `dia-stable` | Take a number and unit out of a line, and say whether the last few agree. |
 | `dia-log-text` | Appends a record as a row of a text file, with a time column. |
 | `dia-daq-read` | Reads samples from a data acquisition task on NI hardware, through NI's gRPC Device Server. See Data acquisition below. |
@@ -153,6 +154,25 @@ value arrives with none.
 ### A target that goes down
 
 A durable `dia-mqtt-out` sends straight to the broker while it answers. When it doesn't, the message is committed to Flow's durable store before the node finishes, and a pump delivers the queue, oldest first, when the link is back. Anything put in while others wait goes behind them, so nothing overtakes. Delivery from the queue is at least once: a message whose send timed out because the client had not noticed the link was gone can still be delivered when the client reconnects, so it can arrive twice, once for each send that timed out. The queue lives in the same store and under the same disk quota as a durable wire, and it drains after a restart with no run and no browser. Without durable, a message the broker misses is an error on the error wire.
+
+### Instruments
+
+`dia-instr-open` takes an address: `10.0.0.5:5025` for a LAN instrument on a raw socket,
+`serial:///dev/ttyUSB0?baud=19200&data=8&parity=E&stop=1` for a serial one, or a bare
+`/dev/ttyUSB0` or `COM3` for 9600 8N1. The run closes the session when it ends. If the
+link drops, the next query opens it again and the drop is counted on the session.
+
+`dia-instr-query` writes a command and the terminator, then reads the reply. Pick text
+(a line, out of `reply`), none (a plain write), or block, which reads a `#41024...`
+binary block and puts the samples out of `samples` as an array, as int8, uint8, int16,
+uint16, int32, float32 or float64, big or little endian. An indefinite `#0` block ends
+at the first line end. A reply that does not come in time is a timeout on the error
+wire naming the address.
+
+`dia-scpi-parse` reads a text reply as a list of numbers, one number, an identity
+(`*IDN?` into manufacturer, model, serial and firmware), or a status byte (`*STB?` or
+`*ESR?`) into the names of its set bits. The parsers are pure functions in
+`internal/diagram/scpi` with tests.
 
 ### Serial
 
