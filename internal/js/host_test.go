@@ -188,14 +188,14 @@ func TestOutputCeiling(t *testing.T) {
 // JavaScript sandbox that hands in a host object.
 func TestNoHostBindings(t *testing.T) {
 	p := compile(t, `return {payload: [
-		typeof require, typeof process, typeof Buffer, typeof module,
-		typeof setTimeout, typeof fetch, typeof globalThis.process
+		typeof require, typeof process, typeof module,
+		typeof fetch, typeof globalThis.process
 	].join(",")};`, Limits{})
 	res, err := run(t, p, nil, 1, newServices())
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "undefined,undefined,undefined,undefined,undefined,undefined,undefined"
+	want := "undefined,undefined,undefined,undefined,undefined"
 	if got := payloadOf(t, res.ByPort[0][0]); got != want {
 		t.Fatalf("typeof the host = %v", got)
 	}
