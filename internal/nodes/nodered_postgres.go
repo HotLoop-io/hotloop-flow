@@ -3,11 +3,13 @@ package nodes
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/netbind"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -46,7 +48,8 @@ func registerNRPostgresConfig() {
 				"credential when there is one, else from the flow file's password property, as the community " +
 				"node keeps it. Connections open on the first query, not at deploy, and an idle connection is " +
 				"kept for at least a minute whatever idle says, so a plant reading once a second does not " +
-				"reconnect for every reading.",
+				"reconnect for every reading. networkInterface (not in Node-RED) binds the connections to one network " +
+				"interface, with a pool for each interface a node asks for.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -60,6 +63,7 @@ func registerNRPostgresConfig() {
 			typed("connectionTimeout", "Connection timeout (ms)", 10000, ""),
 			typed("user", "User", "", ""),
 			{Name: "password", Kind: node.PropCredential, Label: "Password"},
+			networkInterfaceProp("The interface the database is on, such as enp2s0.14. A postgresql node on a tab that sets " + NetworkInterfaceEnv + ", or with its own interface, uses that one instead, on a pool of its own."),
 		},
 		Help: "Connection to a PostgreSQL or TimescaleDB database, shared by every postgresql node that points at it.",
 	}, newNRPostgresConfig)
@@ -185,7 +189,11 @@ func newNRPostgresConfig(def *node.Definition) (node.Node, error) {
 	dsn := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=%s application_name=%s",
 		quotePGKeyword(host), port, quotePGKeyword(database), quotePGKeyword(user),
 		quotePGKeyword(password), sslmode, quotePGKeyword(app))
-	c := &nrPostgresConfig{postgresConfig: postgresConfig{dsn: dsn, maxConns: int32(maxConns)}}
+	iface := strings.TrimSpace(def.Node.PropString("networkInterface", ""))
+	if err := netbind.Validate(iface); err != nil {
+		return nil, err
+	}
+	c := &nrPostgresConfig{postgresConfig: postgresConfig{dsn: dsn, maxConns: int32(maxConns)}, iface: iface, pools: map[string]*pgxpool.Pool{}}
 	c.idle = time.Duration(idle * float64(time.Millisecond))
 	c.connectTimeout = time.Duration(cto * float64(time.Millisecond))
 	return c, nil
@@ -196,14 +204,25 @@ type nrPostgresConfig struct {
 	postgresConfig
 	idle           time.Duration
 	connectTimeout time.Duration
+	iface          string
+	pools          map[string]*pgxpool.Pool // one pool for each network interface asked for
 }
 
-// Pool opens the pool on first use, honoring the idle and connection timeouts.
+// Pool is the pool on the config's own interface.
 func (c *nrPostgresConfig) Pool(ctx context.Context) (*pgxpool.Pool, error) {
+	return c.PoolOn(ctx, "")
+}
+
+// PoolOn opens the pool for an interface on first use, honoring the idle and
+// connection timeouts. An empty interface is the config's own.
+func (c *nrPostgresConfig) PoolOn(ctx context.Context, iface string) (*pgxpool.Pool, error) {
+	if iface == "" {
+		iface = c.iface
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.pool != nil {
-		return c.pool, nil
+	if p := c.pools[iface]; p != nil {
+		return p, nil
 	}
 	cfg, err := pgxpool.ParseConfig(c.dsn)
 	if err != nil {
@@ -219,17 +238,33 @@ func (c *nrPostgresConfig) Pool(ctx context.Context) (*pgxpool.Pool, error) {
 	} else {
 		cfg.MaxConnIdleTime = 15 * time.Minute
 	}
-	if c.connectTimeout > 0 {
-		cfg.ConnConfig.ConnectTimeout = c.connectTimeout
-	} else {
-		cfg.ConnConfig.ConnectTimeout = 10 * time.Second
+	cto := c.connectTimeout
+	if cto <= 0 {
+		cto = 10 * time.Second
+	}
+	cfg.ConnConfig.ConnectTimeout = cto
+	if iface != "" {
+		cfg.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return netbind.DialContext(ctx, iface, network, addr)
+		}
 	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("connecting: %w", err)
 	}
-	c.pool = pool
+	c.pools[iface] = pool
 	return pool, nil
+}
+
+// Close closes every pool.
+func (c *nrPostgresConfig) Close(context.Context, bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k, p := range c.pools {
+		p.Close()
+		delete(c.pools, k)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +278,7 @@ type nrPostgresNode struct {
 	split    bool
 	perMsg   int
 	outputs  int
+	iface    string
 	svc      node.Services
 	provider PoolProvider
 }
@@ -266,7 +302,8 @@ func registerNRPostgres() {
 				"msg.payload is the list of rows and msg.pgsql is {command, rowCount}. With split on, the rows " +
 				"go out rowsPerMsg at a time (a row object when it is 1, else a list) with msg.parts, and a " +
 				"second output, when there are two, sends one message when the last group is out. msg.queryParameters " +
-				"(named parameters) is not supported. A failed query raises an error for a Catch node.",
+				"(named parameters) is not supported. A failed query raises an error for a Catch node. networkInterface " +
+				"(not in Node-RED) sends this node's queries over one network interface.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -275,6 +312,7 @@ func registerNRPostgres() {
 			{Name: "split", Kind: node.PropBool, Label: "Split results"},
 			{Name: "rowsPerMsg", Kind: node.PropNumber, Label: "Rows per message", Default: 1},
 			{Name: "outputs", Kind: node.PropNumber, Label: "Outputs", Default: 1},
+			networkInterfaceProp("Overrides the tab's " + NetworkInterfaceEnv + " and the connection's interface for this node's queries."),
 		},
 		Help: "Runs a SQL query against PostgreSQL or TimescaleDB. Put values in with $1, $2 and msg.params, " +
 			"so the database does the quoting. msg.payload is the rows.",
@@ -289,10 +327,14 @@ func newNRPostgres(def *node.Definition) (node.Node, error) {
 		split:   p.PropBool("split", false),
 		perMsg:  p.PropInt("rowsPerMsg", 1),
 		outputs: p.PropInt("outputs", 1),
+		iface:   strings.TrimSpace(p.PropString("networkInterface", "")),
 		svc:     def.Services,
 	}
 	if n.cfgID == "" {
 		return nil, fmt.Errorf("no server selected: pick the PostgreSQL connection")
+	}
+	if err := netbind.Validate(n.iface); err != nil {
+		return nil, err
 	}
 	if n.perMsg < 1 {
 		n.perMsg = 1
@@ -307,7 +349,16 @@ func newNRPostgres(def *node.Definition) (node.Node, error) {
 	return n, nil
 }
 
+// ifacePools is a pool provider that can open a pool on a named interface.
+type ifacePools interface {
+	PoolOn(ctx context.Context, iface string) (*pgxpool.Pool, error)
+}
+
 func (n *nrPostgresNode) pool(ctx context.Context) (*pgxpool.Pool, error) {
+	iface := networkInterfaceFor(n.svc, n.iface)
+	if err := netbind.Validate(iface); err != nil {
+		return nil, err
+	}
 	if n.provider == nil {
 		cfg, ok := n.svc.ConfigNode(n.cfgID)
 		if !ok {
@@ -318,6 +369,9 @@ func (n *nrPostgresNode) pool(ctx context.Context) (*pgxpool.Pool, error) {
 			return nil, fmt.Errorf("config node %s is not a PostgreSQL connection", n.cfgID)
 		}
 		n.provider = pp
+	}
+	if ip, ok := n.provider.(ifacePools); ok {
+		return ip.PoolOn(ctx, iface)
 	}
 	return n.provider.Pool(ctx)
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/netbind"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/simonvetter/modbus"
 )
@@ -66,6 +67,7 @@ type modbusServer struct {
 	port    int
 	unit    uint8
 	timeout time.Duration
+	iface   string // the network interface its socket binds to
 
 	mu sync.Mutex
 	cl *modbus.ModbusClient
@@ -96,6 +98,7 @@ func registerModbusConfig() {
 			{Name: "timeout", Kind: node.PropNumber, Label: "Timeout (seconds)", Default: 3,
 				Help: "How long a request waits for the device before the node gives up and " +
 					"drops the connection."},
+			networkInterfaceProp("Binds the connection to one network interface, such as enp2s0.14, for a box whose port carries VLANs with the same subnet. Empty lets the host choose."),
 		},
 		Help: "One Modbus TCP device. Read and write nodes pointing at it share the " +
 			"connection and take turns on it.",
@@ -122,11 +125,16 @@ func newModbusServer(def *node.Definition) (node.Node, error) {
 	if secs <= 0 {
 		return nil, fmt.Errorf("timeout has to be more than zero seconds")
 	}
+	iface := strings.TrimSpace(def.Node.PropString("networkInterface", ""))
+	if err := netbind.Validate(iface); err != nil {
+		return nil, err
+	}
 	return &modbusServer{
 		host:    host,
 		port:    port,
 		unit:    uint8(unit),
 		timeout: time.Duration(secs * float64(time.Second)),
+		iface:   iface,
 	}, nil
 }
 
@@ -156,14 +164,21 @@ func (s *modbusServer) do(unit *uint8, fn func(c *modbus.ModbusClient) error) er
 	defer s.mu.Unlock()
 
 	if s.cl == nil {
-		cl, err := modbus.NewClient(&modbus.ClientConfiguration{
+		conf := &modbus.ClientConfiguration{
 			URL:     "tcp://" + s.address(),
 			Timeout: s.timeout,
 			// The library logs to stdout when it isn't given a logger. What
 			// went wrong comes back as the error, which is the one place an
 			// operator will look.
 			Logger: log.New(io.Discard, "", 0),
-		})
+		}
+		if s.iface != "" {
+			iface := s.iface
+			conf.Dialer = func(network, address string, timeout time.Duration) (net.Conn, error) {
+				return netbind.DialTimeout(iface, network, address, timeout)
+			}
+		}
+		cl, err := modbus.NewClient(conf)
 		if err != nil {
 			return err
 		}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
+	"github.com/HotLoop-io/hotloop-flow/internal/netbind"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"golang.org/x/net/publicsuffix"
 )
@@ -645,6 +646,7 @@ type httpRequestNode struct {
 	authPass string
 	svc      node.Services
 	client   *http.Client
+	iface    string // the network interface its connections bind to
 
 	// transport carries the node's tls-config, when it has one. Its own rather
 	// than the shared default, because a client certificate and a private CA
@@ -687,7 +689,8 @@ func registerHTTPRequest() {
 				"are not implemented in this build. There is no egress allowlist: this node " +
 				"can reach anything the pod can, exactly as Node-RED's can, and the " +
 				"place to bound that is a NetworkPolicy rather than an edit dialog " +
-				"nobody outside the cluster can trust.",
+				"nobody outside the cluster can trust. networkInterface (not in Node-RED) binds the " +
+				"connections to one network interface.",
 			UnsupportedProps: []string{"proxy", "persist"},
 		},
 		Props: []node.Prop{
@@ -723,6 +726,7 @@ func registerHTTPRequest() {
 			{Name: "ew_maxBody", Kind: node.PropNumber, Label: "Response limit (bytes)"},
 			{Name: "tls", Kind: node.PropConfigRef, ConfigType: "tls-config", Label: "TLS",
 				Help: "A client certificate, a private CA, or turning the check off."},
+			networkInterfaceProp("Binds the connections to one network interface, such as enp2s0.14. Empty takes the tab's " + NetworkInterfaceEnv + ", then lets the host choose."),
 		},
 		Help: "Makes an HTTP request and returns the response. msg.payload becomes " +
 			"the request body for POST and PUT; msg.statusCode, msg.headers and " +
@@ -766,6 +770,17 @@ func newHTTPRequest(def *node.Definition) (node.Node, error) {
 		}
 		n.transport = cloneDefaultTransport()
 		n.transport.TLSClientConfig = cfg.clientConfig()
+	}
+	n.iface = networkInterfaceFor(def.Services, def.Node.PropString("networkInterface", ""))
+	if err := netbind.Validate(n.iface); err != nil {
+		return nil, err
+	}
+	if n.iface != "" {
+		// The node's own transport, with its sockets bound to the interface.
+		if n.transport == nil {
+			n.transport = cloneDefaultTransport()
+		}
+		n.transport.DialContext = netbind.Dialer(n.iface, 30*time.Second).DialContext
 	}
 
 	n.client = &http.Client{
@@ -1073,6 +1088,9 @@ func (n *httpRequestNode) insecureTransport() *http.Transport {
 	n.insecureOnce.Do(func() {
 		n.insecure = cloneDefaultTransport()
 		n.insecure.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		if n.iface != "" {
+			n.insecure.DialContext = netbind.Dialer(n.iface, 30*time.Second).DialContext
+		}
 	})
 	return n.insecure
 }

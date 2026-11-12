@@ -211,6 +211,24 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 --------------------------------------------------------------------------------
+simonvetter/modbus
+--------------------------------------------------------------------------------
+
+modbus v1.6.4 (third_party/modbus/), the Go Modbus client and server the Modbus
+nodes talk through
+    https://github.com/simonvetter/modbus
+    Copyright (c) 2019 Simon Vetter
+    Licensed under the MIT License (LICENSE.txt in that directory, and the full
+    text in THIRD_PARTY_LICENSES).
+    This one IS modified, by HotLoop: client.go has one more configuration
+    field, Dialer, and the four places it opened a TCP or UDP socket with
+    net.DialTimeout open it through that field when it is set, so a socket can be
+    bound to one network interface before it connects. Unset, it behaves as the
+    upstream does. Its tests, examples and command line tool are left out.
+    go.mod replaces the module with this directory. HOTLOOP_PATCH.txt there says
+    why. When upstream takes a dialer, the copy goes.
+
+--------------------------------------------------------------------------------
 robinson/gos7
 --------------------------------------------------------------------------------
 

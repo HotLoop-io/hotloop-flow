@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/netbind"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/simonvetter/modbus"
 )
@@ -53,7 +54,15 @@ type nrModbusClient struct {
 	parity     uint
 	unit       uint8
 	timeout    time.Duration
+	iface      string // the network interface its sockets bind to, unless a request names another
 
+	mu    sync.Mutex
+	conns map[string]*nrConn // one connection for each interface a request has used
+}
+
+// nrConn is one connection to the device, on one interface. Each has its own
+// lock, so a device that does not answer on one VLAN does not hold up another.
+type nrConn struct {
 	mu sync.Mutex
 	cl *modbus.ModbusClient
 }
@@ -75,7 +84,8 @@ func registerNRModbusClient() {
 				"next one, so reconnectOnTimeout and reconnectTimeout have nothing to wait for. Requests " +
 				"take turns on the one connection, so commandDelay, bufferCommands and the queue and " +
 				"state log switches have no effect. Serial ASCII (RTU-BUFFERD is accepted, ASCII is not) " +
-				"is not supported.",
+				"is not supported. networkInterface (not in Node-RED) binds the TCP socket to one " +
+				"network interface, for a box whose port carries several VLANs with the same subnet.",
 			UnsupportedProps: []string{"bufferCommands", "stateLogEnabled", "queueLogEnabled",
 				"failureLogEnabled", "commandDelay", "reconnectOnTimeout", "reconnectTimeout",
 				"parallelUnitIdsAllowed", "serialConnectionDelay", "serialAsciiResponseStartDelimiter"},
@@ -98,15 +108,20 @@ func registerNRModbusClient() {
 				{Value: "none", Label: "None"}, {Value: "even", Label: "Even"}, {Value: "odd", Label: "Odd"}}},
 			{Name: "unit_id", Kind: node.PropString, Label: "Unit ID", Default: "1"},
 			{Name: "clientTimeout", Kind: node.PropString, Label: "Timeout (ms)", Default: "1000"},
+			networkInterfaceProp("The interface this device is on, such as enp2s0.14. Empty lets the host choose. A request from a node on a tab that sets " + NetworkInterfaceEnv + ", or a node with its own interface, uses that one instead, on a connection of its own."),
 		},
 		Help: "One Modbus device, over TCP or a serial port. The Modbus nodes pointing at it share one " +
-			"connection and take turns on it.",
+			"connection for each network interface and take turns on it.",
 	}, newNRModbusClient)
 }
 
 func newNRModbusClient(def *node.Definition) (node.Node, error) {
 	p := def.Node
-	c := &nrModbusClient{}
+	c := &nrModbusClient{conns: map[string]*nrConn{}}
+	c.iface = strings.TrimSpace(p.PropString("networkInterface", ""))
+	if err := netbind.Validate(c.iface); err != nil {
+		return nil, err
+	}
 	kind := strings.ToLower(p.PropString("clienttype", "tcp"))
 	c.timeout = time.Duration(p.PropFloat("clientTimeout", 1000)) * time.Millisecond
 	if c.timeout <= 0 {
@@ -182,20 +197,58 @@ func (c *nrModbusClient) requestTimeout() time.Duration { return c.timeout }
 
 func (c *nrModbusClient) Close(context.Context, bool) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.cl != nil {
-		err := c.cl.Close()
-		c.cl = nil
-		return err
+	conns := c.conns
+	c.conns = map[string]*nrConn{}
+	c.mu.Unlock()
+	var first error
+	for _, nc := range conns {
+		nc.mu.Lock()
+		if nc.cl != nil {
+			if err := nc.cl.Close(); err != nil && first == nil {
+				first = err
+			}
+			nc.cl = nil
+		}
+		nc.mu.Unlock()
 	}
-	return nil
+	return first
 }
 
 func (c *nrModbusClient) do(unit *uint8, fn func(*modbus.ModbusClient) error) error {
+	return c.doOn("", unit, fn)
+}
+
+// ifaceTarget is a Modbus target that can open a connection on a named network
+// interface, a request at a time.
+type ifaceTarget interface {
+	doOn(iface string, unit *uint8, fn func(*modbus.ModbusClient) error) error
+}
+
+// effectiveInterface is the interface a request uses: the one it names, else
+// the client's own.
+func (c *nrModbusClient) effectiveInterface(iface string) string {
+	if iface != "" {
+		return iface
+	}
+	return c.iface
+}
+
+// doOn runs fn on the connection for an interface, opening it first if there is
+// none. Each interface has its own connection and its own lock.
+func (c *nrModbusClient) doOn(iface string, unit *uint8, fn func(*modbus.ModbusClient) error) error {
+	iface = c.effectiveInterface(iface)
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.cl == nil {
-		cl, err := modbus.NewClient(&modbus.ClientConfiguration{
+	nc := c.conns[iface]
+	if nc == nil {
+		nc = &nrConn{}
+		c.conns[iface] = nc
+	}
+	c.mu.Unlock()
+
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	if nc.cl == nil {
+		conf := &modbus.ClientConfiguration{
 			URL:      c.url,
 			Timeout:  c.timeout,
 			Speed:    c.baud,
@@ -203,26 +256,32 @@ func (c *nrModbusClient) do(unit *uint8, fn func(*modbus.ModbusClient) error) er
 			StopBits: c.stopBits,
 			Parity:   c.parity,
 			Logger:   log.New(io.Discard, "", 0),
-		})
+		}
+		if iface != "" && !c.serial {
+			conf.Dialer = func(network, address string, timeout time.Duration) (net.Conn, error) {
+				return netbind.DialTimeout(iface, network, address, timeout)
+			}
+		}
+		cl, err := modbus.NewClient(conf)
 		if err != nil {
 			return err
 		}
 		if err := cl.Open(); err != nil {
 			return err
 		}
-		c.cl = cl
+		nc.cl = cl
 	}
 	u := c.unit
 	if unit != nil {
 		u = *unit
 	}
-	if err := c.cl.SetUnitId(u); err != nil {
+	if err := nc.cl.SetUnitId(u); err != nil {
 		return err
 	}
-	err := fn(c.cl)
+	err := fn(nc.cl)
 	if err != nil && !modbusKeepsConnection(err) {
-		_ = c.cl.Close()
-		c.cl = nil
+		_ = nc.cl.Close()
+		nc.cl = nil
 	}
 	return err
 }
@@ -406,7 +465,7 @@ func nrList(v any) ([]any, bool) {
 }
 
 // exec runs one request against a device.
-func nrExec(svc node.Services, tgt modbusTarget, req nrRequest) (nrResult, string, error) {
+func nrExec(svc node.Services, tgt modbusTarget, iface string, req nrRequest) (nrResult, string, error) {
 	var res nrResult
 	if req.quantity < 1 {
 		return res, "", fmt.Errorf("quantity has to be 1 or more")
@@ -468,6 +527,12 @@ func nrExec(svc node.Services, tgt modbusTarget, req nrRequest) (nrResult, strin
 	}
 
 	what := fmt.Sprintf("function code %d at %d, quantity %d", req.fc, req.address, req.quantity)
+	if ic, ok := tgt.(interface{ effectiveInterface(string) string }); ok {
+		iface = ic.effectiveInterface(iface)
+	}
+	if iface != "" {
+		what += " on network interface " + iface
+	}
 	if si := node.StandInOf(svc); si != nil {
 		sent := map[string]any{"op": "read", "area": req.areaName(), "address": float64(req.address),
 			"quantity": float64(req.quantity), "fc": float64(req.fc)}
@@ -518,7 +583,7 @@ func nrExec(svc node.Services, tgt modbusTarget, req nrRequest) (nrResult, strin
 	if req.unit != nil {
 		unit = *req.unit
 	}
-	err := tgt.do(req.unit, func(c *modbus.ModbusClient) error {
+	exec := func(c *modbus.ModbusClient) error {
 		var err error
 		a := uint16(req.address)
 		q := uint16(req.quantity)
@@ -543,7 +608,13 @@ func nrExec(svc node.Services, tgt modbusTarget, req nrRequest) (nrResult, strin
 			err = fmt.Errorf("function code %d is not one of 1, 2, 3, 4, 5, 6, 15 or 16", req.fc)
 		}
 		return err
-	})
+	}
+	var err error
+	if it, ok := tgt.(ifaceTarget); ok {
+		err = it.doOn(iface, req.unit, exec)
+	} else {
+		err = tgt.do(req.unit, exec)
+	}
 	if err != nil {
 		return res, addr, explainModbus(addr, unit, tgt.requestTimeout(), what, err)
 	}
@@ -603,6 +674,7 @@ type nrModbusNode struct {
 	quantity int
 	unit     *uint8
 
+	iface       string // the node's own network interface; a tab's or the client's applies when empty
 	keepMsg     bool
 	emptyOnFail bool
 	showErrors  bool
@@ -629,6 +701,7 @@ func registerNRModbusNode(kind nrKind) {
 		{Name: "keepMsgProperties", Kind: node.PropBool, Label: "Keep the incoming message's properties"},
 		{Name: "delayOnStart", Kind: node.PropBool, Label: "Delay on start"},
 		{Name: "startDelayTime", Kind: node.PropString, Label: "Start delay (seconds)"},
+		networkInterfaceProp("Overrides the tab's " + NetworkInterfaceEnv + " and the client's interface for this node's requests."),
 	}
 	registerProps := []node.Prop{
 		{Name: "dataType", Kind: node.PropSelect, Label: "Type", Default: "HoldingRegister", Options: []node.Option{
@@ -690,6 +763,8 @@ func registerNRModbusNode(kind nrKind) {
 		notes = "Takes {value, fc, unitid, address, quantity} from msg.payload. Output and failures as the Write node."
 		unsupported = nil
 	}
+	notes += " networkInterface (not in Node-RED) binds this node's connection to one network interface. " +
+		"Without it the node's tab's " + NetworkInterfaceEnv + ", then the client's interface, then the host's choice."
 	node.MustRegister(node.Descriptor{
 		Type:         kind.typeName(),
 		Category:     node.CategoryNetwork,
@@ -722,9 +797,13 @@ func newNRModbusNode(kind nrKind, def *node.Definition) (node.Node, error) {
 		showErrors:  p.PropBool("showErrors", false),
 		showStatus:  p.PropBool("showStatusActivities", false),
 		topic:       p.PropString("topic", ""),
+		iface:       strings.TrimSpace(p.PropString("networkInterface", "")),
 	}
 	if n.cfgID == "" {
 		return nil, fmt.Errorf("no server selected: pick the Modbus client this node reads from or writes to")
+	}
+	if err := netbind.Validate(n.iface); err != nil {
+		return nil, err
 	}
 	if p.PropBool("useIOFile", false) || p.PropBool("useIOForPayload", false) {
 		return nil, fmt.Errorf("an I/O file (useIOFile) is not supported. Put the addresses in the node, or use the flex node and send them")
@@ -887,7 +966,12 @@ func (n *nrModbusNode) run(in *engine.Msg, out node.Emitter) {
 		n.fail(out, in, err)
 		return
 	}
-	res, _, err := nrExec(n.svc, tgt, req)
+	iface := networkInterfaceFor(n.svc, n.iface)
+	if err := netbind.Validate(iface); err != nil {
+		n.fail(out, in, err)
+		return
+	}
+	res, _, err := nrExec(n.svc, tgt, iface, req)
 	if err != nil {
 		n.fail(out, in, err)
 		return

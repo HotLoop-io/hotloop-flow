@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/netbind"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -47,15 +48,21 @@ type nrMongoClient struct {
 	tlsInsecure bool
 	tls         bool
 	advanced    map[string]any
+	iface       string // the network interface its sockets bind to, unless a node names another
 
-	mu sync.Mutex
-	cl *mongo.Client
+	mu      sync.Mutex
+	clients map[string]*mongo.Client // one client for each interface asked for
 }
 
 // MongoProvider is how an operation node reaches its config node's client.
 type MongoProvider interface {
 	Client() (*mongo.Client, error)
 	Database() string
+}
+
+// ifaceClients is a MongoDB provider that can connect over a named interface.
+type ifaceClients interface {
+	ClientOn(iface string) (*mongo.Client, error)
 }
 
 func registerNRMongoClient() {
@@ -74,7 +81,9 @@ func registerNRMongoClient() {
 				"property holds a full address, the uri is used, because that is the only place such a flow " +
 				"file keeps the login. Pool sizes, timeouts, authSource, authMechanism, appName and the TLS " +
 				"settings are honored. The advanced JSON may set the driver's own option names in the " +
-				"connection string form (for example retryWrites). The connection opens on the first operation.",
+				"connection string form (for example retryWrites). The connection opens on the first operation. " +
+				"networkInterface (not in Node-RED) binds the connections to one network interface, with a client " +
+				"for each interface a node asks for.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -101,6 +110,7 @@ func registerNRMongoClient() {
 				{Value: "tab-uri-simple", Label: "Simple"}, {Value: "tab-uri-advanced", Label: "Advanced"}}},
 			{Name: "user", Kind: node.PropCredential, Label: "User"},
 			{Name: "password", Kind: node.PropCredential, Label: "Password"},
+			networkInterfaceProp("The interface the server is on, such as enp2s0.14. A mongodb4 node on a tab that sets " + NetworkInterfaceEnv + ", or with its own interface, uses that one instead, on a client of its own."),
 		},
 		Help: "Connection to a MongoDB server or Atlas-style cluster, shared by the mongodb4 nodes that point at it.",
 	}, newNRMongoClient)
@@ -117,12 +127,17 @@ func msDuration(p *engine.Node, key string) (time.Duration, error) {
 func newNRMongoClient(def *node.Definition) (node.Node, error) {
 	p := def.Node
 	c := &nrMongoClient{
+		clients:     map[string]*mongo.Client{},
+		iface:       strings.TrimSpace(p.PropString("networkInterface", "")),
 		db:          strings.TrimSpace(p.PropString("dbName", "")),
 		appName:     p.PropString("appName", ""),
 		tlsCAFile:   p.PropString("tlsCAFile", ""),
 		tlsKeyFile:  p.PropString("tlsCertificateKeyFile", ""),
 		tlsInsecure: p.PropBool("tlsInsecure", false),
 		tls:         p.PropBool("tls", false),
+	}
+	if err := netbind.Validate(c.iface); err != nil {
+		return nil, err
 	}
 	var err error
 	if c.connectTO, err = msDuration(p, "connectTimeoutMS"); err != nil {
@@ -198,11 +213,18 @@ func newNRMongoClient(def *node.Definition) (node.Node, error) {
 func (c *nrMongoClient) Receive(context.Context, *engine.Msg, node.Emitter) error { return nil }
 func (c *nrMongoClient) Database() string                                         { return c.db }
 
-func (c *nrMongoClient) Client() (*mongo.Client, error) {
+func (c *nrMongoClient) Client() (*mongo.Client, error) { return c.ClientOn("") }
+
+// ClientOn connects on first use, over an interface. An empty one is the
+// config's own.
+func (c *nrMongoClient) ClientOn(iface string) (*mongo.Client, error) {
+	if iface == "" {
+		iface = c.iface
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.cl != nil {
-		return c.cl, nil
+	if cl := c.clients[iface]; cl != nil {
+		return cl, nil
 	}
 	o := options.Client().ApplyURI(c.uri)
 	if c.connectTO > 0 {
@@ -234,23 +256,29 @@ func (c *nrMongoClient) Client() (*mongo.Client, error) {
 		}
 		o.SetTLSConfig(cfg)
 	}
+	if iface != "" {
+		o.SetDialer(netbind.Dialer(iface, c.connectTO))
+	}
 	cl, err := mongo.Connect(o)
 	if err != nil {
 		return nil, fmt.Errorf("connecting to MongoDB: %w", err)
 	}
-	c.cl = cl
+	c.clients[iface] = cl
 	return cl, nil
 }
 
 func (c *nrMongoClient) Close(ctx context.Context, _ bool) error {
 	c.mu.Lock()
-	cl := c.cl
-	c.cl = nil
+	clients := c.clients
+	c.clients = map[string]*mongo.Client{}
 	c.mu.Unlock()
-	if cl != nil {
-		return cl.Disconnect(ctx)
+	var first error
+	for _, cl := range clients {
+		if err := cl.Disconnect(ctx); err != nil && first == nil {
+			first = err
+		}
 	}
-	return nil
+	return first
 }
 
 // ---------------------------------------------------------------------------
@@ -355,6 +383,7 @@ type nrMongoNode struct {
 	output     string
 	maxTime    time.Duration
 	handleID   bool
+	iface      string
 	svc        node.Services
 	provider   MongoProvider
 }
@@ -384,7 +413,8 @@ func registerNRMongo() {
 				"operations send the driver's result as msg.payload. A document comes out as plain JSON: ids as " +
 				"text, dates as ISO text, numbers as numbers. Database mode (runCommand, listCollections and the " +
 				"other database-level operations) and the other operations the package offers are not provided, and a " +
-				"node set to one does not start.",
+				"node set to one does not start. networkInterface (not in Node-RED) sends this node's operations " +
+				"over one network interface.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -398,6 +428,7 @@ func registerNRMongo() {
 				{Value: "count", Label: "The count"}}},
 			{Name: "maxTimeMS", Kind: node.PropString, Label: "Max time (ms)"},
 			{Name: "handleDocId", Kind: node.PropBool, Label: "Turn an _id string in a filter into an ObjectId"},
+			networkInterfaceProp("Overrides the tab's " + NetworkInterfaceEnv + " and the connection's interface for this node's operations."),
 		},
 		Help: "Runs an operation on a MongoDB collection. msg.payload is what to insert or the filter to find by.",
 	}, newNRMongo)
@@ -411,7 +442,11 @@ func newNRMongo(def *node.Definition) (node.Node, error) {
 		operation:  p.PropString("operation", "find"),
 		output:     p.PropString("output", "toArray"),
 		handleID:   p.PropBool("handleDocId", false),
+		iface:      strings.TrimSpace(p.PropString("networkInterface", "")),
 		svc:        def.Services,
+	}
+	if err := netbind.Validate(n.iface); err != nil {
+		return nil, err
 	}
 	if n.cfgID == "" {
 		return nil, fmt.Errorf("no server selected: pick the MongoDB connection")
@@ -502,7 +537,17 @@ func (n *nrMongoNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitt
 			}
 			n.provider = pr
 		}
-		cl, err := n.provider.Client()
+		iface := networkInterfaceFor(n.svc, n.iface)
+		if err := netbind.Validate(iface); err != nil {
+			return err
+		}
+		var cl *mongo.Client
+		var err error
+		if ic, ok := n.provider.(ifaceClients); ok {
+			cl, err = ic.ClientOn(iface)
+		} else {
+			cl, err = n.provider.Client()
+		}
 		if err != nil {
 			out.Status(node.Status{Fill: "red", Shape: "ring", Text: "not connected"})
 			return err

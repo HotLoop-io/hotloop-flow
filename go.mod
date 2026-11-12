@@ -85,3 +85,5 @@ require (
 // gos7 is a patched copy in this tree: one line of tcpclient.go wrote to the global
 // logger on every timeout. third_party/gos7/HOTLOOP_PATCH.txt says what and why.
 replace github.com/robinson/gos7 => ./third_party/gos7
+
+replace github.com/simonvetter/modbus => ./third_party/modbus

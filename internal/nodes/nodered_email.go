@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/netbind"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 )
 
@@ -40,6 +41,7 @@ type nrEmailNode struct {
 	to        string
 	fromName  string
 	tokenPath string
+	iface     string
 	svc       node.Services
 	timeout   time.Duration
 }
@@ -66,7 +68,8 @@ func registerNREmail() {
 				"Authentication is BASIC (PLAIN, or LOGIN as a fallback), XOAUTH2 with the access token read from " +
 				"the message property in token, or NONE. A password is refused over a connection that is not " +
 				"encrypted unless the server is this host. Sending only: the e-mail in node (reading a " +
-				"mailbox) is not provided. msg.header and the saslformat switch are ignored.",
+				"mailbox) is not provided. msg.header and the saslformat switch are ignored. networkInterface " +
+				"(not in Node-RED) sends the connection over one network interface.",
 			UnsupportedProps: []string{"saslformat"},
 		},
 		Props: []node.Prop{
@@ -82,6 +85,7 @@ func registerNREmail() {
 			{Name: "dname", Kind: node.PropString, Label: "Name"},
 			{Name: "userid", Kind: node.PropCredential, Label: "User"},
 			{Name: "password", Kind: node.PropCredential, Label: "Password"},
+			networkInterfaceProp("Overrides the tab's " + NetworkInterfaceEnv + " for this node's connection to the mail server."),
 		},
 		Help: "Sends an e-mail. msg.payload is the body, msg.topic the subject, the node's To or msg.to the recipient.",
 	}, newNREmail)
@@ -96,11 +100,15 @@ func newNREmail(def *node.Definition) (node.Node, error) {
 		verify:    p.PropBool("tls", true),
 		to:        strings.TrimSpace(p.PropString("name", "")),
 		tokenPath: p.PropString("token", "oauth2Response.access_token"),
+		iface:     strings.TrimSpace(p.PropString("networkInterface", "")),
 		svc:       def.Services,
 		timeout:   30 * time.Second,
 	}
 	if n.server == "" {
 		return nil, fmt.Errorf("server is required: the SMTP host that sends the mail")
+	}
+	if err := netbind.Validate(n.iface); err != nil {
+		return nil, err
 	}
 	port, err := strconv.Atoi(strings.TrimSpace(p.PropString("port", "")))
 	if v, ok := p.Raw["port"].(float64); ok {
@@ -338,7 +346,11 @@ func (a loginAuth) Next(from []byte, more bool) ([]byte, error) {
 
 func (n *nrEmailNode) send(ctx context.Context, from string, rcpt []string, raw []byte, user, pass, token string) error {
 	addr := net.JoinHostPort(n.server, strconv.Itoa(n.port))
-	d := net.Dialer{Timeout: n.timeout}
+	iface := networkInterfaceFor(n.svc, n.iface)
+	if err := netbind.Validate(iface); err != nil {
+		return err
+	}
+	d := net.Dialer{Timeout: n.timeout, Control: netbind.Control(iface)}
 	cfg := &tls.Config{ServerName: n.server, InsecureSkipVerify: !n.verify, MinVersion: tls.VersionTLS12} //nolint:gosec // tls=false is the flow author's switch, as in Node-RED
 	var conn net.Conn
 	var err error
@@ -348,7 +360,7 @@ func (n *nrEmailNode) send(ctx context.Context, from string, rcpt []string, raw 
 		conn, err = d.DialContext(ctx, "tcp", addr)
 	}
 	if err != nil {
-		return fmt.Errorf("cannot connect to %s: %w. Check the server, the port and that this host can reach it", addr, err)
+		return fmt.Errorf("cannot connect to %s: %w. Check the server, the port and that this host can reach it", addr, netbind.Explain(iface, err))
 	}
 	_ = conn.SetDeadline(time.Now().Add(n.timeout))
 	c, err := smtp.NewClient(conn, n.server)

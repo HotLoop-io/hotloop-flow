@@ -1,0 +1,25 @@
+This is github.com/simonvetter/modbus v1.6.4 under MIT (LICENSE.txt in this
+directory), minus its tests, its examples and its command line tool, with one
+change. Flow's go.mod replaces the module with this directory.
+
+Why: the client opens its TCP and UDP sockets with net.DialTimeout, and gives
+no way to open them any other way. The Shepherd Boy Farms box has one port that
+carries twelve VLANs, each with the same 192.168.1.0/24 and the same device
+addresses. A socket there has to be bound to one VLAN's interface with
+SO_BINDTODEVICE before it connects, or the kernel picks whichever of the twelve
+routes it likes. The binding belongs to the socket, so it cannot be done around
+the client. The copy is the fix.
+
+Change, and only this, in client.go:
+
+  * ClientConfiguration has one more field, Dialer, a func(network, address
+    string, timeout time.Duration) (net.Conn, error).
+  * ModbusClient has one more method, dial, which calls Dialer when it is set
+    and net.DialTimeout when it is not.
+  * The four net.DialTimeout calls in Open (rtuovertcp, rtu+udp, tcp, tcp+udp)
+    call dial instead. The TLS mode is not changed.
+
+With Dialer unset the behavior is the upstream's, byte for byte.
+
+When upstream takes a dialer, the copy goes and go.mod returns to the upstream
+module.
