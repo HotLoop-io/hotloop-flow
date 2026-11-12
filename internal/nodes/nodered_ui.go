@@ -36,11 +36,19 @@ var ui struct {
 }
 
 // uiAcquire hands out the process's dashboard, mounting it on the flow routes
-// the first time.
+// the first time a node needs it.
+//
+// The hub lives as long as the process. A deploy stops every dashboard node and
+// starts them again, and the browsers that have the page open are connected to
+// this hub: if it were thrown away between the two they would sit connected to
+// nothing and never hear that the page changed. Only the routes come and go.
 func uiAcquire() (*dashboard.Hub, error) {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
 	if ui.hub == nil {
+		ui.hub = dashboard.New()
+	}
+	if ui.refs == 0 {
 		path := strings.TrimRight(os.Getenv(UIPathEnv), "/")
 		if path == "" {
 			path = "/ui"
@@ -48,9 +56,8 @@ func uiAcquire() (*dashboard.Hub, error) {
 		if !strings.HasPrefix(path, "/") {
 			return nil, fmt.Errorf("%s is %q, and it has to be a path like /ui", UIPathEnv, path)
 		}
-		hub := dashboard.New()
 		full := strings.TrimRight(Routes.Root(), "/") + path
-		h := hub.Handler(full)
+		h := ui.hub.Handler(full)
 		var unbind []func()
 		for _, pat := range []string{path, path + "/*"} {
 			u, err := Routes.Register("dashboard", flowMethodAny, pat, h)
@@ -62,24 +69,24 @@ func uiAcquire() (*dashboard.Hub, error) {
 			}
 			unbind = append(unbind, u)
 		}
-		ui.hub, ui.unbind = hub, unbind
+		ui.unbind = unbind
 	}
 	ui.refs++
 	return ui.hub, nil
 }
 
-// uiRelease lets go of the dashboard. The last one out unmounts it.
+// uiRelease lets go of the dashboard. The last one out unmounts the routes.
 func uiRelease() {
 	ui.mu.Lock()
 	defer ui.mu.Unlock()
 	if ui.refs > 0 {
 		ui.refs--
 	}
-	if ui.refs == 0 && ui.hub != nil {
+	if ui.refs == 0 {
 		for _, f := range ui.unbind {
 			f()
 		}
-		ui.hub, ui.unbind = nil, nil
+		ui.unbind = nil
 	}
 }
 

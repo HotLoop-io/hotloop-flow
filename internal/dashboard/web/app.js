@@ -59,7 +59,7 @@
   // interpolate replaces each {{ expr }} in a string.
   function interpolate(str, scope) {
     return String(str == null ? "" : str).replace(/\{\{([\s\S]*?)\}\}/g, function (_, inner) {
-      var parts = inner.split(/\|(?!\|)/);
+      var parts = inner.split(/(?<!\|)\|(?!\|)/);
       var v = evalIn(parts[0], scope);
       for (var i = 1; i < parts.length; i++) v = filter(v, parts[i]);
       return v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
@@ -266,11 +266,12 @@
     function draw() {
       var s = sizeCanvas(cv), g = cv.getContext("2d"), v = cur == null ? min : Math.min(max, Math.max(min, cur));
       g.clearRect(0, 0, s.w, s.h);
+      if (s.w < 60 || s.h < 40) return; // not laid out yet, or too small to read
       var frac = max === min ? 0 : (v - min) / (max - min), type = p.gtype || "gage";
       var text = cssVar("--text"), line = cssVar("--line");
       if (type === "gage" || type === "donut") {
         var cx = s.w / 2, cy = type === "gage" ? s.h * 0.88 : s.h / 2;
-        var r = Math.min(s.w / 2, type === "gage" ? s.h * 0.85 : s.h / 2) - 6 * s.dpr, lw = Math.max(6, r * 0.22);
+        var r = Math.max(8, Math.min(s.w / 2, type === "gage" ? s.h * 0.85 : s.h / 2) - 6 * s.dpr), lw = Math.max(6, r * 0.22);
         var a0 = type === "gage" ? Math.PI : -Math.PI / 2, span = type === "gage" ? Math.PI : Math.PI * 2;
         g.lineWidth = lw; g.lineCap = "butt";
         g.strokeStyle = line; g.beginPath(); g.arc(cx, cy, r - lw / 2, a0, a0 + span); g.stroke();
@@ -294,7 +295,7 @@
         g.font = Math.round(r * 0.14) + "px sans-serif"; g.fillStyle = cssVar("--muted");
         if (type === "gage") { g.textAlign = "left"; g.fillText(String(min), cx - r, cy + 12 * s.dpr); g.textAlign = "right"; g.fillText(String(max), cx + r, cy + 12 * s.dpr); }
       } else if (type === "compass") {
-        var ccx = s.w / 2, ccy = s.h / 2, cr = Math.min(s.w, s.h) / 2 - 8 * s.dpr;
+        var ccx = s.w / 2, ccy = s.h / 2, cr = Math.max(8, Math.min(s.w, s.h) / 2 - 8 * s.dpr);
         g.strokeStyle = line; g.lineWidth = 2 * s.dpr; g.beginPath(); g.arc(ccx, ccy, cr, 0, 7); g.stroke();
         g.fillStyle = text; g.font = Math.round(cr * 0.2) + "px sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
         [["N", 0], ["E", 90], ["S", 180], ["W", 270]].forEach(function (c) {
@@ -479,8 +480,8 @@
         scopeObj.$watchers.slice().forEach(function (w) {
           var v = evalIn(w.expr, scope), s = JSON.stringify(v);
           if (w.first || s !== w.last) {
-            var old = w.last === undefined ? undefined : JSON.parse(w.last);
-            w.last = s === undefined ? "undefined" : s; w.first = false; changed = true;
+            var old = w.lastVal;
+            w.last = s; w.lastVal = v; w.first = false; changed = true;
             try { w.fn(v, old); } catch (e) { console.error("template watcher:", e); }
           }
         });
@@ -606,8 +607,15 @@
     $("menu-btn").setAttribute("aria-expanded", open ? "true" : "false");
   });
 
+  // Layout reads can overtake each other during a deploy; only the newest counts.
+  var layoutSeq = 0;
   function loadLayout() {
-    return fetch(base + "api/layout", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (l) {
+    var mine = ++layoutSeq;
+    return fetch(base + "api/layout", { cache: "no-store" }).then(function (r) {
+      // With no dashboard node running the server has nothing mounted; that is an empty dashboard, not a broken one.
+      return r.ok && /json/.test(r.headers.get("content-type") || "") ? r.json() : { tabs: [], links: [], theme: {} };
+    }).then(function (l) {
+      if (mine !== layoutSeq) return;
       layout = l; build();
     });
   }

@@ -553,11 +553,10 @@ func serveFile(w http.ResponseWriter, r *http.Request, assets fs.FS) {
 }
 
 func (h *Hub) serveEvents(w http.ResponseWriter, r *http.Request) {
-	fl, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming is not supported here", http.StatusInternalServerError)
-		return
-	}
+	// The response may be wrapped by the server's request log, so ask through
+	// the controller, which reaches the writer underneath.
+	rc := http.NewResponseController(w)
+	flush := func() { _ = rc.Flush() }
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -582,7 +581,7 @@ func (h *Hub) serveEvents(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(snaps, func(i, j int) bool { return snaps[i].ID < snaps[j].ID })
 	body, _ := json.Marshal(map[string]any{"states": snaps})
 	_, _ = w.Write(sse("state", body))
-	fl.Flush()
+	flush()
 
 	keepalive := time.NewTicker(20 * time.Second)
 	defer keepalive.Stop()
@@ -598,12 +597,12 @@ func (h *Hub) serveEvents(w http.ResponseWriter, r *http.Request) {
 			if _, err := w.Write(ev); err != nil {
 				return
 			}
-			fl.Flush()
+			flush()
 		case <-keepalive.C:
 			if _, err := io.WriteString(w, ": keepalive\n\n"); err != nil {
 				return
 			}
-			fl.Flush()
+			flush()
 		}
 	}
 }
