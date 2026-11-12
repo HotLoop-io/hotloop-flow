@@ -48,3 +48,13 @@ func ClockOf(svc Services) Clock {
 	}
 	return WallClock
 }
+
+// TabLabelOf returns the label of the flow tab a node sits on, or "" when its
+// services cannot say, which is every test harness. The dashboard uses it to
+// tell two tabs of one name apart.
+func TabLabelOf(svc Services) string {
+	if p, ok := svc.(interface{ TabLabel() string }); ok {
+		return p.TabLabel()
+	}
+	return ""
+}

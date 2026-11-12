@@ -1273,6 +1273,15 @@ func (s *services) StandIn() node.StandIn {
 	return s.rt.standIns(s.nodeID)
 }
 
+// TabLabel is what node.TabLabelOf finds: the label of the flow tab the node
+// sits on, empty for a node that is not on one.
+func (s *services) TabLabel() string {
+	if tab, ok := s.rt.graph().flows.Tabs[s.z]; ok {
+		return tab.Label
+	}
+	return ""
+}
+
 // Clock is what node.ClockOf finds: the test's clock under a flow test, and
 // nil, meaning the wall clock, the rest of the time.
 func (s *services) Clock() node.Clock { return s.rt.clock }
