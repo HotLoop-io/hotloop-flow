@@ -219,7 +219,7 @@ func registerUIConfig() {
 	cfg := func(typ, label string, props []node.Prop, notes, help string) {
 		node.MustRegister(node.Descriptor{
 			Type: typ, Category: node.CategoryConfig, Color: colorDashboard, Icon: "dashboard", IsConfig: true,
-			LabelProp: "name", Props: props, Help: help,
+			LabelProp: "name", Props: props, Help: help, StandIn: true,
 			Compatibility: node.Compatibility{Level: node.CompatPartial, Notes: notes},
 		}, func(def *node.Definition) (node.Node, error) { return newUIConfig(typ, def) })
 	}
@@ -257,7 +257,7 @@ func registerUIWidget(s uiSpec) {
 	d := node.Descriptor{
 		Type: s.typ, Category: node.CategoryFunction, Color: colorDashboard, Icon: "dashboard",
 		Inputs: s.inputs, Outputs: s.outputs, PaletteLabel: s.label, LabelProp: "name",
-		Props: props, Help: s.help,
+		Props: props, Help: s.help, StandIn: true,
 		Compatibility: node.Compatibility{Level: node.CompatPartial, Notes: s.notes, UnsupportedProps: s.unsupp},
 	}
 	if s.config {
@@ -325,18 +325,22 @@ func uiIntProp(raw map[string]any, key string) int {
 type uiConfig struct {
 	typ  string
 	id   string
+	svc  node.Services
 	raw  map[string]any
 	hub  *dashboard.Hub
 	held bool
 }
 
 func newUIConfig(typ string, def *node.Definition) (node.Node, error) {
-	return &uiConfig{typ: typ, id: def.Node.ID, raw: def.Node.Raw}, nil
+	return &uiConfig{typ: typ, id: def.Node.ID, svc: def.Services, raw: def.Node.Raw}, nil
 }
 
 func (c *uiConfig) Receive(context.Context, *engine.Msg, node.Emitter) error { return nil }
 
 func (c *uiConfig) Start(context.Context, node.Emitter) error {
+	if node.StandInOf(c.svc) != nil {
+		return nil // a flow test serves no page
+	}
 	hub, err := uiAcquire()
 	if err != nil {
 		return err
@@ -436,6 +440,9 @@ func newUIWidget(s uiSpec, def *node.Definition) (node.Node, error) {
 }
 
 func (w *uiWidget) Start(ctx context.Context, out node.Emitter) error {
+	if node.StandInOf(w.svc) != nil {
+		return nil // a flow test serves no page, and a widget still passes its messages on
+	}
 	hub, err := uiAcquire()
 	if err != nil {
 		return err
@@ -503,6 +510,10 @@ func (w *uiWidget) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 	hub := w.hub
 	w.mu.Unlock()
 	if hub == nil {
+		// No page (a flow test): the widget still passes the message on when it is set to.
+		if (w.passthru && w.spec.outputs > 0) || (w.spec.typ == "ui_template" && w.raw["fwdInMessages"] == true) {
+			out.Send(0, m)
+		}
 		return nil
 	}
 	data := jsonable(m.Data)

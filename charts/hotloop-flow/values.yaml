@@ -117,6 +117,23 @@ network:
   # EtherNet/IP 44818, BACnet 47808.
   extraPorts: []
 
+# ── Binding connections to a network interface ───────────────────────────────
+# A Flow node can bind its connections to one network interface (SO_BINDTODEVICE),
+# by its Network interface setting, by FLOW_NETWORK_INTERFACE in a tab's
+# environment variables, or by a client config's own setting. It is for a box
+# whose one port carries a VLAN for each machine, every VLAN with the same subnet
+# and the same device addresses: a socket bound to enp2s0.14 routes and resolves
+# addresses on that interface and no other.
+#
+# The pod has to see the host's interfaces, so this is network.mode: host. On
+# Linux 5.7 and later an unprivileged process may bind a socket that is not
+# already bound to a device, so nothing more is needed and netRaw stays false.
+# On an older kernel binding takes CAP_NET_RAW: set netRaw to true and the pod
+# adds that one capability (everything else stays dropped). It is the only reason
+# this value exists.
+bindToInterface:
+  netRaw: false
+
 # ── Discovery ────────────────────────────────────────────────────────────────
 # The scan nodes. Off by default: this is a plant-floor inventory tool, not a
 # scanner anybody with edit access can aim anywhere. Enabling it without listing

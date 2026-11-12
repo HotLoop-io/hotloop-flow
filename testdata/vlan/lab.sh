@@ -5,7 +5,7 @@
 # Every VLAN is the same 192.168.1.0/24 and the devices keep their addresses
 # from one VLAN to the next. This builds the same thing from network namespaces:
 # for each VLAN number N, a namespace flxlab-N holds a Modbus TCP simulator at
-# 192.168.1.5:502 that answers N (register 0 holds 1100 + N, input register 0
+# 192.168.1.5:5020 that answers N (register 0 holds 1100 + N, input register 0
 # holds 2200 + N), and a veth pair joins it to the host, whose end, flxvN, is
 # 192.168.1.100/24. So the host has the same subnet on every flxvN, and a
 # connection to 192.168.1.5 reaches whichever simulator the interface it leaves
@@ -25,7 +25,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 ctl=/run/flxlab
 image=${LAB_IMAGE:-docker.io/oitc/modbus-server:2.3.0}
-port=${LAB_PORT:-502}
+port=${LAB_PORT:-5020}
 owner=${LAB_OWNER:-${SUDO_USER:-$(id -un)}}
 
 need_root() { [ "$(id -u)" = 0 ] || { echo "lab.sh $1 has to run as root" >&2; exit 1; }; }

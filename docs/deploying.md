@@ -118,6 +118,26 @@ escalation, `RuntimeDefault` seccomp, every capability dropped. Discovery
 included: `scan` only makes TCP connections, which need no capability, and
 finishes the handshake instead of leaving half-open connections on a PLC.
 
+One value adds a capability, and only when you set it: `bindToInterface.netRaw`.
+A node can bind its connections to one network interface (`SO_BINDTODEVICE`), for
+a box whose port carries a VLAN for each machine with the same subnet on all of
+them. On Linux 5.7 and later that takes no capability and the value stays
+`false`. On an older kernel it takes `CAP_NET_RAW`: set it to `true` and the pod
+adds that one capability, with every other one still dropped. The pod also has to
+see the host's interfaces, which is `network.mode: host`. How a tab picks its
+interface is in [node-red-types.md](node-red-types.md#binding-to-a-network-interface).
+
+### Plants with a VLAN for each machine
+
+One box, one port, a VLAN for each dryer, every VLAN the same `192.168.1.0/24`
+with the same device addresses. Run one Flow with `network.mode: host`, give each
+dryer's tab the environment variable `FLOW_NETWORK_INTERFACE` (`enp2s0.14`,
+`enp2s0.15` and so on), and every client on that tab reaches only its own VLAN.
+With Podman and Quadlet, `Network=host`, and `AddCapability=NET_RAW` only on a
+kernel older than 5.7. The details, the order a node picks its interface in, and
+what was proven are in
+[node-red-types.md](node-red-types.md#binding-to-a-network-interface).
+
 ### Signing in from the EmberCORE dashboard
 
 When the dashboard deploys Flow from the App Store it hands the chart its public key (`embernetSignin.publicKey`), and from then on the dashboard is the way in. It puts a token it signed in `X-Embernet-Assertion` on every request it proxies, the editor's websocket included, and Flow checks it with that key: the signature (ES256), the issuer (`embernet-dashboard`), that it was made for this app in this tenant (the audience is `<tenant>/<release>`, so a token for another app opens nothing here), and its expiry (about a minute, so there is nothing to revoke and a role changed in the dashboard lands on the next request).

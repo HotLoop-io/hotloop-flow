@@ -18,7 +18,7 @@ import (
 // One Flow, two tabs, two VLANs that carry the same subnet.
 //
 // testdata/vlan/lab.sh builds, from network namespaces, what the Shepherd Boy
-// Farms box has on its port: a Modbus device at 192.168.1.5:502 on each of two
+// Farms box has on its port: a Modbus device at 192.168.1.5:5020 on each of two
 // interfaces (flxv14 and flxv15), the same address on both, answering with
 // different register values. A connection that is not bound to an interface
 // reaches whichever the kernel likes. These tests bind each tab to its own and
@@ -138,7 +138,7 @@ func press(t *testing.T, rt *runtime.Runtime, id string) {
 
 func TestEachTabReadsItsOwnVLANWithTheSameAddressOnBoth(t *testing.T) {
 	vlanLab(t)
-	addr := envOr("HOTLOOP_FLOW_TEST_VLAN_ADDR", "192.168.1.5:502")
+	addr := envOr("HOTLOOP_FLOW_TEST_VLAN_ADDR", "192.168.1.5:5020")
 	rt, log := startVLANFlows(t, vlanFlows(addr))
 
 	// 14 holds 1114 and 15 holds 1115. Alternate between the tabs many times:
@@ -162,7 +162,7 @@ func TestEachTabReadsItsOwnVLANWithTheSameAddressOnBoth(t *testing.T) {
 
 func TestTheSameReadsWithNoInterfaceReachOnlyOneOfThem(t *testing.T) {
 	vlanLab(t)
-	addr := envOr("HOTLOOP_FLOW_TEST_VLAN_ADDR", "192.168.1.5:502")
+	addr := envOr("HOTLOOP_FLOW_TEST_VLAN_ADDR", "192.168.1.5:5020")
 	// The control: the same flow with no interface set anywhere. The host has the
 	// same subnet on two interfaces, so the kernel sends every connection down
 	// one of them, and the tab that wanted the other reads the wrong device.
@@ -182,7 +182,7 @@ func TestTheSameReadsWithNoInterfaceReachOnlyOneOfThem(t *testing.T) {
 
 func TestALinkThatGoesDownAndComesBackIsReadAgain(t *testing.T) {
 	lab := vlanLab(t)
-	addr := envOr("HOTLOOP_FLOW_TEST_VLAN_ADDR", "192.168.1.5:502")
+	addr := envOr("HOTLOOP_FLOW_TEST_VLAN_ADDR", "192.168.1.5:5020")
 	rt, log := startVLANFlows(t, vlanFlows(addr))
 
 	press(t, rt, "in-a")
