@@ -185,6 +185,27 @@ jobs:
           done
           sleep 5
 
+      - name: Start a real PostgreSQL, a real MongoDB and the VLAN lab
+        # The Node-RED postgresql, mongodb4 and Modbus-on-a-VLAN tests talk to
+        # real servers or they skip, and a skip reads as a pass. PostgreSQL 17
+        # (user flow, password flowtest, database flowtest) and MongoDB 8, both
+        # pinned. The lab is two network namespaces that carry the same
+        # 192.168.1.0/24, with a Modbus simulator at 192.168.1.5 in each answering
+        # differently, and the host side of each as flxv14 and flxv15
+        # (testdata/vlan/lab.sh).
+        run: |
+          sudo podman run -d --name pg -p 127.0.0.1:15432:5432 \
+            -e POSTGRES_USER=flow -e POSTGRES_PASSWORD=flowtest -e POSTGRES_DB=flowtest \
+            docker.io/library/postgres:17
+          sudo podman run -d --name mongo -p 127.0.0.1:17017:27017 docker.io/library/mongo:8
+          for p in 15432 17017; do
+            for i in $(seq 1 90); do nc -z 127.0.0.1 $p && break; sleep 1; done
+            nc -z 127.0.0.1 $p || { sudo podman logs pg; sudo podman logs mongo; echo "::error::nothing on $p"; exit 1; }
+          done
+          for i in $(seq 1 60); do sudo podman exec pg pg_isready -U flow -d flowtest && break; sleep 1; done
+          sudo LAB_OWNER="$USER" testdata/vlan/lab.sh up 14 15
+          sleep 5
+
       - name: Start a second MQTT broker
         # The Sparkplug test that moves an edge node from one broker to the
         # next needs a second broker, with no password, on its own port.
@@ -277,6 +298,9 @@ jobs:
           HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
           HOTLOOP_FLOW_TEST_MQTT2: localhost:1885
           HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
+          HOTLOOP_FLOW_TEST_PG: 127.0.0.1:15432
+          HOTLOOP_FLOW_TEST_MONGO: 127.0.0.1:17017
+          HOTLOOP_FLOW_TEST_VLAN_LAB: ${{ github.workspace }}/testdata/vlan/lab.sh
           # 127.0.0.1 and not localhost: the runner resolves localhost to ::1
           # first, Podman publishes the port on IPv4 only, and with localhost
           # the OPC UA client was refused on [::1].
@@ -301,6 +325,27 @@ jobs:
             echo "::error::a broker test was skipped"; exit 1
           fi
           for t in TestIntegrationRollbackLogsBackInToARealBroker TestIntegrationPasswordFromAMountedSecret; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
+
+      - name: The Node-RED type tests actually ran
+        # A skipped integration test reads as a passing one. These are the tests
+        # behind "the Modbus, PostgreSQL and MongoDB nodes work against the real
+        # thing" and "each tab reads its own VLAN", so list what has to have
+        # passed and fail on any skip.
+        env:
+          HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
+          HOTLOOP_FLOW_TEST_PG: 127.0.0.1:15432
+          HOTLOOP_FLOW_TEST_MONGO: 127.0.0.1:17017
+          HOTLOOP_FLOW_TEST_VLAN_LAB: ${{ github.workspace }}/testdata/vlan/lab.sh
+        run: |
+          OUT=$(go test ./internal/nodes/ ./internal/runtime/ -count=1 -v \
+            -run 'TestNodeRedModbusSimulator|TestNodeRedPostgresAgainstARealDatabase|TestNodeRedMongoAgainstARealServer|TestEachTabReadsItsOwnVLAN|TestTheSameReadsWithNoInterface|TestALinkThatGoesDown' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::a Node-RED type test was skipped"; exit 1
+          fi
+          for t in TestNodeRedModbusSimulator TestNodeRedPostgresAgainstARealDatabase TestNodeRedMongoAgainstARealServer TestEachTabReadsItsOwnVLANWithTheSameAddressOnBoth TestTheSameReadsWithNoInterfaceReachOnlyOneOfThem TestALinkThatGoesDownAndComesBackIsReadAgain; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 
