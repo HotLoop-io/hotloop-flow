@@ -81,6 +81,14 @@ type Program struct {
 	// building one plus its globals costs far more than running a short
 	// function, so they are recycled rather than rebuilt.
 	pool sync.Pool
+
+	// timed is true when the source names a timer function. Such a program runs
+	// on one dedicated runtime (see timers.go) because a callback has to live in
+	// the runtime that scheduled it.
+	timed bool
+	sess  *session
+	smu   sync.Mutex
+	async func(*Result)
 }
 
 // Compile prepares a function body.
@@ -89,6 +97,7 @@ type Program struct {
 // the top level, which is how every Node-RED function is written.
 func Compile(name, body, onStart, onStop string, limits Limits) (*Program, error) {
 	p := &Program{limits: limits.withDefaults(), name: name}
+	p.timed = usesTimers(body) || usesTimers(onStart) || usesTimers(onStop)
 
 	main, err := goja.Compile(name, "(function(msg, node, context, flow, global, env, util){"+body+"\n})", true)
 	if err != nil {
@@ -154,6 +163,9 @@ type Sandbox struct {
 
 // Run executes the function against a message.
 func (p *Program) Run(ctx context.Context, sb Sandbox) (*Result, error) {
+	if p.timed {
+		return p.runTimed(ctx, sb)
+	}
 	vm := p.acquire()
 	defer p.release(vm)
 	setClock(vm, sb)
@@ -180,7 +192,7 @@ func (p *Program) Run(ctx context.Context, sb Sandbox) (*Result, error) {
 	}
 
 	msgObj := vm.ToValue(sb.Msg.Data)
-	nodeObj := p.nodeAPI(vm, sb, res)
+	nodeObj := p.nodeAPI(vm, &sb, res)
 	ctxObj := p.contextAPI(vm, sb.Services, node.ScopeNode)
 	flowObj := p.contextAPI(vm, sb.Services, node.ScopeFlow)
 	globalObj := p.contextAPI(vm, sb.Services, node.ScopeGlobal)
@@ -196,7 +208,7 @@ func (p *Program) Run(ctx context.Context, sb Sandbox) (*Result, error) {
 	// A returned value routes to outputs the same way Node-RED's does: a bare
 	// object goes to port 0, an array indexes ports, and a nested array sends
 	// several messages on one port.
-	if err := p.collectReturn(vm, out, sb, res); err != nil {
+	if err := p.collectReturn(vm, out, &sb, res); err != nil {
 		return res, err
 	}
 	if err := p.checkSize(res); err != nil {
@@ -207,6 +219,9 @@ func (p *Program) Run(ctx context.Context, sb Sandbox) (*Result, error) {
 
 // RunLifecycle executes the setup or cleanup code.
 func (p *Program) RunLifecycle(ctx context.Context, sb Sandbox, which string) (*Result, error) {
+	if p.timed {
+		return p.lifecycleTimed(ctx, sb, which)
+	}
 	var prog *goja.Program
 	switch which {
 	case "start":
@@ -234,7 +249,7 @@ func (p *Program) RunLifecycle(ctx context.Context, sb Sandbox, which string) (*
 		return nil, err
 	}
 	_, err = fn(goja.Undefined(),
-		p.nodeAPI(vm, sb, res),
+		p.nodeAPI(vm, &sb, res),
 		p.contextAPI(vm, sb.Services, node.ScopeNode),
 		p.contextAPI(vm, sb.Services, node.ScopeFlow),
 		p.contextAPI(vm, sb.Services, node.ScopeGlobal),
@@ -288,6 +303,7 @@ func (p *Program) release(vm *goja.Runtime) {
 // whole security story, and it is why it fits in one short function.
 func newRuntime() *goja.Runtime {
 	vm := goja.New()
+	installBuffer(vm)
 	// Field names are used verbatim rather than lowercased, so msg.payload in
 	// Go is msg.payload in JS. Without this, goja's default mapper would make
 	// Go struct fields visible under different names.
@@ -296,7 +312,7 @@ func newRuntime() *goja.Runtime {
 }
 
 // nodeAPI builds the `node` object.
-func (p *Program) nodeAPI(vm *goja.Runtime, sb Sandbox, res *Result) goja.Value {
+func (p *Program) nodeAPI(vm *goja.Runtime, sb *Sandbox, res *Result) goja.Value {
 	obj := vm.NewObject()
 
 	must := func(name string, fn func(goja.FunctionCall) goja.Value) {
@@ -364,7 +380,7 @@ func argsToString(call goja.FunctionCall) string {
 }
 
 // routeSend converts a value passed to node.send into messages per port.
-func (p *Program) routeSend(vm *goja.Runtime, v goja.Value, sb Sandbox, res *Result) {
+func (p *Program) routeSend(vm *goja.Runtime, v goja.Value, sb *Sandbox, res *Result) {
 	exported := v.Export()
 
 	// An array indexes output ports.
@@ -396,7 +412,7 @@ func (p *Program) routeSend(vm *goja.Runtime, v goja.Value, sb Sandbox, res *Res
 	}
 }
 
-func (p *Program) collectReturn(vm *goja.Runtime, v goja.Value, sb Sandbox, res *Result) error {
+func (p *Program) collectReturn(vm *goja.Runtime, v goja.Value, sb *Sandbox, res *Result) error {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 		return nil
 	}

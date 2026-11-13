@@ -23,7 +23,7 @@ require (
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.56.0
 	golang.org/x/sys v0.48.0
-	golang.org/x/text v0.40.0
+	golang.org/x/text v0.41.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.60.1
@@ -81,3 +81,5 @@ require (
 // gos7 is a patched copy in this tree: one line of tcpclient.go wrote to the global
 // logger on every timeout. third_party/gos7/HOTLOOP_PATCH.txt says what and why.
 replace github.com/robinson/gos7 => ./third_party/gos7
+
+replace github.com/simonvetter/modbus => ./third_party/modbus

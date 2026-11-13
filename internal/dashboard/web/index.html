@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header id="bar">
+  <button id="menu-btn" aria-label="Menu" aria-expanded="false">&#9776;</button>
+  <h1 id="title">Dashboard</h1>
+  <span id="conn" title="Connection to the server" data-state="connecting"></span>
+</header>
+<nav id="menu" aria-label="Tabs"></nav>
+<main id="page"></main>
+<div id="empty" hidden>
+  <p>Nothing is on this dashboard yet.</p>
+  <p>Add ui_tab, ui_group and widget nodes to a flow and deploy it.</p>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

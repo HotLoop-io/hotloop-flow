@@ -3,12 +3,14 @@ package nodes
 import (
 	"context"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/netbind"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,6 +43,7 @@ type PoolProvider interface {
 type postgresConfig struct {
 	dsn      string
 	maxConns int32
+	iface    string // the network interface its connections bind to
 
 	mu   sync.Mutex
 	pool *pgxpool.Pool
@@ -75,6 +78,7 @@ func registerPostgresConfig() {
 				}},
 			{Name: "maxConns", Kind: node.PropNumber, Label: "Max connections", Default: 4,
 				Help: "Kept small by default: an edge box runs many apps against one database."},
+			networkInterfaceProp("Binds the connections to one network interface, such as enp2s0.14. Empty lets the host choose."),
 		},
 		Help: "Connection to a PostgreSQL or TimescaleDB instance.",
 	}, newPostgresConfig)
@@ -112,7 +116,11 @@ func newPostgresConfig(def *node.Definition) (node.Node, error) {
 		quotePGKeyword(user), quotePGKeyword(password), sslmode,
 	)
 
-	return &postgresConfig{dsn: dsn, maxConns: maxConns}, nil
+	iface := strings.TrimSpace(def.Node.PropString("networkInterface", ""))
+	if err := netbind.Validate(iface); err != nil {
+		return nil, err
+	}
+	return &postgresConfig{dsn: dsn, maxConns: maxConns, iface: iface}, nil
 }
 
 // quotePGKeyword escapes a value for a libpq keyword/value connection string.
@@ -154,6 +162,12 @@ func (c *postgresConfig) Pool(ctx context.Context) (*pgxpool.Pool, error) {
 	// Bound the wait so a node blocks for a knowable time rather than until the
 	// scheduler's inbox backs up behind it.
 	cfg.ConnConfig.ConnectTimeout = 10 * time.Second
+	if c.iface != "" {
+		iface := c.iface
+		cfg.ConnConfig.DialFunc = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return netbind.DialContext(ctx, iface, network, addr)
+		}
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {

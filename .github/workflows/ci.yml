@@ -185,6 +185,25 @@ jobs:
           done
           sleep 5
 
+      - name: Start a real PostgreSQL and the VLAN lab
+        # The Node-RED postgresql and Modbus-on-a-VLAN tests talk to
+        # real servers or they skip, and a skip reads as a pass. PostgreSQL 17
+        # (user flow, password flowtest, database flowtest), pinned. The lab is two network namespaces that carry the same
+        # 192.168.1.0/24, with a Modbus simulator at 192.168.1.5 in each answering
+        # differently, and the host side of each as flxv14 and flxv15
+        # (testdata/vlan/lab.sh).
+        run: |
+          sudo podman run -d --name pg -p 127.0.0.1:15432:5432 \
+            -e POSTGRES_USER=flow -e POSTGRES_PASSWORD=flowtest -e POSTGRES_DB=flowtest \
+            docker.io/library/postgres:17
+          for p in 15432; do
+            for i in $(seq 1 90); do nc -z 127.0.0.1 $p && break; sleep 1; done
+            nc -z 127.0.0.1 $p || { sudo podman logs pg; echo "::error::nothing on $p"; exit 1; }
+          done
+          for i in $(seq 1 60); do sudo podman exec pg pg_isready -U flow -d flowtest && break; sleep 1; done
+          sudo LAB_OWNER="$USER" testdata/vlan/lab.sh up 14 15
+          sleep 5
+
       - name: Start a second MQTT broker
         # The Sparkplug test that moves an edge node from one broker to the
         # next needs a second broker, with no password, on its own port.
@@ -277,6 +296,8 @@ jobs:
           HOTLOOP_FLOW_TEST_OTLP_LOG: ${{ runner.temp }}/otel.log
           HOTLOOP_FLOW_TEST_MQTT2: localhost:1885
           HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
+          HOTLOOP_FLOW_TEST_PG: 127.0.0.1:15432
+          HOTLOOP_FLOW_TEST_VLAN_LAB: ${{ github.workspace }}/testdata/vlan/lab.sh
           # 127.0.0.1 and not localhost: the runner resolves localhost to ::1
           # first, Podman publishes the port on IPv4 only, and with localhost
           # the OPC UA client was refused on [::1].
@@ -301,6 +322,26 @@ jobs:
             echo "::error::a broker test was skipped"; exit 1
           fi
           for t in TestIntegrationRollbackLogsBackInToARealBroker TestIntegrationPasswordFromAMountedSecret; do
+            echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
+          done
+
+      - name: The Node-RED type tests actually ran
+        # A skipped integration test reads as a passing one. These are the tests
+        # behind "the Modbus and PostgreSQL nodes work against the real
+        # thing" and "each tab reads its own VLAN", so list what has to have
+        # passed and fail on any skip.
+        env:
+          HOTLOOP_FLOW_TEST_MODBUS: localhost:5020
+          HOTLOOP_FLOW_TEST_PG: 127.0.0.1:15432
+          HOTLOOP_FLOW_TEST_VLAN_LAB: ${{ github.workspace }}/testdata/vlan/lab.sh
+        run: |
+          OUT=$(go test ./internal/nodes/ ./internal/runtime/ -count=1 -v \
+            -run 'TestNodeRedModbusSimulator|TestNodeRedPostgresAgainstARealDatabase|TestEachTabReadsItsOwnVLAN|TestTheSameReadsWithNoInterface|TestALinkThatGoesDown' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
+          echo "$OUT" | grep -E '^(---|ok|FAIL)'
+          if echo "$OUT" | grep -q -- "--- SKIP"; then
+            echo "::error::a Node-RED type test was skipped"; exit 1
+          fi
+          for t in TestNodeRedModbusSimulator TestNodeRedPostgresAgainstARealDatabase TestEachTabReadsItsOwnVLANWithTheSameAddressOnBoth TestTheSameReadsWithNoInterfaceReachOnlyOneOfThem TestALinkThatGoesDownAndComesBackIsReadAgain; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 
@@ -662,6 +703,19 @@ jobs:
             grep -A2 'capabilities:' caps.yaml | grep -q -- '- ALL' || { echo "::error::capabilities no longer drop ALL ($args)"; exit 1; }
           done
 
+      - name: Binding to an interface adds NET_RAW only when asked
+        # SO_BINDTODEVICE needs no capability on Linux 5.7 and later, so the
+        # default render adds none (the step above holds that). On an older kernel
+        # it takes CAP_NET_RAW, and bindToInterface.netRaw adds that one and
+        # nothing else, with every other capability still dropped.
+        run: |
+          helm template t charts/hotloop-flow --set bindToInterface.netRaw=true > raw.yaml
+          grep -A12 'capabilities:' raw.yaml | grep -q -- '- ALL' || { echo "::error::netRaw stopped dropping ALL"; exit 1; }
+          N=$(grep -c -- '- NET_RAW' raw.yaml || true)
+          [ "$N" = 1 ] || { echo "::error::expected NET_RAW once, found $N"; exit 1; }
+          grep -q 'NET_ADMIN' raw.yaml && { echo "::error::NET_ADMIN in the render"; exit 1; }
+          true
+
       - name: A mounted Secret is read-only, private and in the secret scope
         # ew_credentialFiles and the tls-config read through the secret scope,
         # so a mount that is not in it is a password the app cannot read, and
@@ -762,13 +816,15 @@ jobs:
 
       - name: Report binary size
         # The whole premise of this project is that it is small. If the binary
-        # grows past the budget, that is a finding, not a footnote.
+        # grows past the budget, that is a finding, not a footnote. Moved from 40
+        # to 42 MiB in 2.9.0 for the native Node-RED connector nodes (Modbus, the
+        # dashboard, PostgreSQL, e-mail), by Patrick's call.
         run: |
           SIZE=$(stat -c%s hotloop-flow)
           echo "hotloop-flow: $SIZE bytes ($((SIZE/1024/1024)) MiB)"
           echo "### Binary size: $((SIZE/1024/1024)) MiB" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$SIZE" -gt 41943040 ]; then
-            echo "::error::binary exceeds the 40 MiB budget"
+          if [ "$SIZE" -gt 44040192 ]; then
+            echo "::error::binary exceeds the 42 MiB budget"
             exit 1
           fi
 

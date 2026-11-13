@@ -38,9 +38,13 @@ func registerFunction() {
 				"Node's vm module. The language is ES2023; the Node standard library is " +
 				"not present. require() and npm modules do not work and cannot be made " +
 				"to without embedding Node. There is always a CPU time limit, which " +
-				"Node-RED leaves optional and off. setTimeout and setInterval are not " +
-				"available — use a Delay or Trigger node, which the runtime can account for.",
-			UnsupportedProps: []string{"libs", "setTimeout", "setInterval", "require"},
+				"Node-RED leaves optional and off, and it applies to every timer callback " +
+				"too. setTimeout, setInterval and their clear functions work, on the node's " +
+				"clock, and every one is cleared when the flow stops or is redeployed. Buffer " +
+				"is there (alloc, from, concat, the read and write methods for integers and " +
+				"floats in both byte orders, slice, toString and toJSON). A byte slice " +
+				"in a message arrives as a byte array, so wrap it with Buffer.from.",
+			UnsupportedProps: []string{"libs", "require"},
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -59,7 +63,7 @@ func registerFunction() {
 			"an array to address several outputs, or nothing to stop it here.\n\n" +
 			"Available: msg, node (send, done, error, status, log, warn, debug), " +
 			"context, flow, global, env and util. Not available: require, npm modules, " +
-			"the Node standard library, setTimeout and setInterval.",
+			"the Node standard library.",
 	}, newFunction)
 }
 
@@ -145,6 +149,9 @@ func (n *functionNode) emit(res *js.Result, out node.Emitter) {
 
 // Start runs the setup code.
 func (n *functionNode) Start(ctx context.Context, out node.Emitter) error {
+	// A timer callback's node.send leaves through the emitter, from whatever
+	// goroutine the clock fires it on.
+	n.prog.SetAsync(func(res *js.Result) { n.emit(res, out) })
 	res, err := n.prog.RunLifecycle(ctx, js.Sandbox{
 		Services: n.svc,
 		Outputs:  n.outputs,
@@ -162,6 +169,7 @@ func (n *functionNode) Start(ctx context.Context, out node.Emitter) error {
 // cannot wedge a deploy — which is the failure Node-RED only bounded in 0.17
 // and still allows fifteen seconds of.
 func (n *functionNode) Close(ctx context.Context, _ bool) error {
+	defer n.prog.Stop()
 	res, err := n.prog.RunLifecycle(ctx, js.Sandbox{
 		Services: n.svc,
 		Outputs:  n.outputs,

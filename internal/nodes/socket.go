@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/netbind"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 )
 
@@ -830,6 +831,7 @@ type tcpRequestNode struct {
 	timeout  time.Duration
 	datatype string
 	tls      *tlsConfigNode
+	iface    string
 	svc      node.Services
 }
 
@@ -854,7 +856,8 @@ func registerTCPRequest() {
 				"of the wait modes, which all end at a connection boundary. With a " +
 				"tls-config the server's certificate is checked unless the config says " +
 				"not to. Node-RED's TCP Request never checks it, whatever the config " +
-				"says, which makes its TLS a padlock painted on the door.",
+				"says, which makes its TLS a padlock painted on the door. networkInterface (not in Node-RED) " +
+				"binds the connection to one network interface.",
 		},
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
@@ -878,6 +881,7 @@ func registerTCPRequest() {
 			{Name: "ew_timeout", Kind: node.PropNumber, Label: "Timeout (seconds)", Default: 10},
 			{Name: "tls", Kind: node.PropConfigRef, ConfigType: "tls-config", Label: "TLS",
 				Help: "Leave empty for plain TCP."},
+			networkInterfaceProp("Binds the connection to one network interface, such as enp2s0.14. Empty takes the tab's " + NetworkInterfaceEnv + ", then lets the host choose."),
 		},
 		Help: "Sends the payload to a host and returns the reply. The wait mode " +
 			"decides when the reply is considered complete.",
@@ -892,7 +896,11 @@ func newTCPRequest(def *node.Definition) (node.Node, error) {
 		splitc:   def.Node.PropString("splitc", "0"),
 		timeout:  defaultSocketTimeout,
 		datatype: orDefault(def.Node.PropString("datatype", ""), "buffer"),
+		iface:    strings.TrimSpace(def.Node.PropString("networkInterface", "")),
 		svc:      def.Services,
+	}
+	if err := netbind.Validate(n.iface); err != nil {
+		return nil, err
 	}
 	switch n.out {
 	case "time", "char", "count", "sit", "immed":
@@ -986,7 +994,11 @@ func (n *tcpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.Em
 	dialCtx, cancel := context.WithTimeout(ctx, n.timeout)
 	defer cancel()
 
-	conn, err := dialTCP(dialCtx, net.JoinHostPort(host, strconv.Itoa(port)), n.tls)
+	iface := networkInterfaceFor(n.svc, n.iface)
+	if err := netbind.Validate(iface); err != nil {
+		return err
+	}
+	conn, err := dialTCPOn(dialCtx, iface, net.JoinHostPort(host, strconv.Itoa(port)), n.tls)
 	if err != nil {
 		out.Status(node.Status{Fill: "red", Shape: "ring", Text: "failed"})
 		return fmt.Errorf("connecting to %s:%d: %w", host, port, err)
@@ -1027,12 +1039,20 @@ func (n *tcpRequestNode) Receive(ctx context.Context, m *engine.Msg, out node.Em
 // of the dial, so a server whose certificate is refused is a failed connect
 // rather than a connection that dies on the first write.
 func dialTCP(ctx context.Context, addr string, cfg *tlsConfigNode) (net.Conn, error) {
+	return dialTCPOn(ctx, "", addr, cfg)
+}
+
+// dialTCPOn is dialTCP with the socket bound to a network interface first, when
+// one is named.
+func dialTCPOn(ctx context.Context, iface, addr string, cfg *tlsConfigNode) (net.Conn, error) {
+	nd := &net.Dialer{Control: netbind.Control(iface)}
 	if cfg == nil {
-		var d net.Dialer
-		return d.DialContext(ctx, "tcp", addr)
+		c, err := nd.DialContext(ctx, "tcp", addr)
+		return c, netbind.Explain(iface, err)
 	}
-	d := tls.Dialer{Config: cfg.clientConfig()}
-	return d.DialContext(ctx, "tcp", addr)
+	d := tls.Dialer{NetDialer: nd, Config: cfg.clientConfig()}
+	c, err := d.DialContext(ctx, "tcp", addr)
+	return c, netbind.Explain(iface, err)
 }
 
 func (n *tcpRequestNode) readReply(conn io.Reader) ([]byte, error) {
@@ -1282,6 +1302,8 @@ type udpOutNode struct {
 	multicast string // "false", "broad", "multi"
 	iface     string
 	base64    bool
+	netIface  string // the network interface the socket binds to
+	svc       node.Services
 
 	mu   sync.Mutex
 	conn *net.UDPConn
@@ -1306,7 +1328,7 @@ func registerUDPOut() {
 			Level: node.CompatPartial,
 			Notes: "Sends datagrams to a host, a broadcast address or a multicast group, " +
 				"with msg.ip and msg.port overriding the node. IPv6 is not implemented " +
-				"in this build.",
+				"in this build. networkInterface (not in Node-RED) binds the socket to one network interface.",
 			UnsupportedProps: []string{"ipv6"},
 		},
 		Props: []node.Prop{
@@ -1322,6 +1344,7 @@ func registerUDPOut() {
 				}},
 			{Name: "iface", Kind: node.PropString, Label: "Interface address"},
 			{Name: "base64", Kind: node.PropBool, Label: "Decode the payload from base64"},
+			networkInterfaceProp("Binds the socket to one network interface, such as enp2s0.14. Empty takes the tab's " + NetworkInterfaceEnv + ", then lets the host choose."),
 		},
 		Help: "Sends the payload as a UDP datagram.",
 	}, newUDPOut)
@@ -1334,7 +1357,12 @@ func newUDPOut(def *node.Definition) (node.Node, error) {
 		multicast: def.Node.PropString("multicast", "false"),
 		iface:     strings.TrimSpace(def.Node.PropString("iface", "")),
 		base64:    def.Node.PropBool("base64", false),
+		netIface:  strings.TrimSpace(def.Node.PropString("networkInterface", "")),
+		svc:       def.Services,
 		standIn:   node.StandInOf(def.Services),
+	}
+	if err := netbind.Validate(n.netIface); err != nil {
+		return nil, err
 	}
 	switch n.multicast {
 	case "false", "broad", "multi":
@@ -1439,7 +1467,16 @@ func (n *udpOutNode) socket() (*net.UDPConn, error) {
 		}
 		local.IP = ip
 	}
-	conn, err := net.ListenUDP("udp4", local)
+	var conn *net.UDPConn
+	var err error
+	if ni := networkInterfaceFor(n.svc, n.netIface); ni != "" {
+		if err := netbind.Validate(ni); err != nil {
+			return nil, err
+		}
+		conn, err = netbind.ListenUDP(ni, local)
+	} else {
+		conn, err = net.ListenUDP("udp4", local)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("opening a UDP socket: %w", err)
 	}

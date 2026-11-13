@@ -88,6 +88,13 @@ spec:
             capabilities:
               drop:
                 - ALL
+              {{- if .Values.bindToInterface.netRaw }}
+              # Only for a kernel older than 5.7, where binding a socket to a
+              # network interface (SO_BINDTODEVICE) takes CAP_NET_RAW. Off by
+              # default; see bindToInterface in values.yaml.
+              add:
+                - NET_RAW
+              {{- end }}
 
           ports:
             - name: http

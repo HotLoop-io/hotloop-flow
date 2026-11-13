@@ -74,8 +74,11 @@ func renderCompatibilityDoc() string {
 	b.WriteString("| **hotloop-flow-only** | No Node-RED counterpart. |\n\n")
 
 	b.WriteString("## Not supported at all\n\n")
-	b.WriteString("**Node-RED community nodes.** They are npm packages that need Node.js.\n")
-	b.WriteString("There is no version of this where they work.\n\n")
+	b.WriteString("**Most Node-RED community nodes.** They are npm packages that need Node.js.\n")
+	b.WriteString("There is no version of this where a package that needs Node works. The ones a plant\n")
+	b.WriteString("leans on, Modbus, the dashboard, PostgreSQL and e-mail, run natively under\n")
+	b.WriteString("their own type names: see node-red-types.md. Any other fails by itself, with its type\n")
+	b.WriteString("named, and the rest of the flow starts.\n\n")
 
 	b.WriteString("## JSONata\n\n")
 	b.WriteString("Every property typed `jsonata` is evaluated, by gnata, a pure Go JSONata 2.x,\n")

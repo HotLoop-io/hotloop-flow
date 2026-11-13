@@ -199,11 +199,11 @@ func TestFunctionHasNoHostAccess(t *testing.T) {
 	// an escape. What must not be reachable is Node's host environment.
 	forbidden := []string{
 		"require", "process", "module", "exports", "__dirname", "__filename",
-		"globalThis.process", "Buffer", "setImmediate",
-		// Timers are deliberately absent: work scheduled inside a function is
-		// invisible to the scheduler, cannot be back-pressured and outlives the
-		// message. A Delay or Trigger node does the same thing accountably.
-		"setTimeout", "setInterval",
+		"globalThis.process", "setImmediate",
+		// Buffer and the timers are provided on purpose, since a Node-RED flow
+		// from a plant uses them, and they reach nothing outside the runtime:
+		// Buffer is plain JavaScript over a Uint8Array, and the timers are the
+		// node's clock, cleared when the flow stops (see timers_test.go).
 	}
 
 	for _, name := range forbidden {

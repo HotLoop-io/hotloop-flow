@@ -1,0 +1,738 @@
+[
+ {
+  "id": "plant",
+  "type": "tab",
+  "label": "plant",
+  "disabled": false,
+  "info": ""
+ },
+ {
+  "id": "ui-base",
+  "type": "ui_base",
+  "theme": {
+   "name": "theme-dark",
+   "lightTheme": {
+    "default": "#0094CE",
+    "baseColor": "#0094CE"
+   },
+   "darkTheme": {
+    "default": "#097479",
+    "baseColor": "#097479"
+   }
+  },
+  "site": {
+   "name": "Plant"
+  }
+ },
+ {
+  "id": "ui-tab",
+  "type": "ui_tab",
+  "name": "Main Screen",
+  "icon": "dashboard",
+  "order": 2,
+  "disabled": false,
+  "hidden": false
+ },
+ {
+  "id": "ui-grp",
+  "type": "ui_group",
+  "name": "Heater 1",
+  "tab": "ui-tab",
+  "order": 1,
+  "disp": true,
+  "width": "6",
+  "collapse": false,
+  "className": ""
+ },
+ {
+  "id": "ui-link",
+  "type": "ui_link",
+  "name": "Dryer 1",
+  "link": "http://192.0.2.1:1880/ui",
+  "icon": "open_in_browser",
+  "target": "thistab",
+  "order": 6
+ },
+ {
+  "id": "ui-spacer",
+  "type": "ui_spacer",
+  "name": "spacer",
+  "group": "ui-grp",
+  "order": 9,
+  "width": 1,
+  "height": 1
+ },
+ {
+  "id": "d2-base",
+  "type": "ui-base",
+  "name": "My Dashboard",
+  "path": "/dashboard",
+  "includeClientData": true,
+  "acceptsClientConfig": [
+   "ui-notification",
+   "ui-control"
+  ],
+  "showPathInSidebar": false,
+  "navigationStyle": "default",
+  "titleBarStyle": "default"
+ },
+ {
+  "id": "d2-theme",
+  "type": "ui-theme",
+  "name": "Default Theme",
+  "colors": {
+   "surface": "#ffffff",
+   "primary": "#0094CE"
+  },
+  "sizes": {
+   "pagePadding": "12px"
+  }
+ },
+ {
+  "id": "d2-page",
+  "type": "ui-page",
+  "name": "Page 1",
+  "ui": "d2-base",
+  "path": "/page1",
+  "icon": "home",
+  "layout": "grid",
+  "theme": "d2-theme",
+  "order": 1,
+  "className": "",
+  "visible": "true",
+  "disabled": "false"
+ },
+ {
+  "id": "d2-group",
+  "type": "ui-group",
+  "name": "My Group",
+  "page": "d2-page",
+  "width": 6,
+  "height": 1,
+  "order": -1,
+  "showTitle": true,
+  "className": "",
+  "visible": true,
+  "disabled": false
+ },
+ {
+  "id": "mb-client",
+  "type": "modbus-client",
+  "name": "BRX Test5",
+  "clienttype": "tcp",
+  "bufferCommands": true,
+  "stateLogEnabled": false,
+  "queueLogEnabled": false,
+  "failureLogEnabled": true,
+  "tcpHost": "127.0.0.1",
+  "tcpPort": "5020",
+  "tcpType": "DEFAULT",
+  "serialPort": "/dev/ttyUSB",
+  "serialType": "RTU-BUFFERD",
+  "serialBaudrate": "9600",
+  "serialDatabits": "8",
+  "serialStopbits": "1",
+  "serialParity": "none",
+  "serialConnectionDelay": "100",
+  "serialAsciiResponseStartDelimiter": "0x3A",
+  "unit_id": 1,
+  "commandDelay": 1,
+  "clientTimeout": 1000,
+  "reconnectOnTimeout": true,
+  "reconnectTimeout": 2000,
+  "parallelUnitIdsAllowed": true,
+  "showErrors": false,
+  "showWarnings": true,
+  "showLogs": true
+ },
+ {
+  "id": "mb-tcp-cfg",
+  "type": "modbustcp-server",
+  "name": "",
+  "host": "192.0.2.11",
+  "port": "502",
+  "unit_id": "1",
+  "reconnecttimeout": ""
+ },
+ {
+  "id": "go",
+  "type": "inject",
+  "z": "plant",
+  "name": "go",
+  "props": [
+   {
+    "p": "payload"
+   }
+  ],
+  "repeat": "",
+  "crontab": "",
+  "once": false,
+  "onceDelay": 0.1,
+  "topic": "",
+  "payload": "",
+  "payloadType": "date",
+  "x": 100,
+  "y": 100,
+  "wires": [
+   [
+    "g1",
+    "g2"
+   ]
+  ]
+ },
+ {
+  "id": "g1",
+  "type": "modbus-getter",
+  "z": "plant",
+  "name": "HMI Setpoints",
+  "showStatusActivities": false,
+  "showErrors": false,
+  "showWarnings": true,
+  "logIOActivities": false,
+  "unitid": "",
+  "dataType": "HoldingRegister",
+  "adr": "10",
+  "quantity": "4",
+  "server": "mb-client",
+  "useIOFile": false,
+  "ioFile": "",
+  "useIOForPayload": false,
+  "emptyMsgOnFail": false,
+  "keepMsgProperties": false,
+  "delayOnStart": false,
+  "startDelayTime": "",
+  "x": 200,
+  "y": 100,
+  "wires": [
+   [
+    "f1",
+    "txt",
+    "chart",
+    "led"
+   ],
+   []
+  ]
+ },
+ {
+  "id": "g2",
+  "type": "modbus-flex-getter",
+  "z": "plant",
+  "name": "",
+  "showStatusActivities": false,
+  "showErrors": false,
+  "showWarnings": true,
+  "logIOActivities": false,
+  "server": "mb-client",
+  "useIOFile": false,
+  "ioFile": "",
+  "useIOForPayload": false,
+  "emptyMsgOnFail": false,
+  "keepMsgProperties": false,
+  "delayOnStart": true,
+  "startDelayTime": "0",
+  "x": 200,
+  "y": 140,
+  "wires": [
+   [
+    "dbg"
+   ],
+   []
+  ]
+ },
+ {
+  "id": "f1",
+  "type": "function",
+  "z": "plant",
+  "name": "function 129",
+  "func": "const buf = Buffer.from(msg.responseBuffer.buffer);\nmsg.payload = buf.readFloatBE(4);\nreturn msg;",
+  "outputs": 1,
+  "timeout": 0,
+  "noerr": 0,
+  "initialize": "",
+  "finalize": "",
+  "libs": [],
+  "x": 300,
+  "y": 100,
+  "wires": [
+   [
+    "gauge",
+    "num"
+   ]
+  ]
+ },
+ {
+  "id": "rd",
+  "type": "modbus-read",
+  "z": "plant",
+  "name": "readIcebankTemp",
+  "topic": "sensor/temperature/icebank",
+  "showStatusActivities": true,
+  "logIOActivities": false,
+  "showErrors": false,
+  "showWarnings": true,
+  "unitid": "1",
+  "dataType": "HoldingRegister",
+  "adr": "0",
+  "quantity": "2",
+  "rate": "5",
+  "rateUnit": "s",
+  "delayOnStart": true,
+  "startDelayTime": "3600",
+  "server": "mb-client",
+  "useIOFile": false,
+  "ioFile": "",
+  "useIOForPayload": false,
+  "emptyMsgOnFail": false,
+  "x": 200,
+  "y": 180,
+  "wires": [
+   [
+    "dbg"
+   ],
+   []
+  ]
+ },
+ {
+  "id": "wr-fn",
+  "type": "function",
+  "z": "plant",
+  "name": "build write",
+  "func": "msg.payload = {'value': msg.payload, 'fc': 6, 'unitid': 1, 'address': 28, 'quantity': 1};\nreturn msg;",
+  "outputs": 1,
+  "timeout": 0,
+  "noerr": 0,
+  "initialize": "",
+  "finalize": "",
+  "libs": [],
+  "x": 300,
+  "y": 100,
+  "wires": [
+   [
+    "fw"
+   ]
+  ]
+ },
+ {
+  "id": "fw",
+  "type": "modbus-flex-write",
+  "z": "plant",
+  "name": "",
+  "showStatusActivities": false,
+  "showErrors": true,
+  "showWarnings": true,
+  "server": "mb-client",
+  "emptyMsgOnFail": false,
+  "keepMsgProperties": false,
+  "delayOnStart": true,
+  "startDelayTime": "0",
+  "x": 500,
+  "y": 100,
+  "wires": [
+   [],
+   []
+  ]
+ },
+ {
+  "id": "mw",
+  "type": "modbus-write",
+  "z": "plant",
+  "name": "",
+  "showStatusActivities": false,
+  "showErrors": false,
+  "showWarnings": true,
+  "unitid": "",
+  "dataType": "Coil",
+  "adr": "1",
+  "quantity": "1",
+  "server": "mb-client",
+  "emptyMsgOnFail": false,
+  "keepMsgProperties": false,
+  "delayOnStart": false,
+  "startDelayTime": "",
+  "x": 500,
+  "y": 140,
+  "wires": [
+   [],
+   []
+  ]
+ },
+ {
+  "id": "msrv",
+  "type": "modbus-server",
+  "z": "plant",
+  "name": "",
+  "logEnabled": false,
+  "hostname": "127.0.0.1",
+  "serverPort": "5021",
+  "responseDelay": 100,
+  "delayUnit": "ms",
+  "coilsBufferSize": "1000",
+  "holdingBufferSize": "1000",
+  "inputBufferSize": "1000",
+  "discreteBufferSize": "1000",
+  "showErrors": false,
+  "showStatusActivities": false,
+  "x": 140,
+  "y": 300,
+  "wires": [
+   [],
+   [],
+   [],
+   [],
+   []
+  ]
+ },
+ {
+  "id": "num",
+  "type": "ui_numeric",
+  "z": "plant",
+  "name": "",
+  "label": "Current<br>Temp",
+  "tooltip": "",
+  "group": "ui-grp",
+  "order": 3,
+  "width": "0",
+  "height": "0",
+  "wrap": true,
+  "passthru": false,
+  "topic": "topic",
+  "topicType": "msg",
+  "format": "{{value}}  F",
+  "min": 0,
+  "max": "3000",
+  "step": 1,
+  "className": "",
+  "x": 670,
+  "y": 100,
+  "wires": [
+   [
+    "wr-fn"
+   ]
+  ]
+ },
+ {
+  "id": "txt",
+  "type": "ui_text",
+  "z": "plant",
+  "group": "ui-grp",
+  "order": 5,
+  "width": 4,
+  "height": 1,
+  "name": "",
+  "label": "",
+  "format": "{{msg.payload}} F",
+  "layout": "col-center",
+  "className": "",
+  "style": false,
+  "font": "",
+  "fontSize": 16,
+  "color": "#000000",
+  "x": 390,
+  "y": 760,
+  "wires": []
+ },
+ {
+  "id": "btn",
+  "type": "ui_button",
+  "z": "plant",
+  "name": "",
+  "group": "ui-grp",
+  "order": 1,
+  "width": "0",
+  "height": "0",
+  "passthru": false,
+  "label": "Heater 1",
+  "tooltip": "",
+  "color": "",
+  "bgcolor": "Gray",
+  "className": "",
+  "icon": "",
+  "payload": "1",
+  "payloadType": "num",
+  "topic": "payload",
+  "topicType": "msg",
+  "x": 420,
+  "y": 60,
+  "wires": [
+   [
+    "mw"
+   ]
+  ]
+ },
+ {
+  "id": "sw",
+  "type": "ui_switch",
+  "z": "plant",
+  "name": "",
+  "label": "Edit Mode On / Off",
+  "tooltip": "",
+  "group": "ui-grp",
+  "order": 2,
+  "width": 0,
+  "height": 0,
+  "passthru": true,
+  "decouple": "false",
+  "topic": "topic",
+  "topicType": "msg",
+  "style": "",
+  "onvalue": "false",
+  "onvalueType": "bool",
+  "onicon": "",
+  "oncolor": "green",
+  "offvalue": "true",
+  "offvalueType": "bool",
+  "officon": "",
+  "offcolor": "red",
+  "animate": false,
+  "className": "",
+  "x": 2310,
+  "y": 6240,
+  "wires": [
+   [
+    "dbg"
+   ]
+  ]
+ },
+ {
+  "id": "chart",
+  "type": "ui_chart",
+  "z": "plant",
+  "name": "",
+  "group": "ui-grp",
+  "order": 2,
+  "width": "16",
+  "height": "12",
+  "label": "Heater 2",
+  "chartType": "line",
+  "legend": "false",
+  "xformat": "HH:mm:ss",
+  "interpolate": "linear",
+  "nodata": "",
+  "dot": false,
+  "ymin": "",
+  "ymax": "",
+  "removeOlder": 1,
+  "removeOlderPoints": "",
+  "removeOlderUnit": "3600",
+  "cutout": 0,
+  "useOneColor": false,
+  "useUTC": false,
+  "colors": [
+   "#1f77b4",
+   "#aec7e8"
+  ],
+  "outputs": 1,
+  "useDifferentColor": false,
+  "className": "",
+  "x": 1200,
+  "y": 160,
+  "wires": [
+   []
+  ]
+ },
+ {
+  "id": "led",
+  "type": "ui_led",
+  "z": "plant",
+  "order": 5,
+  "group": "ui-grp",
+  "width": 0,
+  "height": 0,
+  "label": "Heater 1",
+  "labelPlacement": "left",
+  "labelAlignment": "left",
+  "colorForValue": [
+   {
+    "color": "#4f4a4a",
+    "value": "false",
+    "valueType": "bool"
+   },
+   {
+    "color": "#eb0000",
+    "value": "true",
+    "valueType": "bool"
+   }
+  ],
+  "allowColorForValueInMessage": false,
+  "shape": "circle",
+  "showGlow": true,
+  "name": "",
+  "x": 730,
+  "y": 200,
+  "wires": []
+ },
+ {
+  "id": "gauge",
+  "type": "ui_gauge",
+  "z": "plant",
+  "name": "",
+  "group": "ui-grp",
+  "order": 2,
+  "width": "5",
+  "height": "3",
+  "gtype": "gage",
+  "title": "Stage Indicator",
+  "label": "{{msg.label}}",
+  "format": "{{value}}",
+  "min": 0,
+  "max": 100,
+  "colors": [
+   "#aeb2ae",
+   "#00b500",
+   "#3bd8d6"
+  ],
+  "seg1": "30",
+  "seg2": "70",
+  "diff": false,
+  "className": "",
+  "x": 2440,
+  "y": 520,
+  "wires": []
+ },
+ {
+  "id": "tpl",
+  "type": "ui_template",
+  "z": "plant",
+  "group": "ui-grp",
+  "name": "Custom LED",
+  "order": 3,
+  "width": "2",
+  "height": "1",
+  "format": "<div id=\"tpl-label\" ng-click=\"send({payload: toggleState ? false : true})\" ng-init=\"toggleState=false\" ng-class=\"{'on': msg.payload === true}\">{{(msg.payload === true || msg.payload === 1) ? 'ON' : 'OFF'}}</div>\n<script>\n(function(scope) {\n  scope.$watch('msg.payload', function(payload) { scope.toggleState = payload === true; });\n})(scope);\n</script>",
+  "storeOutMessages": true,
+  "fwdInMessages": true,
+  "resendOnRefresh": true,
+  "templateScope": "local",
+  "className": "",
+  "x": 500,
+  "y": 300,
+  "wires": [
+   [
+    "dbg"
+   ]
+  ]
+ },
+ {
+  "id": "tin",
+  "type": "ui_text_input",
+  "z": "plant",
+  "name": "",
+  "label": "Setpoint",
+  "tooltip": "",
+  "group": "ui-grp",
+  "order": 2,
+  "width": 0,
+  "height": 0,
+  "passthru": true,
+  "mode": "number",
+  "delay": "1",
+  "topic": "topic",
+  "sendOnBlur": true,
+  "className": "",
+  "topicType": "msg",
+  "x": 150,
+  "y": 720,
+  "wires": [
+   [
+    "dbg"
+   ]
+  ]
+ },
+ {
+  "id": "dbg",
+  "type": "debug",
+  "z": "plant",
+  "name": "debug",
+  "active": false,
+  "tosidebar": true,
+  "console": false,
+  "tostatus": false,
+  "complete": "false",
+  "x": 800,
+  "y": 100,
+  "wires": []
+ },
+ {
+  "id": "tick",
+  "type": "function",
+  "z": "plant",
+  "name": "tick",
+  "func": "return null;",
+  "outputs": 1,
+  "timeout": 0,
+  "noerr": 0,
+  "initialize": "let delay = 30000\n\nsetInterval(function () {\n    if (global.get(\"cycle_status\") != 0) {\n        node.send({ payload: new Date() });\n    }\n}, delay);",
+  "finalize": "",
+  "libs": [
+   {
+    "var": "moment",
+    "module": "moment"
+   }
+  ],
+  "x": 300,
+  "y": 400,
+  "wires": [
+   [
+    "dbg"
+   ]
+  ]
+ },
+ {
+  "id": "pg-cfg",
+  "type": "postgreSQLConfig",
+  "name": "",
+  "host": "192.0.2.10",
+  "hostFieldType": "str",
+  "port": 5432,
+  "portFieldType": "num",
+  "database": "industrial_data",
+  "databaseFieldType": "str",
+  "ssl": "false",
+  "sslFieldType": "bool",
+  "applicationName": "",
+  "applicationNameType": "str",
+  "max": 10,
+  "maxFieldType": "num",
+  "idle": 1000,
+  "idleFieldType": "num",
+  "connectionTimeout": 10000,
+  "connectionTimeoutFieldType": "num",
+  "user": "admin",
+  "userFieldType": "str",
+  "password": "test-password",
+  "passwordFieldType": "str"
+ },
+ {
+  "id": "pg",
+  "type": "postgresql",
+  "z": "plant",
+  "name": "",
+  "query": "SELECT * FROM ;",
+  "postgreSQLConfig": "pg-cfg",
+  "split": false,
+  "rowsPerMsg": 1,
+  "outputs": 1,
+  "x": 870,
+  "y": 160,
+  "wires": [
+   []
+  ]
+ },
+ {
+  "id": "mail",
+  "type": "e-mail",
+  "z": "plant",
+  "server": "smtp.example.com",
+  "port": "587",
+  "authtype": "BASIC",
+  "saslformat": true,
+  "token": "oauth2Response.access_token",
+  "secure": false,
+  "tls": true,
+  "name": "ops@example.com",
+  "dname": "test",
+  "x": 690,
+  "y": 320,
+  "wires": []
+ }
+]
