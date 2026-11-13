@@ -13,11 +13,11 @@ entries:
       catalog.cattle.io/requests-cpu: 10m
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
-    appVersion: 2.9.0
-    created: "2026-11-13T01:37:55.046716264Z"
+    appVersion: 2.9.1
+    created: "2026-11-13T05:20:35.717039138Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
-    digest: 612d2964f120b7f6e2c1595d6b0a4936fc51c080e8a5079ff40acd0956c5aeec
+    digest: 7599a0b243c63e82b966a6be0eb8e88471dc0f25c5194fe046af8313428ccb9e
     home: https://github.com/HotLoop-io/hotloop-flow
     icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
     keywords:
@@ -33,6 +33,6 @@ entries:
     - https://github.com/HotLoop-io/hotloop-flow
     type: application
     urls:
-    - https://hotloop.io/hotloop-flow/hotloop-flow-2.9.0.tgz
-    version: 2.9.0
-generated: "2026-11-13T01:37:55.044772772Z"
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.9.1.tgz
+    version: 2.9.1
+generated: "2026-11-13T05:20:35.715937966Z"
