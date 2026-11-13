@@ -1,7 +1,7 @@
 # Node-RED node types that run natively
 
 A plant's flows lean on a handful of community nodes: Modbus, the dashboard,
-PostgreSQL, MongoDB, e-mail. Flow runs those types itself, in Go, under
+PostgreSQL, e-mail. Flow runs those types itself, in Go, under
 Node-RED's own type names and property names, so a flow file that uses them
 loads, runs and saves unchanged. Nothing is installed, and nothing needs Node.js.
 
@@ -14,8 +14,7 @@ This page says what runs, how, and where it differs. The line-by-line table is
 |---|---|---|
 | Modbus | `modbus-client`, `modbus-read`, `modbus-getter`, `modbus-flex-getter`, `modbus-write`, `modbus-flex-write`, `modbus-server`, `modbustcp-server` | [Modbus](#modbus) |
 | Dashboard | `ui_base`, `ui_tab`, `ui_group`, `ui_link`, `ui_spacer`, `ui_text`, `ui_numeric`, `ui_button`, `ui_switch`, `ui_text_input`, `ui_led`, `ui_gauge`, `ui_chart`, `ui_template`, and the Dashboard 2 configuration nodes, accepted | [The dashboard](#the-dashboard) |
-| PostgreSQL | `postgreSQLConfig`, `postgresql` | [Databases](#databases) |
-| MongoDB | `mongodb4-client`, `mongodb4` | [Databases](#databases) |
+| PostgreSQL | `postgreSQLConfig`, `postgresql` | [PostgreSQL](#postgresql) |
 | E-mail | `e-mail` (sending) | [E-mail](#e-mail) |
 | Function | `setInterval`, `setTimeout`, their clear functions, and `Buffer` | [The function node](#the-function-node) |
 
@@ -85,7 +84,7 @@ live updates, the late-opening page, every operator action coming back as a
 message, a redeploy changing the open page, a phone width, and a cross-site post
 being refused.
 
-## Databases
+## PostgreSQL
 
 `postgreSQLConfig` and `postgresql` run SQL against PostgreSQL or TimescaleDB.
 Put values in with `$1`, `$2` and `msg.params`, so the database does the quoting;
@@ -93,15 +92,8 @@ Put values in with `$1`, `$2` and `msg.params`, so the database does the quoting
 `msg.payload` is the rows and `msg.pgsql` is `{command, rowCount}`. With `split`
 on, rows go out `rowsPerMsg` at a time with `msg.parts`.
 
-`mongodb4-client` and `mongodb4` run `insertOne`, `insertMany`, `find`, `findOne`,
-`updateOne`, `updateMany`, `replaceOne`, `deleteOne`, `deleteMany`,
-`countDocuments` and `aggregate` on a collection. `find` sends one message with
-the list, one per document, or the count. Documents come out as plain JSON.
-Database-level operations are not provided, and a node set to one does not start.
-
-Both open their connection on the first query, not at deploy, so a database that
-is not up yet does not stop the flow. Proven against a real PostgreSQL 17 and a
-real MongoDB 8.
+The connection opens on the first query, not at deploy, so a database that is
+not up yet does not stop the flow. Proven against a real PostgreSQL 17.
 
 ## E-mail
 
@@ -137,8 +129,7 @@ addresses on that interface and no other, so the same address reaches the right
 device.
 
 Every network client takes a **Network interface** setting: `modbus-client` and
-the Modbus nodes, `postgreSQLConfig` and `postgresql`, `mongodb4-client` and
-`mongodb4`, `e-mail`, `tcp request`, `udp out`, `http request`, and Flow's own
+the Modbus nodes, `postgreSQLConfig` and `postgresql`, `e-mail`, `tcp request`, `udp out`, `http request`, and Flow's own
 Modbus and PostgreSQL configs. A node uses, in this order:
 
 1. its own **Network interface**,

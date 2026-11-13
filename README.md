@@ -42,7 +42,7 @@ because it's a feature, not the point.
 Current release is `2.8.1`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.8.1`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-104,000 lines of Go, a little under 40 percent of it tests, 110 node types for messages and 28 for FlowLab diagrams, and the race
+104,000 lines of Go, a little under 40 percent of it tests, 108 node types for messages and 28 for FlowLab diagrams, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
 business use is free through EmberNET, under HotLoop's Business Source License.
 
@@ -638,7 +638,7 @@ refuses waits and catches up when it stops refusing, and a deploy with a git
 server that takes ten seconds to say no returns in milliseconds.
 
 It's pure Go (go-git), so the binary stays static. It costs about 3.8 MB of
-binary, which is why it's measured and not assumed, and why the 40 MiB ceiling
+binary, which is why it's measured and not assumed, and why the 42 MiB ceiling
 in CI still has room.
 
 ---
@@ -1273,7 +1273,7 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**110 node types for messages, and 28 more for FlowLab diagrams.**
+**108 node types for messages, and 28 more for FlowLab diagrams.**
 
 | Category | Nodes |
 |---|---|
@@ -1282,10 +1282,10 @@ constructor-chain escape to prove it reaches nothing.
 | Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, s7 read/write, ethernetip read/write, opcua read/write/subscribe, sparkplug in/out/command, hotloop in/state/script/recipe, mcp tool/result/client, e-mail, and Node-RED's modbus-read/getter/flex-getter/write/flex-write/server |
 | Sequence | split, join, sort, batch |
 | Parser | csv, html, json, xml, yaml |
-| Storage | file, file in, watch, influxdb out, postgres, postgresql, mongodb4 |
+| Storage | file, file in, watch, influxdb out, postgres, postgresql |
 | Dashboard | ui_text, ui_numeric, ui_button, ui_switch, ui_text_input, ui_led, ui_gauge, ui_chart, ui_template, and the ui_base, ui_tab, ui_group, ui_link and ui_spacer that lay the page out |
 | Discover | scan, netinfo, for inventorying an OT segment |
-| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug, hotloop, mcp-server, modbus-client, postgreSQLConfig, mongodb4-client |
+| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug, hotloop, mcp-server, modbus-client, postgreSQLConfig |
 | FlowLab | constant, math, compare, logic, wait, bundle, field, build array, while loop, for loop, body in, body out, serial port, serial read, serial write, parse reading, stable value, log to text file, log to TDMS file, statistics, integral, derivative, filter, read DAQ task, mqtt out, control, indicator, chart |
 
 The FlowLab row is a different kind of node. It runs on a tab that is a diagram, where
@@ -2466,7 +2466,7 @@ id actually is and which kind the setting wants. The editor only offers you the
 right kind, so this only comes from a hand edit or a pasted id, which is
 exactly where it bites.
 
-By compatibility level the 110 message node types are 12 full, 52 partial, 14 deliberately
+By compatibility level the 108 message node types are 12 full, 50 partial, 14 deliberately
 divergent, and 32 of Flow's own. Every node declares how it relates to
 Node-RED's node of the same name, and **a test fails the build if a node claims
 partial compatibility without stating in writing what is missing.** A node
@@ -2488,7 +2488,7 @@ stated plainly so you can decide against it. Signed WASM plugins are Flow's
 answer for what you write yourself: see [docs/plugins.md](docs/plugins.md).
 
 The community nodes a plant leans on are another matter. Flow runs the Node-RED
-Modbus, dashboard, PostgreSQL, MongoDB and e-mail types natively, in Go, under
+Modbus, dashboard, PostgreSQL and e-mail types natively, in Go, under
 their own type names, so a flow that uses them loads and runs unchanged, and so
 do the `Buffer` and `setInterval` that the function nodes around them call. What
 runs, what differs and what was proven is [docs/node-red-types.md](docs/node-red-types.md).
@@ -2622,7 +2622,7 @@ CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o hotloop-flow ./cmd/hotloop-
 
 Static, no cgo, runs on distroless. goja is pure Go, and so is wazero, which runs
 the plugins, and that is the only reason that sentence is true. CI fails
-the build if the binary exceeds 40MiB or turns out to be dynamically linked,
+the build if the binary exceeds 42MiB or turns out to be dynamically linked,
 because both of those are things you discover on a plant floor otherwise.
 
 The race detector needs cgo, so run it where a C compiler exists:
@@ -2649,7 +2649,7 @@ formatting, so that one is on you.
 What CI does check, beyond vet and the race detector, is the set of things I have
 personally been burned by: that `go mod tidy` is committed, that the sandbox
 tests genuinely ran rather than silently skipping, that the editor bundle is
-actually inside the binary, that the binary is under 40MiB and statically linked,
+actually inside the binary, that the binary is under 42MiB and statically linked,
 a 60-second fuzz run against the property expression parser, a 30-second one
 proving a flow never differs from itself, a rollback against a real broker that
 refuses anonymous clients, and the editor clicked through in a real browser, every node dialog included.

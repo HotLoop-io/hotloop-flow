@@ -28,7 +28,6 @@ func TestANodeRefusesAnInterfaceNameLinuxCannotHave(t *testing.T) {
 	for typ, cfg := range map[string]string{
 		"modbus-getter": `{"server":"cl","dataType":"Coil","adr":"0","quantity":"1",` + bad + `}`,
 		"postgresql":    `{"postgreSQLConfig":"pg","query":"SELECT 1",` + bad + `}`,
-		"mongodb4":      `{"clientNode":"mc","collection":"c","operation":"find",` + bad + `}`,
 		"e-mail":        `{"server":"smtp.example.com","port":"25","authtype":"NONE","name":"a@example.com",` + bad + `}`,
 		"tcp request":   `{"host":"10.0.0.1","port":502,"out":"time",` + bad + `}`,
 		"udp out":       `{"addr":"10.0.0.1","port":9,` + bad + `}`,
@@ -42,7 +41,6 @@ func TestANodeRefusesAnInterfaceNameLinuxCannotHave(t *testing.T) {
 	for typ, cfg := range map[string]string{
 		"modbus-client":       `{"clienttype":"tcp","tcpHost":"10.0.0.1","tcpPort":"502",` + bad + `}`,
 		"postgreSQLConfig":    `{"host":"h","database":"d","user":"u",` + bad + `}`,
-		"mongodb4-client":     `{"hostname":"h","dbName":"d",` + bad + `}`,
 		"hotloop-flow-modbus": `{"host":"10.0.0.1",` + bad + `}`,
 	} {
 		reg := mustLookup(t, typ)

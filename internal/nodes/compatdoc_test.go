@@ -76,7 +76,7 @@ func renderCompatibilityDoc() string {
 	b.WriteString("## Not supported at all\n\n")
 	b.WriteString("**Most Node-RED community nodes.** They are npm packages that need Node.js.\n")
 	b.WriteString("There is no version of this where a package that needs Node works. The ones a plant\n")
-	b.WriteString("leans on, Modbus, the dashboard, PostgreSQL, MongoDB and e-mail, run natively under\n")
+	b.WriteString("leans on, Modbus, the dashboard, PostgreSQL and e-mail, run natively under\n")
 	b.WriteString("their own type names: see node-red-types.md. Any other fails by itself, with its type\n")
 	b.WriteString("named, and the rest of the flow starts.\n\n")
 
