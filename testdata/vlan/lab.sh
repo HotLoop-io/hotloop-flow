@@ -16,6 +16,13 @@
 #   lab.sh status           what is there
 #   lab.sh flap N down|up   take the link of VLAN N down or up, from a process that is not root: it
 #                           hands the command to the helper `up` started, which does only that
+#   lab.sh read N HOST PORT ADDR QTY
+#                           read QTY holding registers from ADDR of the Modbus TCP server at HOST:PORT, as a
+#                           client on VLAN N (inside its namespace), and print them. Also through the helper.
+#
+# The host end of each VLAN also holds 192.168.1.9/24 (LAB_SERVER_ADDR), the address a Flow's
+# modbus-server listens on in the plant, so a server bound to flxv14 and another to flxv15 can both
+# listen on 192.168.1.9:10502 and a client in each namespace reaches only its own.
 #
 # The simulator is oitc/modbus-server (pymodbus) run by Podman in the namespace.
 # The register layout is testdata/plant/modbus_server.json with the two values changed.
@@ -34,6 +41,23 @@ up() {
   need_root up
   local vlans=("$@"); [ ${#vlans[@]} -gt 0 ] || vlans=(14 15)
   mkdir -p "$ctl/cmd" "$ctl/cfg"
+  cat >"$ctl/modbus_read.py" <<'PY'
+import socket, struct, sys
+host, port, addr, qty = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+s = socket.create_connection((host, port), timeout=3)
+s.sendall(struct.pack(">HHHBBHH", 1, 0, 6, 1, 3, addr, qty))
+head = s.recv(9)
+if len(head) < 9 or head[7] & 0x80:
+    sys.exit("modbus exception or short answer: %r" % head)
+n = head[8]
+body = b""
+while len(body) < n:
+    chunk = s.recv(n - len(body))
+    if not chunk:
+        break
+    body += chunk
+print(" ".join(str(v) for v in struct.unpack(">%dH" % (len(body) // 2), body)))
+PY
   for v in "${vlans[@]}"; do
     if ip netns list | grep -q "^flxlab-$v\b"; then echo "VLAN $v is already up"; continue; fi
     python3 - "$repo/testdata/plant/modbus_server.json" "$ctl/cfg/$v.json" "$v" "$port" <<'PY'
@@ -49,6 +73,7 @@ PY
     ip link add "flxv$v" type veth peer name "flxp$v"
     ip link set "flxp$v" netns "flxlab-$v"
     ip addr add 192.168.1.100/24 dev "flxv$v"
+    ip addr add "${LAB_SERVER_ADDR:-192.168.1.9}/24" dev "flxv$v"
     ip link set "flxv$v" up
     ip -n "flxlab-$v" addr add 192.168.1.5/24 dev "flxp$v"
     ip -n "flxlab-$v" link set "flxp$v" up
@@ -98,10 +123,13 @@ helper() {
   while true; do
     for f in "$ctl"/cmd/*.req; do
       [ -e "$f" ] || continue
-      read -r action v <"$f" || true
+      read -r action v host port reg qty <"$f" || true
       id=${f%.req}
       if [[ "$action" =~ ^(up|down)$ && "$v" =~ ^[0-9]+$ ]] && ip link show "flxv$v" >/dev/null 2>&1; then
         if ip link set "flxv$v" "$action"; then echo ok >"$id.done"; else echo failed >"$id.done"; fi
+      elif [[ "$action" = read && "$v" =~ ^[0-9]+$ && "$host" =~ ^[0-9.]+$ && "$port" =~ ^[0-9]+$ && "$reg" =~ ^[0-9]+$ && "$qty" =~ ^[0-9]+$ ]] \
+          && ip netns list | grep -q "^flxlab-$v\b"; then
+        if ip netns exec "flxlab-$v" python3 "$ctl/modbus_read.py" "$host" "$port" "$reg" "$qty" >"$id.out" 2>&1; then echo ok >"$id.done"; else echo failed >"$id.done"; fi
       else
         echo refused >"$id.done"
       fi
@@ -127,7 +155,24 @@ flap() {
   echo "the helper did not answer. Is the lab up?" >&2; exit 1
 }
 
+read_cmd() {
+  local v=${1:-} host=${2:-} port=${3:-} reg=${4:-} qty=${5:-}
+  local id="$ctl/cmd/$$-$RANDOM"
+  echo "read $v $host $port $reg $qty" >"$id.tmp" && mv "$id.tmp" "$id.req"
+  for _ in $(seq 1 100); do
+    if [ -f "$id.done" ]; then
+      r=$(cat "$id.done"); rm -f "$id.done"
+      out=$(cat "$id.out" 2>/dev/null || true); rm -f "$id.out"
+      if [ "$r" = ok ]; then echo "$out"; exit 0; fi
+      echo "the helper said: $r $out" >&2; exit 1
+    fi
+    sleep 0.1
+  done
+  echo "the helper did not answer. Is the lab up?" >&2; exit 1
+}
+
 case "${1:-}" in
+  read) shift; read_cmd "$@" ;;
   up) shift; up "$@" ;;
   down) down ;;
   status) status ;;

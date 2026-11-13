@@ -33,6 +33,11 @@ type ServerConfiguration struct {
 	// client connections (tcp+tls only). Leaf (i.e. client) certificates can
 	// also be used in case of self-signed certs, or if cert pinning is required.
 	TLSClientCAs  *x509.CertPool
+	// Listen, when set, opens the TCP listening socket instead of net.Listen.
+	// HotLoop Flow sets it to bind the socket to one network interface
+	// (SO_BINDTODEVICE) before it listens, so two servers can hold the same
+	// address and port on two VLANs. Added by HotLoop; see HOTLOOP_PATCH.txt.
+	Listen        func(network, address string) (net.Listener, error)
 	// Logger provides a custom sink for log messages.
 	// If nil, messages will be written to stdout.
 	Logger        *log.Logger
@@ -237,7 +242,11 @@ func (ms *ModbusServer) Start() (err error) {
 	switch ms.transportType {
 	case modbusTCP, modbusTCPOverTLS:
 		// bind to a TCP socket
-		ms.tcpListener, err	= net.Listen("tcp", ms.conf.URL)
+		if ms.conf.Listen != nil {
+			ms.tcpListener, err = ms.conf.Listen("tcp", ms.conf.URL)
+		} else {
+			ms.tcpListener, err	= net.Listen("tcp", ms.conf.URL)
+		}
 		if err != nil {
 			return
 		}

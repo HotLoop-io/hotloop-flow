@@ -41,6 +41,9 @@ TCP or a serial port. The nodes that point at it take turns on one connection.
   `emptyMsgOnFail` is on.
 - `modbus-server` is a Modbus TCP server over buffers you size, for a simulator
   or a bridge. A message sets values and a client's write comes out as a message.
+  With a network interface set (below) its listening socket is bound to that
+  interface before it listens, so a box with a VLAN for each machine can run one
+  server on each, all at the same address and port.
 
 What is not provided: the I/O file (`useIOFile`; a node that asks for one does
 not start, and says so), the command queue and delay settings (requests take
@@ -129,7 +132,7 @@ addresses on that interface and no other, so the same address reaches the right
 device.
 
 Every network client takes a **Network interface** setting: `modbus-client` and
-the Modbus nodes, `postgreSQLConfig` and `postgresql`, `e-mail`, `tcp request`, `udp out`, `http request`, and Flow's own
+the Modbus nodes (the `modbus-server` too, for its listening socket), `postgreSQLConfig` and `postgresql`, `e-mail`, `tcp request`, `udp out`, `http request`, and Flow's own
 Modbus and PostgreSQL configs. A node uses, in this order:
 
 1. its own **Network interface**,
@@ -162,5 +165,8 @@ its tab variable, 30 rounds of reads that each came back from the right device,
 a node on one tab overridden to read the other VLAN, the same flow with no
 interface set reading only one of the two (so the binding is what makes the
 difference), and a link taken down and up with the read failing and then
-recovering. Not proven: a kernel older than 5.7 and 802.1Q tagging itself, which
+recovering. The same lab runs two `modbus-server` nodes on `192.168.1.9:10502`, one
+bound to each interface by its tab variable: a client in each VLAN reads its own
+server for 20 rounds with no crosstalk, and the same two servers with no
+interface set collide ("address already in use"). Not proven: a kernel older than 5.7 and 802.1Q tagging itself, which
 is the switch's and the VLAN subinterfaces' job.
