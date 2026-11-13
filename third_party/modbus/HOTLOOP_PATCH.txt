@@ -1,6 +1,6 @@
 This is github.com/simonvetter/modbus v1.6.4 under MIT (LICENSE.txt in this
-directory), minus its tests, its examples and its command line tool, with one
-change. Flow's go.mod replaces the module with this directory.
+directory), minus its tests, its examples and its command line tool, with two
+changes. Flow's go.mod replaces the module with this directory.
 
 Why: the client opens its TCP and UDP sockets with net.DialTimeout, and gives
 no way to open them any other way. The Shepherd Boy Farms box has one port that
@@ -10,7 +10,7 @@ SO_BINDTODEVICE before it connects, or the kernel picks whichever of the twelve
 routes it likes. The binding belongs to the socket, so it cannot be done around
 the client. The copy is the fix.
 
-Change, and only this, in client.go:
+Change, and only this, in client.go and server.go:
 
   * ClientConfiguration has one more field, Dialer, a func(network, address
     string, timeout time.Duration) (net.Conn, error).
@@ -19,7 +19,13 @@ Change, and only this, in client.go:
   * The four net.DialTimeout calls in Open (rtuovertcp, rtu+udp, tcp, tcp+udp)
     call dial instead. The TLS mode is not changed.
 
-With Dialer unset the behavior is the upstream's, byte for byte.
+  * ServerConfiguration has one more field, Listen, a func(network, address
+    string) (net.Listener, error), and ModbusServer.Start calls it for the TCP
+    listening socket when it is set and net.Listen when it is not. A box that
+    runs one Modbus server for each VLAN, at the same address and port on each,
+    binds each listening socket to its VLAN's interface before it listens.
+
+With Dialer and Listen unset the behavior is the upstream's, byte for byte.
 
 When upstream takes a dialer, the copy goes and go.mod returns to the upstream
 module.

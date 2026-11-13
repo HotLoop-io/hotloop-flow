@@ -1104,6 +1104,7 @@ func (n *nrModbusNode) Close(context.Context, bool) error {
 type nrModbusServer struct {
 	host, port string
 	delay      time.Duration
+	iface      string // the network interface the listening socket binds to
 	svc        node.Services
 
 	mu       sync.Mutex
@@ -1134,7 +1135,10 @@ func registerNRModbusServer() {
 				"list. A client's write comes out the first output (holding registers) or the second (coils). " +
 				"The third and fourth outputs belong to input registers and discrete inputs, which a client " +
 				"cannot write, so they send nothing, and the fifth carries errors. Requests on every unit id are answered " +
-				"from the same buffers. Serial is not supported.",
+				"from the same buffers. Serial is not supported. networkInterface (not in Node-RED) binds the " +
+				"listening socket to one network interface before it listens, so a box with a VLAN for each machine " +
+				"can run one server on each VLAN at the same address and port. The node's own setting wins, then the " +
+				"tab's " + NetworkInterfaceEnv + ".",
 			UnsupportedProps: []string{"logEnabled", "showStatusActivities"},
 		},
 		Props: []node.Prop{
@@ -1151,6 +1155,7 @@ func registerNRModbusServer() {
 			{Name: "discreteBufferSize", Kind: node.PropString, Label: "Discrete inputs", Default: "1024"},
 			{Name: "showErrors", Kind: node.PropBool, Label: "Show errors"},
 			{Name: "showStatusActivities", Kind: node.PropBool, Label: "Show activities in the status"},
+			networkInterfaceProp("Binds the listening socket to one network interface, such as enp2s0.14, so servers on different VLANs can hold the same address and port. Empty takes the tab's " + NetworkInterfaceEnv + ", then listens on the address as the host sees it."),
 		},
 		Help: "A Modbus TCP server a flow can read and write, for a simulator or a bridge.",
 	}, newNRModbusServer)
@@ -1158,7 +1163,10 @@ func registerNRModbusServer() {
 
 func newNRModbusServer(def *node.Definition) (node.Node, error) {
 	p := def.Node
-	s := &nrModbusServer{svc: def.Services}
+	s := &nrModbusServer{svc: def.Services, iface: strings.TrimSpace(p.PropString("networkInterface", ""))}
+	if err := netbind.Validate(s.iface); err != nil {
+		return nil, err
+	}
 	s.host = strings.TrimSpace(p.PropString("hostname", "0.0.0.0"))
 	if s.host == "" {
 		s.host = "0.0.0.0"
@@ -1291,22 +1299,36 @@ func (s *nrModbusServer) Start(ctx context.Context, out node.Emitter) error {
 	if node.StandInOf(s.svc) != nil {
 		return nil
 	}
-	srv, err := modbus.NewServer(&modbus.ServerConfiguration{
+	iface := networkInterfaceFor(s.svc, s.iface)
+	if err := netbind.Validate(iface); err != nil {
+		return err
+	}
+	conf := &modbus.ServerConfiguration{
 		URL:     "tcp://" + net.JoinHostPort(s.host, s.port),
 		Timeout: 5 * time.Minute,
 		Logger:  log.New(io.Discard, "", 0),
-	}, nrServerHandler{s})
+	}
+	where := net.JoinHostPort(s.host, s.port)
+	if iface != "" {
+		where += " on network interface " + iface
+		conf.Listen = func(network, address string) (net.Listener, error) {
+			lc := net.ListenConfig{Control: netbind.Control(iface)}
+			l, err := lc.Listen(ctx, network, address)
+			return l, netbind.Explain(iface, err)
+		}
+	}
+	srv, err := modbus.NewServer(conf, nrServerHandler{s})
 	if err != nil {
 		return err
 	}
 	if err := srv.Start(); err != nil {
-		return fmt.Errorf("cannot listen on %s:%s: %w. Check that this host has that address and nothing else holds the port",
-			s.host, s.port, err)
+		return fmt.Errorf("cannot listen on %s: %w. Check that this host has that address and nothing else holds the port. "+
+			"Two servers on one address and port need a network interface each", where, err)
 	}
 	s.mu.Lock()
 	s.srv = srv
 	s.mu.Unlock()
-	out.Status(node.Status{Fill: "green", Shape: "dot", Text: "listening " + s.port})
+	out.Status(node.Status{Fill: "green", Shape: "dot", Text: truncate("listening "+where, 32)})
 	return nil
 }
 

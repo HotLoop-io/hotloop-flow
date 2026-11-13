@@ -336,12 +336,12 @@ jobs:
           HOTLOOP_FLOW_TEST_VLAN_LAB: ${{ github.workspace }}/testdata/vlan/lab.sh
         run: |
           OUT=$(go test ./internal/nodes/ ./internal/runtime/ -count=1 -v \
-            -run 'TestNodeRedModbusSimulator|TestNodeRedPostgresAgainstARealDatabase|TestEachTabReadsItsOwnVLAN|TestTheSameReadsWithNoInterface|TestALinkThatGoesDown' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
+            -run 'TestNodeRedModbusSimulator|TestNodeRedPostgresAgainstARealDatabase|TestEachTabReadsItsOwnVLAN|TestTheSameReadsWithNoInterface|TestALinkThatGoesDown|TestTwoModbusServers|TestTwoUnboundModbusServers' 2>&1) || { echo "$OUT"; echo "::error::go test failed, its output is above"; exit 1; }
           echo "$OUT" | grep -E '^(---|ok|FAIL)'
           if echo "$OUT" | grep -q -- "--- SKIP"; then
             echo "::error::a Node-RED type test was skipped"; exit 1
           fi
-          for t in TestNodeRedModbusSimulator TestNodeRedPostgresAgainstARealDatabase TestEachTabReadsItsOwnVLANWithTheSameAddressOnBoth TestTheSameReadsWithNoInterfaceReachOnlyOneOfThem TestALinkThatGoesDownAndComesBackIsReadAgain; do
+          for t in TestNodeRedModbusSimulator TestNodeRedPostgresAgainstARealDatabase TestEachTabReadsItsOwnVLANWithTheSameAddressOnBoth TestTheSameReadsWithNoInterfaceReachOnlyOneOfThem TestALinkThatGoesDownAndComesBackIsReadAgain TestTwoModbusServersOnOneAddressAndPortEachListenOnTheirOwnVLAN TestTwoUnboundModbusServersOnOneAddressAndPortStillCollide; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 

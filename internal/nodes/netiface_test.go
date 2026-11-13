@@ -26,6 +26,7 @@ func TestANodeRefusesAnInterfaceNameLinuxCannotHave(t *testing.T) {
 	svc := newConfigServices()
 	bad := `"networkInterface":"a-name-that-is-too-long"`
 	for typ, cfg := range map[string]string{
+		"modbus-server": `{"hostname":"127.0.0.1","serverPort":"10502",` + bad + `}`,
 		"modbus-getter": `{"server":"cl","dataType":"Coil","adr":"0","quantity":"1",` + bad + `}`,
 		"postgresql":    `{"postgreSQLConfig":"pg","query":"SELECT 1",` + bad + `}`,
 		"e-mail":        `{"server":"smtp.example.com","port":"25","authtype":"NONE","name":"a@example.com",` + bad + `}`,

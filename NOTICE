@@ -222,9 +222,10 @@ nodes talk through
     text in THIRD_PARTY_LICENSES).
     This one IS modified, by HotLoop: client.go has one more configuration
     field, Dialer, and the four places it opened a TCP or UDP socket with
-    net.DialTimeout open it through that field when it is set, so a socket can be
-    bound to one network interface before it connects. Unset, it behaves as the
-    upstream does. Its tests, examples and command line tool are left out.
+    net.DialTimeout open it through that field when it is set, and server.go has
+    one more, Listen, which opens the TCP listening socket, so a socket can be
+    bound to one network interface before it connects or listens. Unset, they
+    behave as the upstream does. Its tests, examples and command line tool are left out.
     go.mod replaces the module with this directory. HOTLOOP_PATCH.txt there says
     why. When upstream takes a dialer, the copy goes.
 
