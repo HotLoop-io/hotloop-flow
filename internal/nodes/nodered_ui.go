@@ -212,7 +212,7 @@ var uiWidgets = []uiSpec{
 	{typ: "ui_spacer", label: "spacer", config: true, icon: "spacer", hasGroup: true,
 		props: []node.Prop{uiStr("name", "Name"), {Name: "group", Kind: node.PropConfigRef, Label: "Group", ConfigType: "ui_group", Required: true},
 			uiNum("order", "Order", 0), uiNum("width", "Width", 1), uiNum("height", "Height", 1)},
-		help: "An empty cell, to space a group out.", notes: "An empty cell."},
+		help: "An empty cell, to space a group out.", notes: "An empty cell in the group's grid, width columns by height rows. It shows nothing and sends nothing."},
 }
 
 func registerUIConfig() {

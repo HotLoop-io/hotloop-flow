@@ -23,8 +23,11 @@ build if one does not.
 
 ## Not supported at all
 
-**Node-RED community nodes.** They are npm packages that need Node.js.
-There is no version of this where they work.
+**Most Node-RED community nodes.** They are npm packages that need Node.js.
+There is no version of this where a package that needs Node works. The ones a plant
+leans on, Modbus, the dashboard, PostgreSQL, MongoDB and e-mail, run natively under
+their own type names: see node-red-types.md. Any other fails by itself, with its type
+named, and the rest of the flow starts.
 
 ## JSONata
 
@@ -93,7 +96,7 @@ stopped with D1012 instead of stalling the node's whole queue.
 | `ui_base` | partial | The dashboard's theme: its name (dark or light) and base color are used. Custom fonts, sizes, widget colors and the site title are accepted and not applied. |
 | `ui_group` | partial | A card on a tab, width columns wide, in the tab's order. Its widgets are laid out in a grid of that many columns. |
 | `ui_link` | partial | A menu entry that opens another address, http or https only. The icon is accepted and not drawn. |
-| `ui_spacer` | partial | An empty cell. |
+| `ui_spacer` | partial | An empty cell in the group's grid, width columns by height rows. It shows nothing and sends nothing. |
 | `ui_tab` | partial | A page of the dashboard, in the menu by its order. The icon is accepted and not drawn. A disabled or hidden tab is left out. |
 | `websocket-client` | partial | Connects out and reconnects on its own when the connection drops, in payload mode or whole-message mode. A wss:// URL checks the server against the system roots, or against a tls-config's CA, with its client certificate and server name, as in Node-RED. |
 | `websocket-listener` | partial | Serves a websocket path, in payload mode or whole-message mode. The path shares the flow route table with the HTTP In nodes, so it cannot shadow the editor or the admin API and cannot collide with another node's path. A client that stops reading is disconnected rather than queued without limit, which Node-RED does not do. |
