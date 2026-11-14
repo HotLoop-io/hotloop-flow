@@ -16,6 +16,7 @@ type Summary struct {
 	Autostart bool      `json:"autostart"`
 	State     RunState  `json:"state"`
 	Problems  []Problem `json:"problems"`
+	Warnings  []Problem `json:"warnings"`
 }
 
 // Terminal is a control, indicator or chart as the panel draws it.
@@ -86,10 +87,13 @@ func (m *Manager) summary(id string) (Summary, bool) {
 	if !ok {
 		return Summary{}, false
 	}
-	s := Summary{ID: id, Owner: m.ownerOf(id), Label: d.Label, Role: strProp(d.Settings, "role", "diagram"), State: "idle", Problems: d.Problems}
+	s := Summary{ID: id, Owner: m.ownerOf(id), Label: d.Label, Role: strProp(d.Settings, "role", "diagram"), State: "idle", Problems: d.Problems, Warnings: d.Warnings}
 	s.Autostart, _ = d.Settings["autostart"].(bool)
 	if s.Problems == nil {
 		s.Problems = []Problem{}
+	}
+	if s.Warnings == nil {
+		s.Warnings = []Problem{}
 	}
 	if r := m.Current(id); r != nil {
 		s.State, _ = r.State()

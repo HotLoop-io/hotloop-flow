@@ -128,6 +128,9 @@ type Diagram struct {
 	From map[string]map[string][]*Wire
 	// Problems are why the diagram cannot run, each naming a node.
 	Problems []Problem
+	// Warnings are what is worth fixing and does not stop a run, for example a
+	// case structure with no default case.
+	Warnings []Problem
 	// Bodies lists the diagrams this one runs inside its structures, by tab id.
 	Bodies []string
 }
@@ -156,6 +159,9 @@ type Set struct {
 	// bodyOf maps a structure node to the diagram it runs. A loop names its body
 	// by the tab's id or, since nobody can read an id, by its name.
 	bodyOf map[string]string
+	// caseOf maps a case structure node to the diagram of each of its cases,
+	// by case name. The default case is under DefaultCase.
+	caseOf map[string]map[string]string
 	// owner maps a body to the diagram you run to run it.
 	owner map[string]string
 }
@@ -175,9 +181,29 @@ func (s *Set) Body(node string) (string, bool) {
 	return id, ok
 }
 
+// BodyIDs returns every diagram a structure node can run: its one body, or the
+// body of each of its cases.
+func (s *Set) BodyIDs(node string) []string {
+	if id, ok := s.bodyOf[node]; ok {
+		return []string{id}
+	}
+	var out []string
+	for _, id := range s.caseOf[node] {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// CaseBody returns the diagram a case structure runs for a case name.
+func (s *Set) CaseBody(node, name string) (string, bool) {
+	id, ok := s.caseOf[node][name]
+	return id, ok
+}
+
 // CompileAll compiles every diagram tab in the flow file.
 func CompileAll(flows *engine.Flows) *Set {
-	s := &Set{Diagrams: map[string]*Diagram{}, bodyOf: map[string]string{}, owner: map[string]string{}}
+	s := &Set{Diagrams: map[string]*Diagram{}, bodyOf: map[string]string{}, caseOf: map[string]map[string]string{}, owner: map[string]string{}}
 	if flows == nil {
 		return s
 	}
@@ -208,6 +234,33 @@ func CompileAll(flows *engine.Flows) *Set {
 		for _, nid := range d.Order {
 			dn := d.Nodes[nid]
 			if !dn.Kind.Structure {
+				continue
+			}
+			if dn.Kind.Cases != nil {
+				seen := map[string]bool{}
+				for _, c := range dn.Kind.Cases(dn.Raw) {
+					var id string
+					switch {
+					case s.Diagrams[c.Body] != nil:
+						id = c.Body
+					case len(byName[c.Body]) == 1:
+						id = byName[c.Body][0]
+					case len(byName[c.Body]) > 1:
+						d.Problems = append(d.Problems, Problem{Node: nid, Text: fmt.Sprintf("%d diagrams are named %q, so the body of case %q is ambiguous", len(byName[c.Body]), c.Body, c.Name)})
+						continue
+					default:
+						d.Problems = append(d.Problems, Problem{Node: nid, Text: fmt.Sprintf("the body %q of case %q is not a diagram", c.Body, c.Name)})
+						continue
+					}
+					if s.caseOf[nid] == nil {
+						s.caseOf[nid] = map[string]string{}
+					}
+					s.caseOf[nid][c.Name] = id
+					if !seen[id] {
+						seen[id] = true
+						d.Bodies = append(d.Bodies, id)
+					}
+				}
 				continue
 			}
 			name, _ := dn.Raw["body"].(string)
@@ -246,6 +299,9 @@ func CompileAll(flows *engine.Flows) *Set {
 			if dn := d.Nodes[nid]; dn.Kind.Check != nil {
 				d.Problems = append(d.Problems, dn.Kind.Check(s, d, dn)...)
 			}
+			if dn := d.Nodes[nid]; dn.Kind.Warn != nil {
+				d.Warnings = append(d.Warnings, dn.Kind.Warn(s, d, dn)...)
+			}
 		}
 	}
 	// A structure inherits the problems of its body: a loop that runs a broken
@@ -261,13 +317,14 @@ func CompileAll(flows *engine.Flows) *Set {
 					if !dn.Kind.Structure {
 						continue
 					}
-					bid, _ := s.Body(nid)
-					b, ok := s.Diagrams[bid]
-					if !ok || len(b.Problems) == 0 || hasProblem(d, nid, "the body") {
-						continue
+					for _, bid := range s.BodyIDs(nid) {
+						b, ok := s.Diagrams[bid]
+						if !ok || len(b.Problems) == 0 || hasProblem(d, nid, "the body") {
+							continue
+						}
+						d.Problems = append(d.Problems, Problem{Node: nid, Text: "the body " + strconv.Quote(b.Label) + " cannot run: " + b.Problems[0].String()})
+						changed = true
 					}
-					d.Problems = append(d.Problems, Problem{Node: nid, Text: "the body " + strconv.Quote(b.Label) + " cannot run: " + b.Problems[0].String()})
-					changed = true
 				}
 			}
 			if !changed {
