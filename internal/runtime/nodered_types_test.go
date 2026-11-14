@@ -296,7 +296,9 @@ func TestASetIntervalInAFlowTicksAndStopsWithTheFlow(t *testing.T) {
 	rt := runtime.New(node.Default, loadFlows(t, doc), runtime.Options{})
 	var mu sync.Mutex
 	debugs := 0
+	drained := make(chan struct{})
 	go func() {
+		defer close(drained)
 		for e := range rt.Events() {
 			if e.Topic == runtime.TopicDebug {
 				mu.Lock()
@@ -313,6 +315,15 @@ func TestASetIntervalInAFlowTicksAndStopsWithTheFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	rt.Stop(ctx)
+	// Stop closes the event channel once the flow is down, so every tick the flow
+	// produced is in it or already counted. Read the count only after the counting
+	// goroutine has taken the last of them; a tick sent before Stop and counted
+	// afterwards is not a tick after the stop.
+	select {
+	case <-drained:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the event channel was not closed after Stop")
+	}
 	after := ticks()
 	time.Sleep(150 * time.Millisecond)
 	if ticks() != after {
