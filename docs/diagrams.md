@@ -71,6 +71,7 @@ Events for a run go out on the same socket as the editor's, as `diagram/<id>/nod
 | `dia-wait` | Waits, then passes its input on. |
 | `dia-bundle`, `dia-field`, `dia-array` | Records and arrays. |
 | `dia-while`, `dia-for` | Loops. The body is a diagram of its own, named by its tab. Carried values start from a wire or from Start values and come out as they were on the last pass. A for loop takes a count or an array. A while loop runs at least once. |
+| `dia-case` | Case structure. The value on `selector` picks one body to run, and only that body runs. A boolean picks `true` or `false`, a number picks the case of that value however it is written, and a string or an enum picks the case of that name. Cases are a JSON object of case name to diagram, and a value no case names runs the default. With no default the node puts an error on its error wire, and deploy warns that there is no default (a boolean with both cases is exempt). Every body must send out each result under the same name, and a body that does not is a problem at deploy. `case` out says which case ran. |
 | `dia-body-in`, `dia-body-out` | The two ends of a body. `iter` is the pass number. `stop` ends a while loop. A carried value's name sends it round. |
 | `dia-serial-open`, `dia-serial-read`, `dia-serial-write` | A serial port. Reads end at a terminator or a byte count. |
 | `dia-instr-open`, `dia-instr-query`, `dia-scpi-parse` | A test instrument by address. See Instruments below. |

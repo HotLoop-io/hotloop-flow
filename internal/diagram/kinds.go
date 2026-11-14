@@ -33,6 +33,11 @@ type Kind struct {
 	// Check adds problems that only this type can see, once every diagram of the
 	// file is compiled, so it can look into the diagrams a structure runs.
 	Check func(s *Set, d *Diagram, n *DNode) []Problem
+	// Warn adds warnings, which are shown at deploy and never stop a run.
+	Warn func(s *Set, d *Diagram, n *DNode) []Problem
+	// Cases, when set, makes the node a case structure: it lists the cases the
+	// node has and the diagram each one runs, instead of one body.
+	Cases func(raw map[string]any) []CaseBody
 	// Structure is true for a node that runs a body diagram.
 	Structure bool
 	// Terminal is true for a control or an indicator: something on the panel.
@@ -46,6 +51,12 @@ type Kind struct {
 	// because looking at the error is its job.
 	TakesErrors bool
 }
+
+// CaseBody is one case of a case structure and the diagram it runs.
+type CaseBody struct{ Name, Body string }
+
+// DefaultCase is the name of the case that runs when no other matches.
+const DefaultCase = "default"
 
 var kinds = map[string]*Kind{}
 
