@@ -23,6 +23,9 @@ type mqttV3Broker struct {
 	// clean session is off; keeping our own record makes the behaviour the same
 	// either way, which matters because an edge link drops constantly.
 	subs map[string]*mqttV3Sub
+	// gate is paho's store, wrapped to know when the replay after a connect has
+	// taken its snapshot. It is put in place when the client is made.
+	gate *replayGate
 }
 
 // mqttV3Sub is one topic subscription and every node listening on it.
@@ -90,6 +93,9 @@ func (b *mqttV3Broker) V5() bool { return false }
 // the app usually boot together.
 func (b *mqttV3Broker) clientLocked() mqtt.Client {
 	if b.client == nil {
+		b.gate = newReplayGate(b.opts.Store)
+		b.opts.SetStore(b.gate)
+		b.opts.SetReconnectingHandler(func(mqtt.Client, *mqtt.ClientOptions) { b.gate.arm() })
 		b.client = mqtt.NewClient(b.opts)
 	}
 	if !b.client.IsConnected() {
@@ -110,11 +116,13 @@ func (b *mqttV3Broker) Connected() bool {
 // IsConnected, which stays true while it is reconnecting so that a message waits
 // in its memory for the link to come back. That is right for a node that wants
 // the message held, and wrong for one that keeps its own durable queue and needs
-// to know the broker is not answering.
+// to know the broker is not answering. It is also not true until paho has taken
+// its replay snapshot after a connect (see replayGate), so a send is never the
+// second copy of itself.
 func (b *mqttV3Broker) LinkUp() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.clientLocked().IsConnectionOpen()
+	return b.clientLocked().IsConnectionOpen() && b.gate.Ready()
 }
 
 func (b *mqttV3Broker) Publish(ctx context.Context, m mqttMessage) error {
