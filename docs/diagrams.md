@@ -287,3 +287,7 @@ A field is `number`, `integer`, `boolean`, `string`, `timestamp`, `array`, `wave
 ## Editing a case structure and picking a diagram
 
 A case structure's cases are rows of a case name and a diagram picker, with a second picker for the default case, and the property that names the diagram a loop or a sub-diagram runs is a picker too. The pickers list the FlowLab diagrams of the flow file and store the tab's id; a name written by hand in an older flow file is shown as that tab and saved as its id, which the runtime reads the same way. The stored values are the same JSON as before (`cases` is an object of case name to diagram), so a flow file edited in the dialog and one edited by hand are the same file.
+
+## Making a sub-diagram in the editor
+
+With nodes selected on a diagram, the bar's **Selection to sub-diagram** asks for a name, calls `POST /diagrams/{id}/sub` with the flow file the editor holds, and loads the answer as one undoable edit: the nodes move to a tab of their own and a sub-diagram node takes their place, with its inputs and outputs worked out from the wires that cross the selection. Nothing is saved until it is deployed.

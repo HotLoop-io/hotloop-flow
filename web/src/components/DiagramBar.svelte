@@ -20,9 +20,10 @@
     onresume: () => void;
     onstep: (mode: 'into' | 'over' | 'out') => void;
     onbreak: () => void;
+    onsub: () => void;
     onproblem: (nodeId: string) => void;
   }
-  let { runState, error, problems, highlight, waiting, hasSelection, breakOnSelection, panelHref, nodeName, onrun, onstop, onhighlight, onpause, onresume, onstep, onbreak, onproblem }: Props = $props();
+  let { runState, error, problems, highlight, waiting, hasSelection, breakOnSelection, panelHref, nodeName, onrun, onstop, onhighlight, onpause, onresume, onstep, onbreak, onsub, onproblem }: Props = $props();
 
   const running = $derived(runState === 'running' || runState === 'paused');
   let listOpen = $state(false);
@@ -41,6 +42,7 @@
   <button class="ghost" data-test="diagram-step-over" disabled={runState !== 'paused'} onclick={() => onstep('over')}>Step over</button>
   <button class="ghost" data-test="diagram-step-out" disabled={runState !== 'paused'} onclick={() => onstep('out')}>Step out</button>
   <button class="ghost" data-test="diagram-break" disabled={!hasSelection} onclick={onbreak}>{breakOnSelection ? 'Clear breakpoint' : 'Break on selected'}</button>
+  <button class="ghost" data-test="selection-to-subdiagram" title="Cut the selected nodes out into a sub-diagram, with its inputs and outputs worked out from the wires that cross the selection" disabled={!hasSelection || running} onclick={onsub}>Selection to sub-diagram</button>
   <span class="sep"></span>
   <a class="ghost link" data-test="diagram-panel" href={panelHref} target="_blank" rel="noopener">Open panel</a>
   <div class="spacer"></div>

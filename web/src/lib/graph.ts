@@ -484,6 +484,13 @@ export class Graph {
     this.redoStack = [];
   }
 
+  /** Takes a whole new set of entries as one undoable edit, like the server's answer to a bulk change. */
+  replaceWith(entries: FlowEntry[], label: string): void {
+    this.checkpoint(label);
+    this.entries = structuredClone(entries);
+    this.touch();
+  }
+
   /** Marks the graph changed and notifies listeners. */
   touch(): void {
     this.dirty = true;
