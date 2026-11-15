@@ -189,6 +189,25 @@
     canvas.render();
   }
 
+  /** Cuts the selection out of a diagram into a sub-diagram; the server works out the connector. */
+  async function selectionToSubDiagram(): Promise<void> {
+    if (viewing || graph.selection.size === 0 || !graph.isDiagramTab(graph.activeTab)) return;
+    const ids = [...graph.selection].filter((id) => graph.byId(id)?.type !== 'group');
+    if (ids.length === 0) return;
+    const name = await askName('Selection to sub-diagram', `Sub-diagram ${graph.tabs().length + 1}`, 'selection-subdiagram');
+    if (!name) return;
+    try {
+      const out = await api.diagramSub(graph.activeTab, graph.all(), ids, name);
+      graph.replaceWith(out.flows, 'selection to sub-diagram');
+      graph.selection.clear();
+      notice(`Made the sub-diagram ${name}. It has its own tab, and a sub-diagram node where the selection was.`);
+      bump();
+      canvas.render();
+    } catch (ex) {
+      notice(ex instanceof ApiError ? ex.message : String(ex));
+    }
+  }
+
   /** Shows a flow or a subflow on the canvas. */
   function openScope(id: string): void {
     if (viewing) closeView();
@@ -1098,6 +1117,7 @@
         onresume={() => void diagAction(() => api.debugDiagram(runId, 'resume'))}
         onstep={(m) => void diagAction(() => api.debugDiagram(runId, `step-${m}`))}
         onbreak={() => void toggleBreakOnSelection()}
+        onsub={() => void selectionToSubDiagram()}
         onproblem={(id) => selectNode(id)}
       />
     {/if}

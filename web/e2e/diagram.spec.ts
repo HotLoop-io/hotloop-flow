@@ -4,7 +4,7 @@
 // that ships.
 
 import { expect, test, type Page } from '@playwright/test';
-import { canvasNode, deployed, drag, nodeBody, seed, signIn, stableCentre, topDeploy, type Entry } from './helpers';
+import { allNodes, canvasNode, deployed, drag, nodeBody, seed, select, signIn, stableCentre, topDeploy, type Entry } from './helpers';
 
 // A counter loop: a carried sum of the pass numbers 0 to 9, which stops at ten
 // passes and gives 45. The main diagram shows both on indicators.
@@ -138,4 +138,47 @@ test('a case structure is edited as rows of a case name and the diagram it runs'
   const saved = (await deployed(request)).find((x) => x.id === 'sel')!;
   expect(JSON.parse(String(saved.cases))).toEqual({ true: 'heat', false: 'idle' });
   expect(saved.default).toBe('idle');
+});
+
+// H1 in the editor: select nodes of a diagram, make a sub-diagram, and the
+// connector is worked out and the nodes move to a tab of their own.
+test('the selection of a diagram is cut out into a sub-diagram', async ({ page, request }) => {
+  const e = (id: string, type: string, x: number, y: number, extra: Record<string, unknown> = {}, wires: string[][] = [[]], ins: string[][] = [[]]): Entry =>
+    ({ id, type, z: 'main', x, y, wires, ew_in: ins, ...extra });
+  await seed(request, [
+    { id: 'main', type: 'tab', label: 'Arithmetic', ew_diagram: {} },
+    e('a', 'dia-const', 100, 80, { value: '2' }, [['add']], [['a']]),
+    e('b', 'dia-const', 100, 160, { value: '3' }, [['add']], [['b']]),
+    e('add', 'dia-math', 300, 120, { op: 'add' }, [['out']], [['value']]),
+    e('out', 'dia-indicator', 500, 120, { label: 'Sum', kind: 'number', style: 'big', digits: 0 }),
+  ]);
+  await signIn(page, 'add');
+  const button = page.locator('[data-test="selection-to-subdiagram"]');
+  await expect(button).toBeDisabled();
+  await select(page, 'add');
+  await expect(button).toBeEnabled();
+  await button.click();
+  await page.locator('[data-test="selection-subdiagram-input"]').fill('Adder');
+  await page.locator('[data-test="selection-subdiagram-ok"]').click();
+  await expect(page.locator('.dialog')).toHaveCount(0);
+
+  // On the diagram: a, b, out and one sub-diagram node where add was.
+  await expect(allNodes(page)).toHaveCount(4);
+  await expect(page.locator('[data-test="tab-flow"]', { hasText: 'Adder' })).toHaveCount(1);
+  await expect(page.locator('[data-test="diagram-problems"]')).toHaveCount(0);
+
+  await topDeploy(page).click();
+  await page.locator('[data-test="deploy-note"]').fill('cut add out');
+  await page.locator('[data-test="deploy-confirm"]').click();
+  await expect(page.locator('[data-test="tab-state"]')).toHaveText('saved');
+  const sub = (await deployed(request)).find((x) => x.type === 'dia-sub')!;
+  expect(sub.name).toBe('Adder');
+  expect(sub.ins).toBe('a,b');
+  expect(sub.outs).toBe('add_result');
+
+  // And it still adds up.
+  await page.locator('[data-test="diagram-run"]').click();
+  await expect(state(page)).toHaveAttribute('data-state', 'done');
+  const wire = page.locator('.canvas-host > .canvas path.wire[data-to="out"]');
+  await expect(wire.locator('title')).toHaveText('5');
 });

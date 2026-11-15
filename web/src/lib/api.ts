@@ -5,6 +5,7 @@
 // simply would not load.
 
 import type { WireProblem } from './wiretypes';
+import type { FlowEntry } from './graph';
 
 /**
  * A node type, as served by GET /nodes.
@@ -463,6 +464,11 @@ export class Api {
 
   diagram(id: string): Promise<DiagramDescription> {
     return this.get(`/diagrams/${encodeURIComponent(id)}`);
+  }
+
+  /** The flow file with the nodes cut out of a diagram into a sub-diagram. Nothing is saved. */
+  diagramSub(id: string, flows: FlowEntry[], nodes: string[], name: string): Promise<{ flows: FlowEntry[] }> {
+    return this.send('POST', `/diagrams/${encodeURIComponent(id)}/sub`, { flows, nodes, name });
   }
 
   runDiagram(id: string, opts: { highlightMs?: number; pause?: boolean } = {}): Promise<{ run: string }> {
