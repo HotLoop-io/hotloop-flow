@@ -38,7 +38,7 @@ Outside EmberNet, this license does not let you: (a) offer the Licensed Work, or
 
 ## 5. Any other use
 
-Any use not allowed by sections 1 and 2 needs a separate commercial license from the Licensor.
+Any use not allowed by sections 1 and 2 needs a separate commercial license from the Licensor. To ask for one, email sales@fireballz.ai.
 
 ## 6. Copies and derivative works
 
