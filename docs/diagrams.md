@@ -57,6 +57,7 @@ The same things are an API for scripts and CI:
 |---|---|
 | `GET /diagrams`, `GET /diagrams/{id}` | What is deployed, the panel, the last value on every wire. |
 | `POST /diagrams/{id}/run`, `/stop`, `/debug` | Needs `diagram.run`. Each is in the audit log with who. |
+| `POST /diagrams/{id}/sub` | Send `{flows, nodes, name}` and get the flow file back with those nodes made into a sub-diagram. Reads and computes only; nothing is saved or deployed. |
 | `PUT /diagrams/{id}/controls/{node}` | Set a control. Checked against its kind, range and choices. |
 | `PUT /diagrams/{id}/breakpoints`, `/probes` | Keys are a node id, `wire:<wire key>` or `diagram:<tab>`. |
 
@@ -264,3 +265,7 @@ device's own clock does it, and Flow only moves the data.
 ## Waveforms
 
 A waveform is a block of evenly spaced samples that knows when it started and how far apart they are, as a record on the wire: `{"type": "waveform", "t0": "2026-11-14T12:00:00Z", "dt": 0.001, "y": [...], "attrs": {"unit_string": "V"}}`. `dia-wave` builds one from an array (the step from `dt`, else `rate`, else its setting; the start from `t0`, else the moment it runs) and `dia-wave-parts` takes one apart, including how long it spans. A waveform holds at most `maxSamples` samples (1,048,576 by default); the rest are cut off and counted on `dropped`. The analysis nodes accept a waveform where they take an array and use its step. `dia-log-tdms` writes a waveform column as a channel with `wf_start_time`, `wf_increment`, `wf_samples` and the attributes as channel properties.
+
+## Sub-diagrams
+
+`dia-sub` is a diagram used as a node: its inputs and outputs are the connector, each input a `dia-body-in` of that name in its body and each output a `dia-body-out`. An input is required unless its name ends in `?` (optional) or `~` (recommended: it runs without it and deploy warns when it is not wired). Select nodes and make a sub-diagram from them (`POST /diagrams/{id}/sub`) and the nodes move into a new body tab, a `dia-sub` takes their place, and the connector is worked out from the wires that cross the edge of the selection: an input for each source output that feeds the selection, an output for each selected output that feeds the nodes outside. The wires outside are reconnected, so a run gives the answers it gave before.
