@@ -101,6 +101,19 @@ export function readProp(p: PropDef, model: Model, entry: Model, graph?: Graph):
       if (p.required && t !== 'date' && !v) return { error: `${label} is required` };
       return { values: { [p.name]: v, [typeKeyOf(p)]: t } };
     }
+    case 'cases': {
+      const v = String(model[p.name] ?? '').trim() || '{}';
+      try {
+        const o = JSON.parse(v) as Record<string, unknown>;
+        if (o === null || typeof o !== 'object' || Array.isArray(o)) throw new Error('not an object');
+        for (const [name, body] of Object.entries(o)) {
+          if (!String(body ?? '')) return { error: `${label}: the case "${name}" has no diagram` };
+        }
+      } catch {
+        return { error: `${label} is not a set of cases` };
+      }
+      return { values: { [p.name]: v } };
+    }
     case 'configRef': {
       const v = String(model[p.name] ?? '');
       if (p.required && !v) return { error: `${label} is required` };

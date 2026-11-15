@@ -283,3 +283,7 @@ A field is `number`, `integer`, `boolean`, `string`, `timestamp`, `array`, `wave
 ## Rotation and retention
 
 `dia-log-text` and `dia-log-tdms` can start a new file when the live one reaches `rotateMB` megabytes or `rotateHours` hours, and keep only the newest `keep` finished files. The finished file takes the log's name with the time it was closed before the extension (`bench.csv` becomes `bench-20261114T120000Z.csv`) and the log goes on in `bench.csv`, with a new header, or the file properties written again for TDMS. Retention deletes only files that match that pattern, never the live log and never a file that merely sits beside it. The age counts from when a run first writes to the file. The text log opens in a spreadsheet and the TDMS log is the binary format for big data.
+
+## Editing a case structure and picking a diagram
+
+A case structure's cases are rows of a case name and a diagram picker, with a second picker for the default case, and the property that names the diagram a loop or a sub-diagram runs is a picker too. The pickers list the FlowLab diagrams of the flow file and store the tab's id; a name written by hand in an older flow file is shown as that tab and saved as its id, which the runtime reads the same way. The stored values are the same JSON as before (`cases` is an object of case name to diagram), so a flow file edited in the dialog and one edited by hand are the same file.

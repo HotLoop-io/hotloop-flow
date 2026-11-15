@@ -23,9 +23,9 @@ func init() {
 			InputPorts:  []string{"selector", "@ins", "err?"},
 			OutputPorts: []string{"@outs", "case", "err"},
 			Props: []node.Prop{
-				{Name: "cases", Label: "Cases (JSON object)", Kind: node.PropString, Default: "{}", Required: true,
-					Help: `Each case name and the diagram it runs, for example {"true": "heat", "false": "idle"} or {"1": "a", "2": "b"}.`},
-				prop("default", "Default case (diagram)", node.PropString, ""),
+				{Name: "cases", Label: "Cases", Kind: node.PropCases, Default: "{}", Required: true,
+					Help: `Each case name and the diagram it runs. A boolean selector picks "true" or "false", a number the case of that value, and a string the case of that name.`},
+				{Name: "default", Label: "Default case (diagram)", Kind: node.PropDiagram, Help: "Runs when no case names the selector's value."},
 				prop("ins", "Inputs, comma separated", node.PropString, ""),
 				prop("outs", "Results, comma separated", node.PropString, ""),
 			},
