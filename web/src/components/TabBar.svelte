@@ -21,10 +21,11 @@
     onaddsubflow: () => void;
     onadddiagram: () => void;
     ontosubflow: () => void;
+    onlayout: () => void;
     onflowprops: () => void;
     onsubflowprops: () => void;
   }
-  let { flows, subflows, active, changed, editing, canMakeSubflow, showFlowProps, showSubflowProps, state, dirty, onpick, onedit, onaddflow, onaddsubflow, onadddiagram, ontosubflow, onflowprops, onsubflowprops }: Props = $props();
+  let { flows, subflows, active, changed, editing, canMakeSubflow, showFlowProps, showSubflowProps, state, dirty, onpick, onedit, onaddflow, onaddsubflow, onadddiagram, ontosubflow, onlayout, onflowprops, onsubflowprops }: Props = $props();
 </script>
 
 <div class="tabbar">
@@ -41,6 +42,7 @@
   {/if}
   <div class="spacer"></div>
   {#if editing}
+    <button class="ghost" data-test="auto-layout" title="Lay the nodes out so data reads left to right and no wire runs through a node" onclick={onlayout}>Tidy layout</button>
     <button class="ghost" data-test="selection-to-subflow" title="Move the selected nodes into a subflow and put an instance where they were" disabled={!canMakeSubflow} onclick={ontosubflow}>Selection to subflow</button>
   {/if}
   {#if showFlowProps}

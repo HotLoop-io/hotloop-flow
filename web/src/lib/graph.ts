@@ -6,6 +6,7 @@
 // rather than something each interaction has to remember to do.
 
 import type { Descriptor } from './api';
+import { layout } from './layout';
 
 /** Pseudo node types for a subflow template's own input and output ports. */
 export const PORT_IN = '@subflow-in';
@@ -398,7 +399,11 @@ export class Graph {
         s = s.replace(/\?$/, '');
         if (s.startsWith('@')) {
           const v = e[s.slice(1)];
-          for (const n of typeof v === 'string' ? v.split(',') : []) if (n.trim() && !out.includes(n.trim())) out.push(n.trim());
+          for (const raw of typeof v === 'string' ? v.split(',') : []) {
+            // A name can carry its mark: name? is optional and name~ recommended.
+            const n = raw.trim().replace(/[?~]$/, '');
+            if (n && !out.includes(n)) out.push(n);
+          }
         } else if (!out.includes(s)) out.push(s);
       }
       return out;
@@ -489,6 +494,48 @@ export class Graph {
     this.checkpoint(label);
     this.entries = structuredClone(entries);
     this.touch();
+  }
+
+  /**
+   * Lays out the nodes of the scope on view so data reads left to right and no
+   * wire has to run through a node (see layout.ts). The block stays where it was:
+   * its top left corner does not move.
+   */
+  autoLayout(scope: string = this.activeTab): string | null {
+    const nodes = this.entries.filter((e) => e.z === scope && e.type !== 'group' && !this.isConfig(e) && e.x !== undefined);
+    if (nodes.length === 0) return 'There is nothing on this flow to lay out.';
+    const edges: { from: string; to: string; fromDy: number; toDy: number }[] = [];
+    // Where each port sits below its node's middle, so a wire is judged where it is drawn.
+    const outDy = (n: FlowEntry, port: number): number => {
+      const named = this.ports(n);
+      if (named) return namedOutputPort(n, port, Math.max(named.in.length, named.out.length)).y - (n.y ?? 0);
+      return outputPort(n, port, (n.wires ?? []).length).y - (n.y ?? 0);
+    };
+    const inDy = (n: FlowEntry, name: string | undefined): number => {
+      const named = this.ports(n);
+      if (!named) return 0;
+      const k = Math.max(0, named.in.indexOf(name ?? named.in[0] ?? ''));
+      return namedInputPort(n, k, Math.max(named.in.length, named.out.length)).y - (n.y ?? 0);
+    };
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    for (const n of nodes) {
+      const ins = (n[IN_KEY] as string[][] | undefined) ?? [];
+      (n.wires ?? []).forEach((port, oi) => port.forEach((t, ti) => {
+        const target = byId.get(t);
+        if (target) edges.push({ from: n.id, to: t, fromDy: outDy(n, oi), toDy: inDy(target, ins[oi]?.[ti]) });
+      }));
+    }
+    const placed = layout(nodes.map((n) => ({ id: n.id, h: this.nodeHeight(n) })), edges, { colGap: 90, rowGap: 24, width: NODE_WIDTH });
+    const left = Math.min(...nodes.map((n) => (n.x ?? 0) - NODE_WIDTH / 2));
+    const top = Math.min(...nodes.map((n) => (n.y ?? 0) - this.nodeHeight(n) / 2));
+    this.checkpoint('auto layout');
+    for (const n of nodes) {
+      const p = placed.get(n.id)!;
+      n.x = snap(p.x + left);
+      n.y = snap(p.y + top);
+    }
+    this.touch();
+    return null;
   }
 
   /** Marks the graph changed and notifies listeners. */

@@ -208,6 +208,16 @@
     }
   }
 
+  /** Lays the nodes on view out, as one undoable edit. */
+  function tidyLayout(): void {
+    if (viewing) return;
+    const refused = graph.autoLayout();
+    if (refused) { notice(refused); return; }
+    bump();
+    canvas.render();
+    canvas.fit();
+  }
+
   /** Shows a flow or a subflow on the canvas. */
   function openScope(id: string): void {
     if (viewing) closeView();
@@ -1085,6 +1095,7 @@
     onaddsubflow={() => void newSubflow()}
     onadddiagram={addDiagram}
     ontosubflow={() => void selectionToSubflow()}
+    onlayout={tidyLayout}
     onflowprops={() => void editFlow(shown.activeTab)}
     onsubflowprops={() => void editSubflow(shown.activeTab)}
   />
