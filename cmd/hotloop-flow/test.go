@@ -44,6 +44,10 @@ A test puts messages into the flow and says what has to come out:
         - node: errors                 # a Catch node
           error: "out of range"
 
+A diagram in the flow file that cannot run (an input nobody wired, a body that
+never says stop) is listed with its diagram, node and input, the same list the
+editor shows, and fails the file even when every test passes.
+
 Exits 0 when every test passes and 1 when anything fails or can't run.
 `
 

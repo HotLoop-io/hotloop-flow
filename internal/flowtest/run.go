@@ -52,15 +52,20 @@ type Report struct {
 	// File is the test file, as the caller named it.
 	File string `json:"file,omitempty"`
 
-	Tests   []Result `json:"tests"`
-	Passed  int      `json:"passed"`
-	Failed  int      `json:"failed"`
-	Errored int      `json:"errored"`
-	Seconds float64  `json:"seconds"`
+	Tests []Result `json:"tests"`
+	// Diagrams is what keeps a diagram in the flow file from running, and what
+	// is only worth a warning. A diagram that cannot run fails the file.
+	Diagrams []DiagramIssue `json:"diagrams,omitempty"`
+	Passed   int            `json:"passed"`
+	Failed   int            `json:"failed"`
+	Errored  int            `json:"errored"`
+	Seconds  float64        `json:"seconds"`
 }
 
 // OK reports whether every test passed.
-func (r *Report) OK() bool { return r.Failed == 0 && r.Errored == 0 }
+func (r *Report) OK() bool {
+	return r.Failed == 0 && r.Errored == 0 && Blocking(r.Diagrams) == 0
+}
 
 // Result is the outcome of one test.
 type Result struct {
@@ -108,6 +113,7 @@ func Run(ctx context.Context, flows []byte, s *Suite, opts Options) Report {
 	}
 	began := time.Now()
 	var rep Report
+	rep.Diagrams = CheckDiagrams(flows)
 	for i := range s.Tests {
 		c := &s.Tests[i]
 		if opts.Match != nil && !opts.Match.MatchString(c.Name) {

@@ -256,3 +256,7 @@ collection and the scheduler can delay a node by milliseconds, so a node can't p
 a deadline. Work that has to meet one belongs in a PLC or a runtime built for it. The
 timing of samples from a data acquisition device is not affected by any of this: the
 device's own clock does it, and Flow only moves the data.
+
+## The error list in CI
+
+`hotloop-flow test` and the deploy gate run the editor's check on every diagram in the flow file. A diagram that cannot run is listed as `--- DIAGRAM: <diagram>: <node> input <port>: <reason>` and fails the file even when every test passes; the JUnit report carries each one as an error of type `diagram`. A warning, such as a case structure with no default, is listed and does not fail.
