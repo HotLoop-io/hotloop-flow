@@ -59,7 +59,7 @@ func structure(typ, label string, isFor bool) Kind {
 	out := []string{"@carried", "@outs", "iterations", "err"}
 	help := "Runs its body again and again until the body says stop. The body is a diagram of its own, named in Body. Carried values start from the wire on their input, or from Start values, and come out as they were on the last pass. Always runs at least once."
 	props := []node.Prop{
-		{Name: "body", Label: "Body (diagram)", Kind: node.PropString, Required: true, Help: "The id of the diagram tab this loop runs."},
+		{Name: "body", Label: "Body (diagram)", Kind: node.PropDiagram, Required: true, Help: "The diagram this loop runs."},
 		prop("carried", "Carried values, comma separated", node.PropString, ""),
 		{Name: "start", Label: "Start values (JSON object)", Kind: node.PropString, Default: "{}", Help: `For example {"sum": 0, "window": []}. A wire on a carried value's input wins.`},
 		prop("ins", "Inputs, comma separated", node.PropString, ""),

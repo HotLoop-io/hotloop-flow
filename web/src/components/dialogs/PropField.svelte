@@ -20,6 +20,43 @@
   const candidates = $derived(graph ? graph.all().filter((e) => e.type === p.configType) : []);
   const rows = $derived((model[p.name] as Model[] | undefined) ?? []);
 
+  // The diagram tabs a diagram property picks from. A value written by hand as a
+  // tab's name is shown as that tab, and saved as its id, which the runtime
+  // reads the same way.
+  const diagramTabs = $derived(graph ? graph.tabs().filter((t) => graph.isDiagramTab(t.id)) : []);
+  const tabLabel = (t: { id: string; label?: unknown }): string => String(t.label ?? t.id);
+  function asTabId(v: string): string {
+    if (!v || diagramTabs.some((t) => t.id === v)) return v;
+    const named = diagramTabs.filter((t) => tabLabel(t) === v);
+    return named.length === 1 ? named[0]!.id : v;
+  }
+  if (p.kind === 'diagram') model[p.name] = asTabId(String(model[p.name] ?? ''));
+
+  // A case structure's rows: the stored value is a JSON object of case name to
+  // diagram, and this is that object drawn as one row for each case.
+  function parseCases(v: unknown): { name: string; body: string }[] {
+    try {
+      const o = JSON.parse(String(v ?? '{}') || '{}') as Record<string, unknown>;
+      return Object.entries(o).map(([name, body]) => ({ name, body: asTabId(String(body ?? '')) }));
+    } catch {
+      return [];
+    }
+  }
+  let caseRows = $state<{ name: string; body: string }[]>(p.kind === 'cases' ? parseCases(model[p.name]) : []);
+  // The stored value follows the rows: whatever they say now is what is saved.
+  $effect(() => {
+    if (p.kind !== 'cases') return;
+    const o: Record<string, string> = {};
+    for (const r of caseRows) if (r.name.trim()) o[r.name.trim()] = r.body;
+    model[p.name] = JSON.stringify(o);
+  });
+  function addCase(): void {
+    caseRows.push({ name: '', body: diagramTabs[0]?.id ?? '' });
+  }
+  function removeCase(i: number): void {
+    caseRows.splice(i, 1);
+  }
+
   // A code box takes Tab as four spaces rather than leaving the field.
   function tab(e: KeyboardEvent): void {
     if (e.key !== 'Tab') return;
@@ -95,6 +132,44 @@
     {#if candidates.length === 0}
       <div class="field-help">No {p.configType} is configured yet. Add one from the palette first.</div>
     {/if}
+    {@render help()}
+  </div>
+{:else if p.kind === 'diagram'}
+  <div class="field">
+    {@render head()}
+    <select data-test="diagram-pick" bind:value={model[p.name]}>
+      <option value="">{p.required ? '— choose a diagram —' : '— none —'}</option>
+      {#each diagramTabs as t (t.id)}<option value={t.id}>{tabLabel(t)}</option>{/each}
+      {#if model[p.name] && !diagramTabs.some((t) => t.id === model[p.name])}
+        <option value={model[p.name]}>{String(model[p.name])} (no such diagram)</option>
+      {/if}
+    </select>
+    {#if diagramTabs.length === 0}
+      <div class="field-help">This flow file has no FlowLab diagram to pick yet. Add one from the tab bar first.</div>
+    {/if}
+    {@render help()}
+  </div>
+{:else if p.kind === 'cases'}
+  <div class="field" data-test="cases">
+    {@render head()}
+    <div class="list-rows">
+      {#each caseRows as row, i (i)}
+        <div class="list-row" data-test="case-row">
+          <div class="list-row-fields">
+            <input type="text" data-test="case-name" placeholder="case name (true, 2, run)" bind:value={row.name} />
+            <select data-test="case-body" bind:value={row.body}>
+              <option value="">— choose a diagram —</option>
+              {#each diagramTabs as t (t.id)}<option value={t.id}>{tabLabel(t)}</option>{/each}
+              {#if row.body && !diagramTabs.some((t) => t.id === row.body)}
+                <option value={row.body}>{row.body} (no such diagram)</option>
+              {/if}
+            </select>
+          </div>
+          <button class="icon" type="button" title="Remove" onclick={() => removeCase(i)}>✕</button>
+        </div>
+      {/each}
+    </div>
+    <button class="ghost" type="button" data-test="case-add" onclick={addCase}>Add a case</button>
     {@render help()}
   </div>
 {:else if p.kind === 'credential'}

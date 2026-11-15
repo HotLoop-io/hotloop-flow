@@ -24,7 +24,7 @@ func init() {
 			InputPorts:  []string{"@ins", "err?"},
 			OutputPorts: []string{"@outs", "err"},
 			Props: []node.Prop{
-				{Name: "body", Label: "Body (diagram)", Kind: node.PropString, Required: true, Help: "The id or name of the diagram tab this runs."},
+				{Name: "body", Label: "Body (diagram)", Kind: node.PropDiagram, Required: true, Help: "The diagram this runs."},
 				prop("ins", "Inputs, comma separated (name? is optional, name~ is recommended)", node.PropString, ""),
 				prop("outs", "Outputs, comma separated", node.PropString, ""),
 			},

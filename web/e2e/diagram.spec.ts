@@ -104,3 +104,38 @@ test('a wire is dropped on a named input, and the file says which', async ({ pag
   expect(file.find((e) => e.id === 'one')?.['ew_in']).toEqual([['b']]);
   expect(file.find((e) => e.id === 'two')?.wires?.[0]).toEqual(['sum']);
 });
+
+// The case structure's cases are rows with a diagram picker, not a JSON box.
+test('a case structure is edited as rows of a case name and the diagram it runs', async ({ page, request }) => {
+  const e = (z: string, id: string, type: string, x: number, y: number, extra: Record<string, unknown> = {}): Entry => ({ id, type, z, x, y, wires: [], ...extra });
+  await seed(request, [
+    { id: 'main', type: 'tab', label: 'Choose', ew_diagram: {} },
+    { id: 'heat', type: 'tab', label: 'Heat body', ew_diagram: { role: 'body' } },
+    { id: 'idle', type: 'tab', label: 'Idle body', ew_diagram: { role: 'body' } },
+    e('main', 'sel', 'dia-case', 300, 120, { cases: JSON.stringify({ true: 'Heat body' }), default: '', ins: '', outs: '' }),
+  ]);
+  await signIn(page, 'sel');
+
+  await canvasNode(page, 'sel').locator('.node-body').dblclick();
+  const d = page.locator('.dialog');
+  const rows = d.locator('[data-test="case-row"]');
+  // The stored name of a tab is shown as that tab.
+  await expect(rows).toHaveCount(1);
+  await expect(rows.nth(0).locator('[data-test="case-name"]')).toHaveValue('true');
+  await expect(rows.nth(0).locator('[data-test="case-body"] option:checked')).toHaveText('Heat body');
+
+  await d.locator('[data-test="case-add"]').click();
+  await rows.nth(1).locator('[data-test="case-name"]').fill('false');
+  await rows.nth(1).locator('[data-test="case-body"]').selectOption({ label: 'Idle body' });
+  await d.locator('[data-test="diagram-pick"]').selectOption({ label: 'Idle body' });
+  await d.locator('button', { hasText: 'Done' }).click();
+  await expect(d).toHaveCount(0);
+
+  await topDeploy(page).click();
+  await page.locator('[data-test="deploy-note"]').fill('two cases and a default');
+  await page.locator('[data-test="deploy-confirm"]').click();
+  await expect(page.locator('[data-test="tab-state"]')).toHaveText('saved');
+  const saved = (await deployed(request)).find((x) => x.id === 'sel')!;
+  expect(JSON.parse(String(saved.cases))).toEqual({ true: 'heat', false: 'idle' });
+  expect(saved.default).toBe('idle');
+});

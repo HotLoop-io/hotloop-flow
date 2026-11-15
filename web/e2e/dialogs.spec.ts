@@ -126,7 +126,8 @@ test('every node type in the palette opens a dialog that draws all of its proper
   expect(configTypes.length).toBeGreaterThan(0);
 
   // The configuration nodes go in over the API, so nodes that need one can be saved.
-  await seed(request, anchors(configs(configTypes)));
+  // A diagram to pick, so the nodes that run a diagram can be saved with one.
+  await seed(request, [...anchors(configs(configTypes)), { id: 'pick-diagram', type: 'tab', label: 'A diagram to pick', ew_diagram: {} }]);
   await signIn(page);
 
   let opened = 0;

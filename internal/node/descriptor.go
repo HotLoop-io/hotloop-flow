@@ -79,6 +79,12 @@ const (
 	// PropList is a repeatable group of sub-properties, used for things like a
 	// Change node's rule list; see Prop.Fields.
 	PropList PropKind = "list"
+	// PropDiagram is a dropdown of the FlowLab diagram tabs of the flow file. It
+	// stores the tab's id.
+	PropDiagram PropKind = "diagram"
+	// PropCases is the rows of a case structure: a case name and the diagram it
+	// runs, one row each. It stores a JSON object of case name to diagram.
+	PropCases PropKind = "cases"
 )
 
 // TypedInput value types, matching Node-RED's set so that imported flows carry
@@ -351,7 +357,7 @@ func validateProps(typ string, props []Prop, prefix string) error {
 					return fmt.Errorf("%s: property %q offers unknown typedInput type %q", typ, path, t)
 				}
 			}
-		case PropString, PropText, PropNumber, PropBool, PropJS, PropJSON, PropJSONata, PropCredential:
+		case PropString, PropText, PropNumber, PropBool, PropJS, PropJSON, PropJSONata, PropCredential, PropDiagram, PropCases:
 		default:
 			return fmt.Errorf("%s: property %q has unknown kind %q", typ, path, p.Kind)
 		}
