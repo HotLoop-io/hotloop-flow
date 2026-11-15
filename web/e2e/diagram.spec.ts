@@ -39,6 +39,11 @@ test('a diagram is run from the bar and its panel shows the answer', async ({ pa
   await expect(canvasNode(page, 'loop').locator('.port-name')).not.toHaveCount(0);
   await expect(page.locator('[data-test="diagram-problems"]')).toHaveCount(0);
 
+  // B2: a wire of a diagram is named at its middle, by the output it comes from.
+  await expect(page.locator('.canvas-host > .canvas .wire-type[data-wire-name="sum"]')).toHaveCount(1);
+  await expect(page.locator('.canvas-host > .canvas .wire-type[data-wire-name="sum"] text')).toHaveText('sum');
+  await expect(page.locator('.canvas-host > .canvas .wire-type[data-wire-name="iterations"]')).toHaveCount(1);
+
   await page.locator('[data-test="diagram-run"]').click();
   await expect(state(page)).toHaveAttribute('data-state', 'done');
 

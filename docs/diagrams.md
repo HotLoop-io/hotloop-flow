@@ -295,3 +295,7 @@ With nodes selected on a diagram, the bar's **Selection to sub-diagram** asks fo
 ## Tidy layout
 
 The tab bar's **Tidy layout** lays out the nodes on view so data reads left to right and no wire runs through a node. A node's column is the longest chain of wires leading to it. A wire that skips columns gets a lane through them, nodes within a column are ordered to untangle the crossings, and then each long wire is checked along the curve it is actually drawn with against the nodes in the columns it crosses, and a node in the way is moved clear. The block keeps its top left corner, and the whole thing is one undoable edit. A loop in the wiring has its closing wire left out of the ranking, so it runs backward instead of making the layout loop.
+
+## Wire names
+
+A wire of a diagram is named at its middle, by the output it comes from (`sum`, `result`, `iterations`), beside its type when either end declares one, and hovering it still shows the last value it carried.
