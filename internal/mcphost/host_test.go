@@ -624,3 +624,31 @@ func TestATokenWithNoLimitIsNeverThrottled(t *testing.T) {
 		t.Fatalf("%d refusals for a token with no limit", n)
 	}
 }
+
+// A tool Flow serves itself outlives a runtime torn down, which only drops the
+// flows' tools, is refused to a flow that wants the same name, and is replaced
+// when the same name is registered as a built-in again.
+func TestABuiltInToolSurvivesResetAndIsNotAFlowsToServe(t *testing.T) {
+	r := New("test")
+	fn := func(context.Context, Call) (Outcome, error) { return Outcome{Text: "ok"}, nil }
+	spec := ToolSpec{Name: "list_flows", InputSchema: json.RawMessage(`{"type":"object"}`)}
+	if err := r.RegisterBuiltin(spec, fn); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Register("node-a", ToolSpec{Name: "line_status", InputSchema: json.RawMessage(`{"type":"object"}`)}, fn); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Register("node-b", spec, fn); err == nil || !strings.Contains(err.Error(), "already served") {
+		t.Errorf("a flow served a built-in's name: %v", err)
+	}
+	r.Reset()
+	if got := strings.Join(r.Names(), ","); got != "list_flows" {
+		t.Errorf("after Reset the tools are %q, want only the built-in", got)
+	}
+	if err := r.RegisterBuiltin(spec, fn); err != nil {
+		t.Errorf("registering the built-in again: %v", err)
+	}
+	if got := len(r.Names()); got != 1 {
+		t.Errorf("%d tools after re-registering", got)
+	}
+}

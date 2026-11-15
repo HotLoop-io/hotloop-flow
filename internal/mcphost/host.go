@@ -209,6 +209,8 @@ func (c *Compiled) Check(args map[string]any) error {
 }
 
 type tool struct {
+	// builtin is a tool Flow itself serves, which a runtime torn down does not take with it.
+	builtin  bool
 	owner    string
 	spec     ToolSpec
 	compiled *Compiled
@@ -284,6 +286,19 @@ func (r *Registry) logger() *slog.Logger {
 // not share a name: the second is refused, and the flow that has it fails to
 // start with the owner of the first named in the error.
 func (r *Registry) Register(owner string, spec ToolSpec, fn Func) (func(), error) {
+	return r.register(owner, spec, fn, false)
+}
+
+// RegisterBuiltin serves a tool that is Flow's own and not a flow's, such as the
+// ones that list and deploy flows. It lives as long as the registry: Reset, which a
+// runtime torn down calls, leaves it, and a flow that tries to serve the same name
+// is refused like any other duplicate. Registering a built-in name again replaces it.
+func (r *Registry) RegisterBuiltin(spec ToolSpec, fn Func) error {
+	_, err := r.register("built-in", spec, fn, true)
+	return err
+}
+
+func (r *Registry) register(owner string, spec ToolSpec, fn Func, builtin bool) (func(), error) {
 	compiled, err := Compile(spec)
 	if err != nil {
 		return nil, err
@@ -293,10 +308,15 @@ func (r *Registry) Register(owner string, spec ToolSpec, fn Func) (func(), error
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if existing, ok := r.tools[spec.Name]; ok && builtin && existing.builtin {
+		// A second server built over the same registry takes the tool over.
+		delete(r.tools, spec.Name)
+		r.server.RemoveTools(spec.Name)
+	}
 	if existing, ok := r.tools[spec.Name]; ok {
 		return nil, fmt.Errorf("the tool %q is already served by node %s", spec.Name, existing.owner)
 	}
-	t := &tool{owner: owner, spec: spec, compiled: compiled, fn: fn}
+	t := &tool{builtin: builtin, owner: owner, spec: spec, compiled: compiled, fn: fn}
 	r.tools[spec.Name] = t
 	r.server.AddTool(&mcp.Tool{
 		Name:        spec.Name,
@@ -323,10 +343,15 @@ func (r *Registry) Reset() {
 		return
 	}
 	names := make([]string, 0, len(r.tools))
-	for n := range r.tools {
+	kept := map[string]*tool{}
+	for n, t := range r.tools {
+		if t.builtin {
+			kept[n] = t
+			continue
+		}
 		names = append(names, n)
 	}
-	r.tools = map[string]*tool{}
+	r.tools = kept
 	r.server.RemoveTools(names...)
 }
 

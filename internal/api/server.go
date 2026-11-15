@@ -312,6 +312,7 @@ func (s *Server) routes() {
 		// "GET /" pattern when the editor is served at the same root.
 		// Authentication is the handler's own, so a caller is identified before
 		// the protocol sees the request.
+		s.registerMCPTools(s.deps.MCP)
 		mh := s.deps.MCP.Handler(mcphost.Options{
 			Authenticate: s.mcpIdentify,
 			Audit:        s.mcpAudit,
