@@ -1563,7 +1563,7 @@ flow can call a tool on any MCP server, HotLoop's own included. Three nodes and
 one config node do it: `mcp tool` and `mcp result` serve a flow, `mcp client` on
 an `hotloop-flow-mcp-server` connection calls out. If you only ever wire
 sensors to dashboards you can skip all of this: a flow that uses none of these
-nodes never makes an MCP call, and Flow serves no tools it wasn't given.
+nodes never makes an MCP call, and the only tools Flow serves of its own are the ones that read and change its flows ([below](#flows-own-tools)).
 
 The protocol is the Go SDK's (`github.com/modelcontextprotocol/go-sdk` v1.8.0,
 Apache-2.0 with some files still MIT while the project finishes relicensing,
@@ -1664,6 +1664,38 @@ npx @modelcontextprotocol/inspector@2.12.0 --cli http://localhost:1880/mcp \
 A flow test puts the message a call would have made where the `mcp tool` node
 sits, and `mcp result` hands what it would have answered to the test as
 `{isError, text, structuredContent}`, so the flow is tested without a server.
+
+### Flow's own tools
+
+An agent that could only call what a flow author wired up could not see the
+flows or change them, so Flow serves seven tools of its own at the same `/mcp`,
+beside the flows' tools. They read and they write:
+
+| Tool | Does | Permission |
+|---|---|---|
+| `list_flows` | every tab and subflow: id, label, disabled, node count, and the revision | `flows.read` |
+| `get_flows` | the whole deployed set as the editor reads it, with the revision | `flows.read` |
+| `get_flow` | one tab or subflow with its nodes, by id | `flows.read` |
+| `deploy_flows` | **deploy**: replace the whole set, with the revision you read and a note | `flows.write` |
+| `list_deployments` | the deployment history, newest first | `flows.read` |
+| `rollback_deployment` | **roll back** to an earlier deployment, as a new one | `flows.write` |
+| `inject_node` | **press** an inject node, with a message of your own | `inject.write` |
+
+None of them is a second implementation. Each runs the admin API's own handler
+for the same job as the caller the endpoint authenticated, so a deploy meets
+everything a deploy from the editor meets: the document has to parse, the
+revision has to be the current one (an empty one overwrites on purpose), wires
+that disagree about what travels on them are refused, plugins that are not
+allowed are refused, and flow tests that fail refuse the deploy, each in the
+route's own words. The deployment history records the caller and the note, and
+the audit log has the `deploy` or `inject` row under the caller's name as well as
+the `mcp.call` and `mcp.result` rows every tool call leaves. A caller needs
+`mcp.call` and the tool's own permission, and a tool it may not call is not in its
+list. The tools stay across a deploy, which drops only the flows' own tools, and a
+flow cannot serve one of their names.
+
+`deploy_flows` replaces the whole set, so an agent reads `get_flows` first and
+sends it back changed, with the `rev` it was given.
 
 ### Calling tools on other servers
 

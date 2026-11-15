@@ -197,6 +197,11 @@ biggest hole in a product built for plants.
       same permissions and the same audit log as a person
 - [x] An MCP client node, so a flow can call tools on other servers, HotLoop's
       included
+- [x] Flow's own MCP tools: list, read, deploy and roll back flows, list the
+      deployments and press an inject node, through the admin API's own handlers
+      with the same permissions, deploy checks and audit trail, because an MCP
+      that could only call what a flow author wired up could not read or write
+      Flow itself
 
 ### Phase 8: the editor, rewritten in Astro
 
