@@ -42,7 +42,7 @@ because it's a feature, not the point.
 Current release is `2.10.2`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.10.2`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-104,000 lines of Go, a little under 40 percent of it tests, 108 node types for messages and 35 for FlowLab diagrams, and the race
+104,000 lines of Go, a little under 40 percent of it tests, 108 node types for messages and 36 for FlowLab diagrams, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
 business use is free through EmberNET, under HotLoop's Business Source License.
 
@@ -1273,7 +1273,7 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**108 node types for messages, and 35 more for FlowLab diagrams.**
+**108 node types for messages, and 36 more for FlowLab diagrams.**
 
 | Category | Nodes |
 |---|---|

@@ -502,6 +502,13 @@ details[open] > summary::before { transform: rotate(90deg); }
 .panel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 16px; }
 .panel-card { background: var(--hl-card); border: 1px solid var(--hl-border); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .panel-card.wide { grid-column: 1 / -1; }
+.panel-card[hidden] { display: none; }
+/* A diagram can colour a panel object by name: the colour is a name, drawn in the theme. */
+.panel-card.tint-red { border-color: var(--hl-danger); background: var(--hl-danger-tint); }
+.panel-card.tint-amber { border-color: var(--hl-warn); }
+.panel-card.tint-green { border-color: var(--hl-ok); }
+.panel-card.tint-blue { border-color: var(--hl-info); }
+.panel-card.tint-grey { border-color: var(--hl-line-strong); opacity: .75; }
 .panel-card .cap { font-size: var(--hl-fs-xs); color: var(--hl-ink-soft); letter-spacing: var(--hl-ls-label); text-transform: uppercase; }
 .big-value { font-size: clamp(2.25rem, 8vw, 4rem); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .big-value .unit { font-size: .4em; font-weight: 500; color: var(--hl-ink-soft); margin-left: .25em; }

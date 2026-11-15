@@ -595,7 +595,7 @@ export interface WireSnapshot { last: unknown; at: string; count: number; histor
 
 export interface DiagramDescription extends DiagramSummary {
   terminals: PanelTerminal[];
-  panel: { controls: Record<string, unknown>; indicators: Record<string, unknown>; charts: Record<string, PanelChart> };
+  panel: { controls: Record<string, unknown>; indicators: Record<string, unknown>; charts: Record<string, PanelChart>; attributes?: Record<string, Record<string, unknown>> };
   run?: { id: string; state: string; error?: string; waiting?: string[]; nodeRuns: number; errors: number };
   breakpoints: string[];
   probes: string[];

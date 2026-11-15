@@ -21,10 +21,14 @@ type Panel struct {
 	inds     map[string]any
 	charts   map[string]*Chart
 	terms    map[string]*DNode
+	// attrs is what the diagram has done to a panel object from inside the run:
+	// whether it shows, whether it takes input, its colour, label and range.
+	attrs map[string]map[string]any
 
 	// What changed since the last flush, which is what goes out as one event.
 	dirtyInds   map[string]any
 	dirtyCharts map[string]chartDelta
+	dirtyAttrs  map[string]map[string]any
 	publish     func(map[string]any)
 }
 
@@ -51,6 +55,7 @@ func newPanel(id string, publish func(map[string]any)) *Panel {
 	return &Panel{
 		id: id, controls: map[string]any{}, inds: map[string]any{}, charts: map[string]*Chart{},
 		terms: map[string]*DNode{}, dirtyInds: map[string]any{}, dirtyCharts: map[string]chartDelta{},
+		attrs: map[string]map[string]any{}, dirtyAttrs: map[string]map[string]any{},
 		publish: publish,
 	}
 }
@@ -68,6 +73,9 @@ func (p *Panel) begin(terms []*DNode) {
 	p.charts = map[string]*Chart{}
 	p.dirtyInds = map[string]any{}
 	p.dirtyCharts = map[string]chartDelta{}
+	// A run starts from the panel as it was designed.
+	p.attrs = map[string]map[string]any{}
+	p.dirtyAttrs = map[string]map[string]any{}
 	for id, t := range p.terms {
 		switch t.Type {
 		case "dia-chart":
@@ -115,6 +123,12 @@ func (p *Panel) SetControl(id string, v any) (any, error) {
 	p.mu.Unlock()
 	if !ok || t.Type != "dia-control" {
 		return nil, fmt.Errorf("%q is not a control on this panel", id)
+	}
+	p.mu.Lock()
+	off := p.attrs[id]["enabled"] == false
+	p.mu.Unlock()
+	if off {
+		return nil, fmt.Errorf("the control %q is switched off by the diagram", strProp(t.Raw, "label", id))
 	}
 	v, err := coerceControl(t.Raw, v)
 	if err != nil {
@@ -181,18 +195,56 @@ func (p *Panel) PutChart(id string, x, y []float64) {
 	}
 }
 
+// SetAttr changes one property of a panel object for the rest of the run and tells
+// everyone watching. The object is named by its label, or its id.
+func (p *Panel) SetAttr(target, prop string, v any) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	terms := make([]*DNode, 0, len(p.terms))
+	for _, t := range p.terms {
+		terms = append(terms, t)
+	}
+	t, err := ResolveTerminal(terms, target)
+	if err != nil {
+		return err
+	}
+	v, err = coerceAttr(prop, v)
+	if err != nil {
+		return err
+	}
+	if p.attrs[t.ID] == nil {
+		p.attrs[t.ID] = map[string]any{}
+	}
+	if p.dirtyAttrs[t.ID] == nil {
+		p.dirtyAttrs[t.ID] = map[string]any{}
+	}
+	p.attrs[t.ID][prop] = v
+	p.dirtyAttrs[t.ID][prop] = v
+	return nil
+}
+
 // PanelSnapshot is the whole panel, for a browser that has just opened it.
 type PanelSnapshot struct {
 	Controls   map[string]any    `json:"controls"`
 	Indicators map[string]any    `json:"indicators"`
 	Charts     map[string]*Chart `json:"charts"`
+	// Attributes is what the run has done to panel objects: visible, enabled,
+	// color, label, min and max, by object id.
+	Attributes map[string]map[string]any `json:"attributes"`
 }
 
 // Snapshot copies the panel's current state.
 func (p *Panel) Snapshot() PanelSnapshot {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	s := PanelSnapshot{Controls: map[string]any{}, Indicators: map[string]any{}, Charts: map[string]*Chart{}}
+	s := PanelSnapshot{Controls: map[string]any{}, Indicators: map[string]any{}, Charts: map[string]*Chart{}, Attributes: map[string]map[string]any{}}
+	for id, a := range p.attrs {
+		c := map[string]any{}
+		for k, v := range a {
+			c[k] = v
+		}
+		s.Attributes[id] = c
+	}
 	for k, v := range p.controls {
 		s.Controls[k] = v
 	}
@@ -226,13 +278,17 @@ func (p *Panel) flushLoop(ctx context.Context) {
 
 func (p *Panel) flush() {
 	p.mu.Lock()
-	if len(p.dirtyInds) == 0 && len(p.dirtyCharts) == 0 {
+	if len(p.dirtyInds) == 0 && len(p.dirtyCharts) == 0 && len(p.dirtyAttrs) == 0 {
 		p.mu.Unlock()
 		return
 	}
 	data := map[string]any{"indicators": p.dirtyInds, "charts": p.dirtyCharts}
+	if len(p.dirtyAttrs) > 0 {
+		data["attributes"] = p.dirtyAttrs
+	}
 	p.dirtyInds = map[string]any{}
 	p.dirtyCharts = map[string]chartDelta{}
+	p.dirtyAttrs = map[string]map[string]any{}
 	p.mu.Unlock()
 	if p.publish != nil {
 		p.publish(data)
