@@ -269,3 +269,13 @@ A waveform is a block of evenly spaced samples that knows when it started and ho
 ## Sub-diagrams
 
 `dia-sub` is a diagram used as a node: its inputs and outputs are the connector, each input a `dia-body-in` of that name in its body and each output a `dia-body-out`. An input is required unless its name ends in `?` (optional) or `~` (recommended: it runs without it and deploy warns when it is not wired). Select nodes and make a sub-diagram from them (`POST /diagrams/{id}/sub`) and the nodes move into a new body tab, a `dia-sub` takes their place, and the connector is worked out from the wires that cross the edge of the selection: an input for each source output that feeds the selection, an output for each selected output that feeds the nodes outside. The wires outside are reconnected, so a run gives the answers it gave before.
+
+## Shared record types
+
+A record type is named once, on a diagram tab's settings under `types`, and every `dia-bundle` or `dia-field` that sets `shape` to its name is checked against that one definition:
+
+```json
+{"types": {"Reading": {"fields": {"pressure": "number", "ok": "boolean", "state": {"enum": ["idle", "run"]}}}}}
+```
+
+A field is `number`, `integer`, `boolean`, `string`, `timestamp`, `array`, `waveform`, `record:Name` (another shared type) or an enum. Rename a field in the definition and every bundle that still uses the old name is a problem at the next deploy, in the same error list as an unwired input, naming the node and the field. A bundle holds each value to its field's kind when it runs, and the error wire carries a value that does not fit. `Set.Schema` gives the same type as JSON Schema, which is what typed wires check.

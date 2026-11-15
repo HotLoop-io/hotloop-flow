@@ -173,6 +173,8 @@ type Set struct {
 	caseOf map[string]map[string]string
 	// owner maps a body to the diagram you run to run it.
 	owner map[string]string
+	// Types are the shared record types the diagrams define (see types.go).
+	Types map[string]RecordType
 }
 
 // Owner returns the diagram that is run to run this one: itself, unless it is
@@ -302,6 +304,7 @@ func CompileAll(flows *engine.Flows) *Set {
 			own(id, id)
 		}
 	}
+	collectTypes(s)
 	for _, id := range s.Order {
 		d := s.Diagrams[id]
 		for _, nid := range d.Order {
