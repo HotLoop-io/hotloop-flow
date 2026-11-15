@@ -279,3 +279,7 @@ A record type is named once, on a diagram tab's settings under `types`, and ever
 ```
 
 A field is `number`, `integer`, `boolean`, `string`, `timestamp`, `array`, `waveform`, `record:Name` (another shared type) or an enum. Rename a field in the definition and every bundle that still uses the old name is a problem at the next deploy, in the same error list as an unwired input, naming the node and the field. A bundle holds each value to its field's kind when it runs, and the error wire carries a value that does not fit. `Set.Schema` gives the same type as JSON Schema, which is what typed wires check.
+
+## Rotation and retention
+
+`dia-log-text` and `dia-log-tdms` can start a new file when the live one reaches `rotateMB` megabytes or `rotateHours` hours, and keep only the newest `keep` finished files. The finished file takes the log's name with the time it was closed before the extension (`bench.csv` becomes `bench-20261114T120000Z.csv`) and the log goes on in `bench.csv`, with a new header, or the file properties written again for TDMS. Retention deletes only files that match that pattern, never the live log and never a file that merely sits beside it. The age counts from when a run first writes to the file. The text log opens in a spreadsheet and the TDMS log is the binary format for big data.
