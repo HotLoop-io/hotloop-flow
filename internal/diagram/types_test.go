@@ -106,3 +106,19 @@ func TestSharedTypesNestAndEnumerate(t *testing.T) {
 		t.Fatalf("problems %v", d.Problems)
 	}
 }
+
+// A waveform is a field kind: a real one passes, a bare array does not.
+func TestSharedTypeWaveformField(t *testing.T) {
+	set := CompileAll(newFlow(t).tab("d", map[string]any{"types": map[string]any{"Capture": map[string]any{"fields": map[string]any{"v": "waveform"}}}}).flows())
+	w := wave{Dt: 0.001, Y: []float64{1, 2}}.token()
+	if err := set.ValidateRecord("Capture", map[string]any{"v": w}); err != nil {
+		t.Fatal(err)
+	}
+	if err := set.ValidateRecord("Capture", map[string]any{"v": []any{1.0, 2.0}}); err == nil || !strings.Contains(err.Error(), "is not a waveform") {
+		t.Fatalf("an array passed as a waveform: %v", err)
+	}
+	sch, _ := set.Schema("Capture")
+	if sch["properties"].(map[string]any)["v"].(map[string]any)["type"] != "object" {
+		t.Fatalf("schema %v", sch)
+	}
+}

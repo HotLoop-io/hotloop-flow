@@ -14,7 +14,7 @@ import (
 //	{"types": {"Reading": {"fields": {"pressure": "number", "ok": "boolean",
 //	                                  "state": {"enum": ["idle", "run"]}}}}}
 //
-// A field is one of number, integer, boolean, string, timestamp, array,
+// A field is one of number, integer, boolean, string, timestamp, array, waveform,
 // "record:Name" (another shared type) or an enum written as
 // {"enum": [...]}. Change the definition and every use is checked again at the
 // next deploy: a bundle that names a field the type no longer has, or leaves out
@@ -58,13 +58,13 @@ func parseFieldType(v any) (FieldType, error) {
 	switch x := v.(type) {
 	case string:
 		switch x {
-		case "number", "integer", "boolean", "string", "timestamp", "array":
+		case "number", "integer", "boolean", "string", "timestamp", "array", "waveform":
 			return FieldType{Kind: x}, nil
 		}
 		if name, ok := strings.CutPrefix(x, "record:"); ok && name != "" {
 			return FieldType{Kind: "record", Record: name}, nil
 		}
-		return FieldType{}, fmt.Errorf("%q is not a field type (number, integer, boolean, string, timestamp, array, record:Name or {\"enum\": [...]})", x)
+		return FieldType{}, fmt.Errorf("%q is not a field type (number, integer, boolean, string, timestamp, array, waveform, record:Name or {\"enum\": [...]})", x)
 	case map[string]any:
 		if e, ok := x["enum"].([]any); ok && len(e) > 0 {
 			ft := FieldType{Kind: "enum"}
@@ -162,6 +162,8 @@ func (s *Set) fieldSchema(f FieldType) map[string]any {
 		return map[string]any{"type": "string", "format": "date-time"}
 	case "array":
 		return map[string]any{"type": "array"}
+	case "waveform":
+		return map[string]any{"type": "object", "required": []any{"type", "dt", "y"}, "properties": map[string]any{"type": map[string]any{"const": waveType}}}
 	case "enum":
 		e := make([]any, len(f.Enum))
 		for i, v := range f.Enum {
@@ -230,6 +232,10 @@ func (s *Set) validateField(f FieldType, v any) error {
 	case "array":
 		if _, ok := v.([]any); !ok {
 			return fmt.Errorf("%v is not an array", cell(v))
+		}
+	case "waveform":
+		if _, ok := asWave(v); !ok {
+			return fmt.Errorf("%v is not a waveform", cell(v))
 		}
 	case "enum":
 		str, _ := v.(string)
