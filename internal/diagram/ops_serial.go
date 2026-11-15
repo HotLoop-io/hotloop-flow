@@ -288,11 +288,13 @@ func init() {
 			Type: "dia-serial-write", Color: "#bfd9c9", Icon: "serial", PaletteLabel: "serial write", LabelProp: "terminator",
 			InputPorts: []string{"session", "data", "err?"}, OutputPorts: []string{"session", "err"},
 			Props: []node.Prop{prop("terminator", "Add at the end", node.PropString, `\r\n`)},
-			Help:  "Writes text to a serial session, then the terminator. Hands the session on, so a read can be wired after it.",
+			Help:  "Writes text to a serial session, then the terminator. Hands the session on, so a read can be wired after it. Writing to an instrument is off until that instrument's writes are switched on by someone with the instrument.write permission, and a write while they are off is an error with the reason; deploy says which instruments a diagram would write to.",
 		},
+		WritesInstrument: func(*DNode) bool { return true },
+		Warn:             warnWrites(func(*DNode) bool { return true }),
 		New: func(raw map[string]any) (Op, error) {
 			term := unescape(strProp(raw, "terminator", `\r\n`))
-			return opFunc(func(_ context.Context, _ *Ctx, in map[string]any) (map[string]any, error) {
+			return opFunc(func(_ context.Context, rc *Ctx, in map[string]any) (map[string]any, error) {
 				s, ok := in["session"].(*serialSession)
 				if !ok {
 					return nil, &Fault{Code: CodeBadInput, Source: "the session input is not a serial session"}
@@ -300,6 +302,9 @@ func init() {
 				text, ok := in["data"].(string)
 				if !ok {
 					return nil, &Fault{Code: CodeBadInput, Source: "the data input is not text"}
+				}
+				if err := rc.Run.mgr.guardWrite(rc, s.id(), text); err != nil {
+					return nil, err
 				}
 				if err := s.write(append([]byte(text), term...)); err != nil {
 					return nil, err

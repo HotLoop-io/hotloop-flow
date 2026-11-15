@@ -41,10 +41,16 @@ const (
 	DiagramStop    = "diagram.stop"
 	DiagramControl = "diagram.control"
 	DiagramDebug   = "diagram.debug"
-	TestsSaved     = "tests.saved"
-	MFAEnabled     = "mfa.enabled"
-	MFADisabled    = "mfa.disabled"
-	MFAReset       = "mfa.reset"
+	// InstrumentSwitch is somebody turning an instrument's writes on or off, and
+	// InstrumentWrite and InstrumentRefused are a diagram's write to one that went
+	// through and one that was refused.
+	InstrumentSwitch  = "instrument.switch"
+	InstrumentWrite   = "instrument.write"
+	InstrumentRefused = "instrument.refused"
+	TestsSaved        = "tests.saved"
+	MFAEnabled        = "mfa.enabled"
+	MFADisabled       = "mfa.disabled"
+	MFAReset          = "mfa.reset"
 	// MFAFailed sits under login. so ?event=login. shows every way a sign-in
 	// went wrong in one list.
 	MFAFailed = "login.mfa_failed"

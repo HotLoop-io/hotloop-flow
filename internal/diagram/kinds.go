@@ -38,6 +38,10 @@ type Kind struct {
 	// Cases, when set, makes the node a case structure: it lists the cases the
 	// node has and the diagram each one runs, instead of one body.
 	Cases func(raw map[string]any) []CaseBody
+	// WritesInstrument says whether a node of this type, with these settings,
+	// writes to an instrument. Deploy lists the instruments such nodes would write
+	// to, and a run asks the instrument's write switch before each write.
+	WritesInstrument func(n *DNode) bool
 	// Structure is true for a node that runs a body diagram.
 	Structure bool
 	// Terminal is true for a control or an indicator: something on the panel.
