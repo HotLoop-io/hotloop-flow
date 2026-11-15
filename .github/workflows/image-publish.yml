@@ -77,7 +77,7 @@ jobs:
         # registers qemu-user for arm64 with the kernel, and the F flag lets it
         # work inside a build container. Pinned to a release.
         run: |
-          sudo podman run --privileged --rm ghcr.io/hotloop-io/mirror/tonistiigi/binfmt:qemu-v10.2.3-68 --install arm64
+          sudo env -u XDG_RUNTIME_DIR podman run --privileged --rm ghcr.io/hotloop-io/mirror/tonistiigi/binfmt:qemu-v10.2.3-68 --install arm64
           test -e /proc/sys/fs/binfmt_misc/qemu-aarch64
           head -3 /proc/sys/fs/binfmt_misc/qemu-aarch64
 
