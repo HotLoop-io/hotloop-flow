@@ -311,3 +311,7 @@ The canvas zooms from 5 percent to 400 percent about the pointer, and reads its 
 ## Symbols
 
 Every FlowLab node type is drawn with a symbol of our own at the middle of its body (a plus for math, a sigma for statistics, a sine for a waveform, a plug for a serial port), beside its text label. They are plain strokes drawn in `web/src/lib/symbols.ts`, not an icon font or anyone's artwork, and a test fails when a diagram node type names an icon that is not drawn.
+
+## Writing to equipment: the write gate
+
+A diagram commands equipment one way: `dia-hotloop-write`. It sends its value to a tag in HotLoop (`device/tag`, set on the node or wired in) through HotLoop's write gate, which decides in its own order that writes are switched on, that the tag is armed and that the value is in range. Flow never writes to a machine itself. HotLoop records every attempt, refused or not, with the reason `flow:<diagram>/<node id>`, so its audit trail names the diagram and the node. A refusal is an error on the node's error wire with the gate's own reason (code 5006), and so is a HotLoop that cannot be reached; in both cases the write does not happen, and the node refuses to deploy without a HotLoop selected. The raw serial and instrument nodes talk to bench instruments (meters, supplies, loads), which have no tag in HotLoop; equipment on a plant's network is written through this node.
