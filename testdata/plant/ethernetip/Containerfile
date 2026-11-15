@@ -5,7 +5,8 @@
 # read a tag the way libplctag does and compare it with what Flow wrote.
 # libplctag is MPL-2.0 or LGPL-2.0+; both run here as separate programs and
 # nothing from them is linked into Flow.
-FROM docker.io/library/debian:13-slim AS build
+ARG DEBIAN_IMAGE=docker.io/library/debian:13-slim
+FROM ${DEBIAN_IMAGE} AS build
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake git ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 RUN git clone -q --branch v2.7.2 https://github.com/libplctag/libplctag.git /src \
@@ -15,7 +16,7 @@ RUN git clone -q --branch v2.7.2 https://github.com/libplctag/libplctag.git /src
  && cp "$(find /build -name ab_server -type f | head -1)" /ab_server \
  && cp "$(find /build -name tag_rw2 -type f | head -1)" /tag_rw2
 
-FROM docker.io/library/debian:13-slim
+FROM ${DEBIAN_IMAGE}
 COPY --from=build /ab_server /usr/local/bin/ab_server
 COPY --from=build /tag_rw2 /usr/local/bin/tag_rw2
 EXPOSE 44818

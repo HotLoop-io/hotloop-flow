@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  packages: write # fills the image mirror (build/mirror-image.sh); a fork's token cannot, and falls back
 
 env:
   GO_VERSION: "1.26.4"
@@ -23,6 +24,23 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+
+      - name: Fetch the images this job runs from the mirror
+        # Docker Hub rate limits anonymous pulls per address and the runners
+        # share addresses, so CI names every image by its place in the mirror
+        # (build/mirror-image.sh says how it is filled).
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          build/mirror-image.sh \
+            ghcr.io/hotloop-io/mirror/tinygo/tinygo:0.43.0 \
+            ghcr.io/hotloop-io/mirror/library/eclipse-mosquitto:2.1.2-alpine \
+            ghcr.io/hotloop-io/mirror/library/eclipse-mosquitto:2 \
+            ghcr.io/hotloop-io/mirror/otel/opentelemetry-collector:0.163.1 \
+            ghcr.io/hotloop-io/mirror/oitc/modbus-server:2.3.0 \
+            ghcr.io/hotloop-io/mirror/library/postgres:17 \
+            ghcr.io/hotloop-io/mirror/library/python:3.13-slim \
+            ghcr.io/hotloop-io/mirror/library/debian:13-slim
 
       - name: go mod tidy is committed
         run: |
@@ -71,7 +89,7 @@ jobs:
 
           # tinygo/tinygo:0.43.0
           sudo podman run --rm -v "$PWD/examples/plugins/stamp:/src:ro" -v "$OUT:/out" -w /src \
-            docker.io/tinygo/tinygo@sha256:3470986dbce0b43cc5c590d46b8770f656528bc3e9f29267214d464c0fbbe9c5 \
+            ghcr.io/hotloop-io/mirror/tinygo/tinygo:0.43.0 \
             tinygo build -target=wasip1 -buildmode=c-shared -o /out/stamp.wasm .
 
           ls -l "$OUT"
@@ -110,7 +128,7 @@ jobs:
         # which a fake broker could only pretend to answer.
         run: |
           sudo podman run -d --name mosquitto -p 1883:1883 \
-            docker.io/library/eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
+            ghcr.io/hotloop-io/mirror/library/eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
           for i in $(seq 1 30); do nc -z localhost 1883 && exit 0; sleep 1; done
           sudo podman logs mosquitto; exit 1
 
@@ -141,10 +159,10 @@ jobs:
             echo 'password_file /mosquitto/config/passwd'
           } > "$M/mosquitto.conf"
           touch "$M/passwd"
-          sudo podman run --rm -v "$M:/mosquitto/config" docker.io/library/eclipse-mosquitto:2 \
+          sudo podman run --rm -v "$M:/mosquitto/config" ghcr.io/hotloop-io/mirror/library/eclipse-mosquitto:2 \
             mosquitto_passwd -b /mosquitto/config/passwd line3 ci-broker-pass
           sudo chown 1883:1883 "$M/passwd" && sudo chmod 0700 "$M/passwd"
-          sudo podman run -d --name mosquitto-auth -p 127.0.0.1:1884:1883 -v "$M:/mosquitto/config" docker.io/library/eclipse-mosquitto:2
+          sudo podman run -d --name mosquitto-auth -p 127.0.0.1:1884:1883 -v "$M:/mosquitto/config" ghcr.io/hotloop-io/mirror/library/eclipse-mosquitto:2
           for i in $(seq 1 20); do (echo > /dev/tcp/127.0.0.1/1884) 2>/dev/null && break; sleep 1; done
           sudo podman logs mosquitto-auth
 
@@ -155,7 +173,7 @@ jobs:
         # it accepts into a file the test reads back. The image is pinned to a
         # release, so a collector change shows up as a version bump in a PR.
         run: |
-          sudo podman run -d --name otel -p 4318:4318             -v "$PWD/testdata/otel/collector.yaml:/etc/otelcol/config.yaml:ro"             docker.io/otel/opentelemetry-collector:0.163.1 --config /etc/otelcol/config.yaml
+          sudo podman run -d --name otel -p 4318:4318             -v "$PWD/testdata/otel/collector.yaml:/etc/otelcol/config.yaml:ro"             ghcr.io/hotloop-io/mirror/otel/opentelemetry-collector:0.163.1 --config /etc/otelcol/config.yaml
           : > "$RUNNER_TEMP/otel.log"
           nohup sudo podman logs -f otel > "$RUNNER_TEMP/otel.log" 2>&1 &
           for _ in $(seq 1 30); do grep -q "Everything is ready" "$RUNNER_TEMP/otel.log" && exit 0; sleep 1; done
@@ -171,7 +189,7 @@ jobs:
         run: |
           sudo podman run -d --name modbus -p 5020:5020 \
             -v "$PWD/testdata/plant/modbus_server.json:/app/modbus_server.json:ro" \
-            docker.io/oitc/modbus-server:2.3.0
+            ghcr.io/hotloop-io/mirror/oitc/modbus-server:2.3.0
           sudo podman run -d --name opcplc -p 4840:4840 \
             -v "$PWD/testdata/plant/opcplc_nodes.json:/cfg/nodes.json:ro" \
             mcr.microsoft.com/iotedge/opc-plc:2.15.11 \
@@ -195,7 +213,7 @@ jobs:
         run: |
           sudo podman run -d --name pg -p 127.0.0.1:15432:5432 \
             -e POSTGRES_USER=flow -e POSTGRES_PASSWORD=flowtest -e POSTGRES_DB=flowtest \
-            docker.io/library/postgres:17
+            ghcr.io/hotloop-io/mirror/library/postgres:17
           for p in 15432; do
             for i in $(seq 1 90); do nc -z 127.0.0.1 $p && break; sleep 1; done
             nc -z 127.0.0.1 $p || { sudo podman logs pg; echo "::error::nothing on $p"; exit 1; }
@@ -209,7 +227,7 @@ jobs:
         # next needs a second broker, with no password, on its own port.
         run: |
           sudo podman run -d --name mosquitto2 -p 1885:1883 \
-            docker.io/library/eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
+            ghcr.io/hotloop-io/mirror/library/eclipse-mosquitto:2.1.2-alpine mosquitto -c /mosquitto-no-auth.conf
           for i in $(seq 1 30); do nc -z localhost 1885 && exit 0; sleep 1; done
           sudo podman logs mosquitto2; exit 1
 
@@ -224,8 +242,8 @@ jobs:
         # because ab_server matches them with their case and the client sends
         # them lower case.
         run: |
-          sudo podman build -q -t localhost/flow-s7sim testdata/plant/s7
-          sudo podman build -q -t localhost/flow-enipsim testdata/plant/ethernetip
+          sudo podman build -q -t localhost/flow-s7sim --build-arg PYTHON_IMAGE=ghcr.io/hotloop-io/mirror/library/python:3.13-slim testdata/plant/s7
+          sudo podman build -q -t localhost/flow-enipsim --build-arg DEBIAN_IMAGE=ghcr.io/hotloop-io/mirror/library/debian:13-slim testdata/plant/ethernetip
           sudo podman run -d --name s7sim -p 1102:102 localhost/flow-s7sim
           sudo podman run -d --name enipsim -p 44818:44818 localhost/flow-enipsim \
             --plc=ControlLogix --path=1,0 \
@@ -845,8 +863,17 @@ jobs:
       - name: Build the image
         # The license gate lives in the Containerfile, so the only way to know a
         # PR didn't pull in a GPL module or an unlicensed npm package is to
-        # build the image. Before this job the first build was the release.
-        run: podman build -t localhost/hotloop-flow:ci .
+        # build the image. Before this job the first build was the release. Its
+        # base images come from the mirror, not from Docker Hub (see
+        # build/mirror-image.sh).
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PODMAN: podman
+        run: |
+          build/mirror-image.sh ghcr.io/hotloop-io/mirror/library/node:24-alpine ghcr.io/hotloop-io/mirror/library/golang:1.26.4
+          podman build -t localhost/hotloop-flow:ci \
+            --build-arg NODE_IMAGE=ghcr.io/hotloop-io/mirror/library/node:24-alpine \
+            --build-arg GO_IMAGE=ghcr.io/hotloop-io/mirror/library/golang:1.26.4 .
 
       - name: THIRD_PARTY_LICENSES is in the image and covers both halves
         run: |

@@ -7,7 +7,9 @@
 # ── Editor bundle ────────────────────────────────────────────────────────────
 # Separate stage so the Go layers do not rebuild when only the editor changes,
 # and so Node never appears in the runtime image.
-FROM node:24-alpine AS editor
+ARG NODE_IMAGE=docker.io/library/node:24-alpine
+ARG GO_IMAGE=docker.io/library/golang:1.26.4
+FROM ${NODE_IMAGE} AS editor
 
 WORKDIR /build
 # Copy the manifests first so the dependency layer caches independently of the
@@ -27,7 +29,7 @@ RUN npm run build
 RUN node third-party-licenses.mjs meta.json /build/THIRD_PARTY_LICENSES.editor
 
 # ── Go build ─────────────────────────────────────────────────────────────────
-FROM golang:1.26.4 AS builder
+FROM ${GO_IMAGE} AS builder
 
 WORKDIR /src
 

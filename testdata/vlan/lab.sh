@@ -31,7 +31,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/../.." && pwd)
 ctl=/run/flxlab
-image=${LAB_IMAGE:-docker.io/oitc/modbus-server:2.3.0}
+image=${LAB_IMAGE:-ghcr.io/hotloop-io/mirror/oitc/modbus-server:2.3.0}
 port=${LAB_PORT:-5020}
 owner=${LAB_OWNER:-${SUDO_USER:-$(id -un)}}
 
