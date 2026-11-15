@@ -148,15 +148,25 @@ func init() {
 		Descriptor: node.Descriptor{
 			Type: "dia-bundle", Color: "#d9d2c3", Icon: "bundle", PaletteLabel: "bundle", LabelProp: "names",
 			InputPorts: []string{"@names", "err?"}, OutputPorts: []string{"record", "err"},
-			Props: []node.Prop{prop("names", "Field names, comma separated", node.PropString, "a,b")},
-			Help:  "Gathers values into one record with a named field for each input.",
+			Props: []node.Prop{
+				prop("names", "Field names, comma separated", node.PropString, "a,b"),
+				prop("shape", "Shared type (optional)", node.PropString, ""),
+			},
+			Help: "Gathers values into one record with a named field for each input. With a shared type named, the field names must be the type's fields, deploy says so when they are not, and a value of the wrong kind is an error on the error wire.",
 		},
+		Check: checkBundleType,
 		New: func(raw map[string]any) (Op, error) {
 			names := splitList(strProp(raw, "names", ""))
-			return opFunc(func(_ context.Context, _ *Ctx, in map[string]any) (map[string]any, error) {
+			typ := strProp(raw, "shape", "")
+			return opFunc(func(_ context.Context, rc *Ctx, in map[string]any) (map[string]any, error) {
 				rec := make(map[string]any, len(names))
 				for _, n := range names {
 					rec[n] = in[n]
+				}
+				if typ != "" {
+					if err := rc.Run.set.ValidateRecord(typ, rec); err != nil {
+						return nil, &Fault{Code: CodeBadInput, Source: err.Error()}
+					}
 				}
 				return map[string]any{"record": rec}, nil
 			}), nil
@@ -167,9 +177,13 @@ func init() {
 		Descriptor: node.Descriptor{
 			Type: "dia-field", Color: "#d9d2c3", Icon: "field", PaletteLabel: "field", LabelProp: "field",
 			InputPorts: []string{"record"}, OutputPorts: []string{"value"},
-			Props: []node.Prop{prop("field", "Field", node.PropString, "")},
-			Help:  "Takes one field out of a record.",
+			Props: []node.Prop{
+				prop("field", "Field", node.PropString, ""),
+				prop("shape", "Shared type (optional)", node.PropString, ""),
+			},
+			Help: "Takes one field out of a record. With a shared type named, deploy says so when the type has no such field.",
 		},
+		Check: checkFieldType,
 		New: func(raw map[string]any) (Op, error) {
 			f := strProp(raw, "field", "")
 			return opFunc(func(_ context.Context, _ *Ctx, in map[string]any) (map[string]any, error) {
