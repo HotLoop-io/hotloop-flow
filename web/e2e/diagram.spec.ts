@@ -37,6 +37,9 @@ test('a diagram is run from the bar and its panel shows the answer', async ({ pa
   await expect(page.locator('[data-test="diagram-bar"]')).toBeVisible();
   // Named ports are drawn on the node, with their names.
   await expect(canvasNode(page, 'loop').locator('.port-name')).not.toHaveCount(0);
+  // B4: and the symbol its type is drawn with, our own, at the middle of the body.
+  await expect(canvasNode(page, 'loop').locator('.node-symbol[data-symbol="loop"]')).toHaveCount(1);
+  await expect(canvasNode(page, 'total').locator('.node-symbol[data-symbol="indicator"]')).toHaveCount(1);
   await expect(page.locator('[data-test="diagram-problems"]')).toHaveCount(0);
 
   // B2: a wire of a diagram is named at its middle, by the output it comes from.

@@ -307,3 +307,7 @@ The canvas zooms from 5 percent to 400 percent about the pointer, and reads its 
 ## Setting a panel object by name
 
 `dia-panel-set` changes one property of a control or an indicator while the diagram runs, by the object's label (or its id): `visible` and `enabled` take true or false, `color` takes red, amber, green, blue, grey or default, `label` takes text, and `min` and `max` take a number for a number control. A disabled control refuses what an operator sets, a hidden object is not drawn, and the panel an operator has open follows. A name that matches no object, or more than one, is a problem at deploy when it is typed on the node and an error on the wire when it is wired in, and a run starts from the panel as it was designed.
+
+## Symbols
+
+Every FlowLab node type is drawn with a symbol of our own at the middle of its body (a plus for math, a sigma for statistics, a sine for a waveform, a plug for a serial port), beside its text label. They are plain strokes drawn in `web/src/lib/symbols.ts`, not an icon font or anyone's artwork, and a test fails when a diagram node type names an icon that is not drawn.

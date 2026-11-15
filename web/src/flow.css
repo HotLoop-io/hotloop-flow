@@ -191,6 +191,7 @@ kbd { font: 600 var(--hl-fs-2xs)/1 var(--hl-font-mono); color: var(--hl-ink-soft
 .node.disabled .node-body { stroke-dasharray: 4 3; }
 .node.unknown .node-body { stroke-dasharray: 4 3; stroke: var(--hl-danger); }
 .node-strip { pointer-events: none; }
+.node-symbol { fill: none; stroke: var(--hl-ink-soft); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; opacity: .55; pointer-events: none; }
 .node-label { fill: var(--hl-ink); font-size: 12px; font-weight: 600; font-family: var(--hl-font); pointer-events: none; user-select: none; }
 .port { fill: var(--hl-card); stroke: var(--hl-line-strong); stroke-width: 1.5; }
 .port-out { cursor: crosshair; }
