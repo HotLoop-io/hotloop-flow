@@ -299,3 +299,7 @@ The tab bar's **Tidy layout** lays out the nodes on view so data reads left to r
 ## Wire names
 
 A wire of a diagram is named at its middle, by the output it comes from (`sum`, `result`, `iterations`), beside its type when either end declares one, and hovering it still shows the last value it carried.
+
+## Zoom
+
+The canvas zooms from 5 percent to 400 percent about the pointer, and reads its zoom as `data-zoom` on the canvas.

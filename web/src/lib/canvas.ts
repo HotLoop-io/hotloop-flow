@@ -120,6 +120,7 @@ export class Canvas {
 
   private applyView(): void {
     this.svg.setAttribute('viewBox', `${this.view.x} ${this.view.y} ${this.view.w} ${this.view.h}`);
+    this.svg.setAttribute('data-zoom', String(Math.round(100 / this.scale)));
     this.renderGrid();
   }
 
@@ -390,7 +391,9 @@ export class Canvas {
     // Zoom about the cursor rather than the origin, so the thing under the
     // pointer stays under the pointer.
     const at = this.toCanvas(e.clientX, e.clientY);
-    const nextW = clamp(this.view.w * factor, 300, 12000);
+    // From 5 percent to 400 percent of the size the nodes are drawn at.
+    const px = this.svg.getBoundingClientRect().width || 1;
+    const nextW = clamp(this.view.w * factor, px / ZOOM_MAX, px / ZOOM_MIN);
     const applied = nextW / this.view.w;
 
     this.view.x = at.x - (at.x - this.view.x) * applied;
@@ -963,6 +966,10 @@ export class Canvas {
     }
   }
 }
+
+/** The nearest and the farthest the canvas zooms: 400 and 5 percent. */
+const ZOOM_MAX = 4;
+const ZOOM_MIN = 0.05;
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));

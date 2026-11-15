@@ -187,3 +187,17 @@ test('the selection of a diagram is cut out into a sub-diagram', async ({ page, 
   const wire = page.locator('.canvas-host > .canvas path.wire[data-to="out"]');
   await expect(wire.locator('title')).toHaveText('5');
 });
+
+// B1: the canvas zooms from 5 to 400 percent, about the pointer, and says where it is.
+test('the canvas zooms out past 25 percent and in to 400 percent', async ({ page, request }) => {
+  await seed(request, counter());
+  await signIn(page, 'loop');
+  const zoom = async () => Number(await page.locator('.canvas-host > .canvas').getAttribute('data-zoom'));
+  const box = (await page.locator('.canvas-host > .canvas').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  for (let i = 0; i < 60; i++) await page.mouse.wheel(0, 120);
+  await expect.poll(zoom).toBeLessThanOrEqual(25);
+  expect(await zoom()).toBeGreaterThanOrEqual(5);
+  for (let i = 0; i < 120; i++) await page.mouse.wheel(0, -120);
+  await expect.poll(zoom).toBe(400);
+});
