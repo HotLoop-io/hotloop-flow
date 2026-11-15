@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -24,6 +25,7 @@ func (s *Server) diagramRoutes() {
 	s.mux.Handle("POST "+s.path("/diagrams/{id}/run"), run(s.handleDiagramRun))
 	s.mux.Handle("POST "+s.path("/diagrams/{id}/stop"), run(s.handleDiagramStop))
 	s.mux.Handle("POST "+s.path("/diagrams/{id}/debug"), run(s.handleDiagramDebug))
+	s.mux.Handle("POST "+s.path("/diagrams/{id}/sub"), read(s.handleDiagramSub))
 	s.mux.Handle("PUT "+s.path("/diagrams/{id}/controls/{node}"), run(s.handleDiagramControl))
 	s.mux.Handle("PUT "+s.path("/diagrams/{id}/breakpoints"), run(s.handleDiagramBreakpoints))
 	s.mux.Handle("PUT "+s.path("/diagrams/{id}/probes"), run(s.handleDiagramProbes))
@@ -188,4 +190,26 @@ func (s *Server) handleDiagramProbes(w http.ResponseWriter, r *http.Request) {
 	}
 	s.deps.Diagrams.SetProbes(id, body.Wires, body.Depth)
 	writeJSON(w, http.StatusOK, map[string]any{"wires": body.Wires})
+}
+
+// handleDiagramSub makes a sub-diagram from some nodes of the flow file the
+// editor sends and sends the new flow file back. Nothing is saved or deployed:
+// the editor loads the answer as an edit, so it can be undone like any other. It
+// reads and computes only, so it needs no more than a view of the status.
+func (s *Server) handleDiagramSub(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Flows json.RawMessage `json:"flows"`
+		Nodes []string        `json:"nodes"`
+		Name  string          `json:"name"`
+	}
+	if err := readJSON(r, s.deps.Config.Server.MaxRequestBytes, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	out, err := diagram.ExtractSub(body.Flows, r.PathValue("id"), body.Nodes, body.Name)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"flows": json.RawMessage(out)})
 }

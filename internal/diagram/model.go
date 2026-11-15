@@ -69,7 +69,16 @@ func ExpandPorts(spec []string, raw map[string]any) []Port {
 		if strings.HasPrefix(s, "@") {
 			v, _ := raw[strings.TrimPrefix(s, "@")].(string)
 			for _, name := range strings.Split(v, ",") {
-				add(name, opt)
+				// A name can mark itself: "pressure?" is optional and "limit~" is
+				// recommended, which is optional with a warning at deploy when it
+				// has no wire. The name of the port is the name without the mark.
+				name = strings.TrimSpace(name)
+				mark := ""
+				if strings.HasSuffix(name, "?") || strings.HasSuffix(name, "~") {
+					mark = name[len(name)-1:]
+					name = name[:len(name)-1]
+				}
+				add(name, opt || mark != "")
 			}
 			continue
 		}
