@@ -262,13 +262,23 @@ func outageRun(t *testing.T, stalled bool) {
 	// unconfirmed send, because the client may still deliver it after the outbox
 	// stopped waiting. How many sends time out depends on how slow the machine
 	// is, so the bound is the number of unconfirmed sends, not a fixed one.
+	//
+	// And one more. The send that was in flight when the link died may have
+	// reached the broker before its acknowledgement was lost. The client counts
+	// it as unconfirmed, keeps it, and sends it again when the link is back, so
+	// that one send arrives twice by itself: once for the transmission the broker
+	// got and once for the resend (MQTT 3.1.1 section 4.4, a client resends
+	// unacknowledged PUBLISH packets on reconnect, and section 4.3.2, at least
+	// once delivery allows the duplicate). Every send that came after the link
+	// went silent never reached the broker, so it can arrive only once. That is
+	// the whole allowance: unconfirmed sends plus the one in flight.
 	unconfirmed := app.diagrams.OutboxUnconfirmedSends("body", "pub")
-	if int64(dups) > unconfirmed {
-		t.Fatalf("%d messages arrived twice (%v) but only %d sends were unconfirmed; a duplicate with no unconfirmed send is a bug", dups, dupAt, unconfirmed)
+	if int64(dups) > unconfirmed+1 {
+		t.Fatalf("%d messages arrived twice (%v) but only %d sends were unconfirmed, and at most one of them could have reached the broker before the link died; a duplicate beyond that is a bug", dups, dupAt, unconfirmed)
 	}
 	direct, spilled, drained, depth, ok := app.diagrams.OutboxStats("body", "pub")
 	if !ok || spilled == 0 || drained == 0 || depth != 0 {
 		t.Fatalf("outbox: ok=%v direct=%d spilled=%d drained=%d depth=%d; the outage should have spilled to disk and drained", ok, direct, spilled, drained, depth)
 	}
-	t.Logf("%d sent straight out, %d went through disk, during the outage and behind it while the queue drained, %d arrived twice, %d sends were unconfirmed", direct, spilled, dups, unconfirmed)
+	t.Logf("%d sent straight out, %d went through disk, during the outage and behind it while the queue drained, %d arrived twice (%v), %d sends were unconfirmed", direct, spilled, dups, dupAt, unconfirmed)
 }
