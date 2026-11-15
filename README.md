@@ -8,7 +8,7 @@ wires in one static binary small enough for a Pi, with a scheduler that doesn't
 fall over when a sensor starts talking faster than the thing reading it.
 
 [![CI](https://github.com/HotLoop-io/hotloop-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/HotLoop-io/hotloop-flow/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-EmberNet%20Source%201.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8)](go.mod)
 
 What that means on a bad night:
@@ -44,7 +44,7 @@ for amd64 (arm64 follows in 2.11.1), the Helm repo is `https://hotloop.io/hotloo
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
 104,000 lines of Go, a little under 40 percent of it tests, 108 node types for messages and 37 for FlowLab diagrams, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
-business use is free through EmberNET, under HotLoop's Business Source License.
+use through EmberNET, business use included, is unrestricted, under HotLoop's EmberNet Source License.
 
 ---
 
@@ -2726,17 +2726,17 @@ send their writes through HotLoop's write gate. All of that is under
 [The plant floor](#the-plant-floor). A Flow with no HotLoop picked shares nothing
 with them but a broker, if you give them one.
 
-Flow is under the same license as those four: HotLoop's Business Source License
-1.1. Home and lab use is free, and so is use by accredited schools and educational institutions, nonprofit organizations and government bodies. Business use is free when it runs through
-[EmberNET](https://embernet.ai), and there is no other business path. Hosting
-Flow as a service for other people, reselling it and embedding it in a product
-you sell are not granted. Unlike the others, Flow's source is public, so you can
+Flow is under the same license as those four: HotLoop's EmberNet Source License
+1.0. Home and lab use is free, and so is use by accredited schools and educational institutions, nonprofit organizations and government bodies. Any use that runs through
+[EmberNET](https://embernet.ai), business use included, is unrestricted. Outside
+EmberNet, hosting Flow as a service for other people, reselling it and embedding
+it in a product you sell are not granted, and other use needs a commercial license. Unlike the others, Flow's source is public, so you can
 read every line you run.
 
 ## License
 
-HotLoop's Business Source License 1.1 (`BUSL-1.1`). It is not an open source
-license, and we won't pretend it is. Each version converts to GPL-3.0 or later four years
+HotLoop's EmberNet Source License 1.0 (`LicenseRef-EmberNet-Source-1.0`). It is not an open source
+license until a version converts, and we won't pretend it is. Each version converts to AGPL-3.0 or later four years
 after it is first made publicly available. [LICENSE](LICENSE) is the legal text
 and the [Terms of Service](https://hotloop.io/terms) cover the rest. A few
 pieces are ported from Node-RED and from the libraries its
