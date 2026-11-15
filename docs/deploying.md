@@ -95,6 +95,13 @@ Idle, the process holds about 16.6 MiB resident (method and command in
 [docs/bench/](bench/README.md#memory)), so `small` schedules on an edge node with
 64Mi to spare.
 
+Flow reads the container's memory limit at start and asks the Go runtime to keep
+its heap under 85% of it, so the collector works harder as the heap nears the
+limit instead of letting it double and being killed. The log says so at boot
+(`memory limit for the collector`). Set `GOMEMLIMIT` yourself and that wins. The
+limit has to leave room for what is live: a flow file of about 13,000 nodes holds
+roughly 800 MiB, so size a plant that big at 3Gi or more with `custom`.
+
 ### Network modes
 
 This is why Flow earns a place on a plant floor at all. A flow engine that can
