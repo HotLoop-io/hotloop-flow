@@ -233,13 +233,14 @@ func TestAModbusReadReachesTheDashboardAndAClickWritesBack(t *testing.T) {
 		return strings.Contains(body, `"id":"gauge"`)
 	})
 	var snapshot string
-	eventually(t, "the dashboard state to carry the float (95.5999...)", func() bool {
+	// The gauge, the numeric and the text are three widgets fed by one message,
+	// and a snapshot taken between them holds some and not the others. Wait for
+	// all three, which is what is asserted next, not for the first of them.
+	eventually(t, "the dashboard state to carry the float (95.5999...) on the gauge, the numeric and the text", func() bool {
 		snapshot = readSnapshot(t, srv.URL+"/ui/api/events")
-		return strings.Contains(snapshot, `"id":"gauge"`) && strings.Contains(snapshot, "95.59")
+		return strings.Contains(snapshot, `"id":"gauge"`) && strings.Contains(snapshot, "95.59") &&
+			strings.Contains(snapshot, `"id":"num"`) && strings.Contains(snapshot, `"id":"txt"`)
 	})
-	if !strings.Contains(snapshot, `"id":"num"`) || !strings.Contains(snapshot, `"id":"txt"`) {
-		t.Fatalf("the numeric and the text did not get the register values: %s", snapshot)
-	}
 
 	// The operator presses Heater 1: the button sends 1 to a modbus-write on coil 1.
 	post := func(body string) int {
