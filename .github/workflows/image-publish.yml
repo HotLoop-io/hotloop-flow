@@ -59,13 +59,25 @@ jobs:
             exit 1
           fi
 
+      - name: Fetch the base images from the mirror
+        # Docker Hub rate limits anonymous pulls per address and the runners share
+        # addresses, so a release names its base images by their place in the
+        # mirror (build/mirror-image.sh says how it is filled).
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          PODMAN=podman build/mirror-image.sh ghcr.io/hotloop-io/mirror/library/node:24-alpine ghcr.io/hotloop-io/mirror/library/golang:1.26.4
+          if [[ "$PLATFORMS" == *arm64* ]]; then
+            build/mirror-image.sh ghcr.io/hotloop-io/mirror/tonistiigi/binfmt:qemu-v10.2.3-68
+          fi
+
       - name: Teach the runner to run arm64
         if: contains(env.PLATFORMS, 'arm64')
         # What the usual qemu setup action does, with Podman: tonistiigi/binfmt
         # registers qemu-user for arm64 with the kernel, and the F flag lets it
         # work inside a build container. Pinned to a release.
         run: |
-          sudo podman run --privileged --rm docker.io/tonistiigi/binfmt:qemu-v10.2.3-68 --install arm64
+          sudo podman run --privileged --rm ghcr.io/hotloop-io/mirror/tonistiigi/binfmt:qemu-v10.2.3-68 --install arm64
           test -e /proc/sys/fs/binfmt_misc/qemu-aarch64
           head -3 /proc/sys/fs/binfmt_misc/qemu-aarch64
 
@@ -92,6 +104,8 @@ jobs:
             podman build \
               --platform "linux/$ARCH" \
               --build-arg "VERSION=$TAG" \
+              --build-arg "NODE_IMAGE=ghcr.io/hotloop-io/mirror/library/node:24-alpine" \
+              --build-arg "GO_IMAGE=ghcr.io/hotloop-io/mirror/library/golang:1.26.4" \
               --label "org.opencontainers.image.version=${TAG#v}" \
               --label "org.opencontainers.image.revision=$REVISION" \
               --label "org.opencontainers.image.created=$CREATED" \
