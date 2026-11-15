@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 	"github.com/HotLoop-io/hotloop-flow/internal/tdms"
@@ -21,6 +23,8 @@ type tdmsLog struct {
 	// waves is the columns whose waveform properties are written, so they go in
 	// once, with the first block, and not on every row.
 	waves map[string]bool
+
+	opened time.Time
 }
 
 type tdmsKind int
@@ -43,14 +47,14 @@ func init() {
 		Descriptor: node.Descriptor{
 			Type: "dia-log-tdms", Color: "#bfd9c9", Icon: "log", PaletteLabel: "log to TDMS file", LabelProp: "path",
 			InputPorts: []string{"row", "err?"}, OutputPorts: []string{"rows", "err"},
-			Props: []node.Prop{
+			Props: append([]node.Prop{
 				{Name: "path", Label: "File", Kind: node.PropString, Required: true, Default: "log.tdms"},
 				prop("group", "Group", node.PropString, "Measurements"),
 				prop("columns", "Columns, comma separated (empty for the record's fields in order of name)", node.PropString, ""),
 				prop("properties", "File properties (JSON object, written when the run starts)", node.PropJSON, "{}"),
 				prop("sync", "Write each row to disk before going on", node.PropBool, true),
-			},
-			Help: "Appends each record it is given to a TDMS file, the format test benches and analysis tools read. Every column of the record is a channel in one group. A number is stored as a 64 bit float, a true or false as a bool, and anything else as text. A column that holds a list of numbers adds all of them, which is how a block of samples goes in. The properties are written on the file when the run starts. A file that already exists is appended to, so runs follow each other in one file, and a file cut short by a power loss is repaired to its last complete row before the new rows go on. With write to disk on, a power cut loses at most the row being written.",
+			}, rotationProps()...),
+			Help: "Appends each record it is given to a TDMS file, the format test benches and analysis tools read. Every column of the record is a channel in one group. A number is stored as a 64 bit float, a true or false as a bool, and anything else as text. A column that holds a list of numbers adds all of them, which is how a block of samples goes in. The properties are written on the file when the run starts. A file that already exists is appended to, so runs follow each other in one file, and a file cut short by a power loss is repaired to its last complete row before the new rows go on. With write to disk on, a power cut loses at most the row being written. It can start a new file when this one reaches a size or an age and keep only the newest finished files: bench.tdms becomes bench-20261114T120000Z.tdms and the log goes on in bench.tdms, with the file properties written again. The age counts from when a run first writes to the file.",
 		},
 		New: func(raw map[string]any) (Op, error) {
 			path := strProp(raw, "path", "")
@@ -60,6 +64,10 @@ func init() {
 			group := strProp(raw, "group", "Measurements")
 			cols := splitList(strProp(raw, "columns", ""))
 			props, err := tdmsFileProps(raw["properties"])
+			if err != nil {
+				return nil, err
+			}
+			rot, err := rotationOf(raw)
 			if err != nil {
 				return nil, err
 			}
@@ -73,6 +81,17 @@ func init() {
 					return nil, &Fault{Code: CodeBadInput, Source: "the row input is not a record"}
 				}
 				lg := rc.Run.Local("tdms:"+rc.Node.ID, func() any { return &tdmsLog{} }).(*tdmsLog)
+				if lg.w != nil {
+					if st, serr := os.Stat(path); serr == nil && rot.due(st.Size(), lg.opened, time.Now()) {
+						if err := lg.Close(); err != nil {
+							return nil, &Fault{Code: CodeFile, Source: err.Error()}
+						}
+						lg.w, lg.columns, lg.kinds, lg.waves = nil, nil, nil, nil
+						if err := rot.finish(path, time.Now()); err != nil {
+							return nil, &Fault{Code: CodeFile, Source: err.Error()}
+						}
+					}
+				}
 				if lg.w == nil {
 					columns := cols
 					if len(columns) == 0 {
@@ -98,7 +117,7 @@ func init() {
 							return nil, &Fault{Code: CodeFile, Source: err.Error()}
 						}
 					}
-					lg.w, lg.columns = w, columns
+					lg.w, lg.columns, lg.opened = w, columns, time.Now()
 					for _, c := range columns {
 						lg.kinds = append(lg.kinds, kindOf(rec[c]))
 					}

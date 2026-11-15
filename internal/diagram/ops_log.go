@@ -23,6 +23,7 @@ type textLog struct {
 	f       *os.File
 	w       *csv.Writer
 	columns []string
+	opened  time.Time
 }
 
 func (l *textLog) Close() error {
@@ -40,13 +41,13 @@ func init() {
 		Descriptor: node.Descriptor{
 			Type: "dia-log-text", Color: "#bfd9c9", Icon: "log", PaletteLabel: "log to text file", LabelProp: "path",
 			InputPorts: []string{"row", "err?"}, OutputPorts: []string{"rows", "err"},
-			Props: []node.Prop{
+			Props: append([]node.Prop{
 				{Name: "path", Label: "File", Kind: node.PropString, Required: true, Default: "log.csv"},
 				prop("columns", "Columns, comma separated (empty for the record's fields in order of name)", node.PropString, ""),
 				choice("delimiter", "Separator", "comma", "comma", "tab", "semicolon"),
 				prop("timeName", "Name of the time column", node.PropString, "time"),
-			},
-			Help: "Appends each record it is given as one row of a text file, with a time column first. A new file starts with a header. A file that already has rows is appended to, as long as its header is the one this node would write, and a different header is an error, not a mixed file.",
+			}, rotationProps()...),
+			Help: "Appends each record it is given as one row of a text file, with a time column first. A new file starts with a header. A file that already has rows is appended to, as long as its header is the one this node would write, and a different header is an error, not a mixed file. It can start a new file when this one reaches a size or an age and keep only the newest finished files: bench.csv becomes bench-20261114T120000Z.csv and the log goes on in bench.csv. The age counts from when a run first writes to the file.",
 		},
 		New: func(raw map[string]any) (Op, error) {
 			path := strProp(raw, "path", "")
@@ -55,6 +56,10 @@ func init() {
 			}
 			cols := splitList(strProp(raw, "columns", ""))
 			timeName := strProp(raw, "timeName", "time")
+			rot, err := rotationOf(raw)
+			if err != nil {
+				return nil, err
+			}
 			comma := ','
 			switch strProp(raw, "delimiter", "comma") {
 			case "tab":
@@ -69,6 +74,15 @@ func init() {
 				}
 				lg := rc.Run.Local("log:"+rc.Node.ID, func() any { return &textLog{} }).(*textLog)
 				var err error
+				if lg.f != nil {
+					if st, serr := lg.f.Stat(); serr == nil && rot.due(st.Size(), lg.opened, time.Now()) {
+						_ = lg.Close()
+						lg.f, lg.w = nil, nil
+						if err = rot.finish(path, time.Now()); err != nil {
+							return nil, &Fault{Code: CodeFile, Source: err.Error()}
+						}
+					}
+				}
 				if lg.f == nil {
 					columns := cols
 					if len(columns) == 0 {
@@ -81,6 +95,7 @@ func init() {
 						return nil, &Fault{Code: CodeFile, Source: err.Error()}
 					}
 					lg.columns = columns
+					lg.opened = time.Now()
 				}
 				row := make([]string, 0, len(lg.columns)+1)
 				row = append(row, time.Now().UTC().Format("2006-01-02T15:04:05.000Z"))
