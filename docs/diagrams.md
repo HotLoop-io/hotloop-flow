@@ -303,3 +303,7 @@ A wire of a diagram is named at its middle, by the output it comes from (`sum`, 
 ## Zoom
 
 The canvas zooms from 5 percent to 400 percent about the pointer, and reads its zoom as `data-zoom` on the canvas.
+
+## Setting a panel object by name
+
+`dia-panel-set` changes one property of a control or an indicator while the diagram runs, by the object's label (or its id): `visible` and `enabled` take true or false, `color` takes red, amber, green, blue, grey or default, `label` takes text, and `min` and `max` take a number for a number control. A disabled control refuses what an operator sets, a hidden object is not drawn, and the panel an operator has open follows. A name that matches no object, or more than one, is a problem at deploy when it is typed on the node and an error on the wire when it is wired in, and a run starts from the panel as it was designed.

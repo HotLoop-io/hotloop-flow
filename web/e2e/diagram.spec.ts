@@ -201,3 +201,33 @@ test('the canvas zooms out past 25 percent and in to 400 percent', async ({ page
   for (let i = 0; i < 120; i++) await page.mouse.wheel(0, -120);
   await expect.poll(zoom).toBe(400);
 });
+
+// P5: a diagram sets properties of its panel objects by name, and the panel an
+// operator opens shows them.
+test('a diagram turns an indicator red, disables a control and hides an object by name', async ({ page, request }) => {
+  const e = (id: string, type: string, x: number, y: number, extra: Record<string, unknown> = {}, wires: string[][] = [[]], ins: string[][] = [[]]): Entry =>
+    ({ id, type, z: 'main', x, y, wires, ew_in: ins, ...extra });
+  await seed(request, [
+    { id: 'main', type: 'tab', label: 'Guard', ew_diagram: {} },
+    e('p', 'dia-const', 80, 60, { value: '42' }, [['ind']], [['value']]),
+    e('ind', 'dia-indicator', 700, 60, { label: 'Pressure', kind: 'number', style: 'big', digits: 0 }),
+    e('ctl', 'dia-control', 80, 200, { label: 'Setpoint', kind: 'number', style: 'entry' }),
+    e('sp', 'dia-const', 80, 260, { value: '1' }, [['note']], [['value']]),
+    e('note', 'dia-indicator', 700, 200, { label: 'Spare', kind: 'number', style: 'plain', digits: 0 }),
+    e('red', 'dia-const', 80, 320, { value: '"red"' }, [['setc']], [['value']]),
+    e('setc', 'dia-panel-set', 300, 320, { target: 'Pressure', property: 'color' }),
+    e('off', 'dia-const', 80, 400, { value: 'false' }, [['sete', 'setv']], [['value', 'value']]),
+    e('sete', 'dia-panel-set', 300, 400, { target: 'Setpoint', property: 'enabled' }),
+    e('setv', 'dia-panel-set', 300, 480, { target: 'Spare', property: 'visible' }),
+  ]);
+  await signIn(page, 'setc');
+  await expect(page.locator('[data-test="diagram-problems"]')).toHaveCount(0);
+  await page.locator('[data-test="diagram-run"]').click();
+  await expect(page.locator('[data-test="diagram-state"]')).toHaveAttribute('data-state', 'done');
+
+  await page.evaluate(() => { location.hash = '#/panel/main'; location.reload(); });
+  await expect(page.locator('[data-test="panel"]')).toBeVisible();
+  await expect(page.locator('[data-test="ind"][data-id="ind"]')).toHaveAttribute('data-color', 'red');
+  await expect(page.locator('[data-test="ctl"][data-id="ctl"] [data-test="ctl-number"]')).toBeDisabled();
+  await expect(page.locator('[data-test="ind"][data-id="note"]')).toBeHidden();
+});

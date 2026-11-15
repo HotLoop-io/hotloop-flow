@@ -13,6 +13,8 @@
   let indicators = $state.raw<Record<string, unknown>>({});
   let controls = $state.raw<Record<string, unknown>>({});
   let charts = $state.raw<Record<string, PanelChart>>({});
+  // What the run has done to panel objects: visible, enabled, color, label, min, max.
+  let attrs = $state.raw<Record<string, Record<string, unknown>>>({});
   let runState = $state('idle');
   let runError = $state('');
   let live = $state<boolean | null>(null);
@@ -23,6 +25,7 @@
     indicators = { ...d.panel.indicators };
     controls = { ...d.panel.controls };
     charts = { ...d.panel.charts };
+    attrs = { ...(d.panel.attributes ?? {}) };
     runState = d.run?.state ?? 'idle';
     runError = d.run?.error ?? '';
   }
@@ -54,6 +57,12 @@
     }
     indicators = nextInd;
     controls = nextCtl;
+    const changed = (e.data.attributes ?? {}) as Record<string, Record<string, unknown>>;
+    if (Object.keys(changed).length) {
+      const next = { ...attrs };
+      for (const [k, a] of Object.entries(changed)) next[k] = { ...(next[k] ?? {}), ...a };
+      attrs = next;
+    }
     const deltas = (e.data.charts ?? {}) as Record<string, { replace?: boolean; t?: number[]; x?: number[]; y: number[] }>;
     if (Object.keys(deltas).length) {
       const next = { ...charts };
@@ -82,7 +91,12 @@
     return stop;
   });
 
-  const label = (t: PanelTerminal) => t.label || t.id;
+  const label = (t: PanelTerminal) => String(attrs[t.id]?.label ?? (t.label || t.id));
+  const shown = (t: PanelTerminal) => attrs[t.id]?.visible !== false;
+  const off = (t: PanelTerminal) => attrs[t.id]?.enabled === false;
+  const tint = (t: PanelTerminal) => String(attrs[t.id]?.color ?? 'default');
+  const lo = (t: PanelTerminal) => (typeof attrs[t.id]?.min === 'number' ? (attrs[t.id]!.min as number) : t.min);
+  const hi = (t: PanelTerminal) => (typeof attrs[t.id]?.max === 'number' ? (attrs[t.id]!.max as number) : t.max);
   const fmt = (t: PanelTerminal, v: unknown): string => {
     if (v === null || v === undefined) return 'waiting';
     if (typeof v === 'number') return v.toFixed(t.digits ?? 2);
@@ -129,7 +143,7 @@
   <div class="panel-grid">
     {#each desc?.terminals ?? [] as t (t.id)}
       {#if t.type === 'dia-indicator'}
-        <section class="panel-card" data-test="ind" data-id={t.id}>
+        <section class="panel-card tint-{tint(t)}" hidden={!shown(t)} data-test="ind" data-id={t.id} data-color={tint(t)}>
           <div class="cap">{label(t)}</div>
           {#if t.kind === 'bool'}
             <span class="led" class:on={indicators[t.id] === true} data-on={indicators[t.id] === true} aria-label={label(t)}></span>
@@ -144,7 +158,7 @@
           {/if}
         </section>
       {:else if t.type === 'dia-chart'}
-        <section class="panel-card wide" data-test="chart" data-id={t.id}>
+        <section class="panel-card wide tint-{tint(t)}" hidden={!shown(t)} data-test="chart" data-id={t.id}>
           <div class="cap">{label(t)} <span style="text-transform:none">({charts[t.id]?.mode ?? t.mode ?? 'chart'})</span></div>
           <svg class="chart-svg" viewBox="0 0 600 180" preserveAspectRatio="none" role="img" aria-label={`${label(t)} chart`}>
             <line class="axis" x1="0" y1="172" x2="600" y2="172" />
@@ -153,25 +167,25 @@
           <div class="chart-note"><span data-test="chart-count">{charts[t.id]?.y.length ?? 0} of {t.history ?? 1024} points</span><span>{range(charts[t.id])}{t.unit ? ` ${t.unit}` : ''}</span></div>
         </section>
       {:else if t.type === 'dia-control'}
-        <section class="panel-card" data-test="ctl" data-id={t.id}>
+        <section class="panel-card tint-{tint(t)}" hidden={!shown(t)} data-test="ctl" data-id={t.id} data-enabled={!off(t)}>
           <div class="cap">{label(t)}</div>
           {#if t.kind === 'bool'}
             {#if t.style === 'button'}
-              <button class="primary" data-test="ctl-button" onclick={() => set(t, true)}>{label(t)}</button>
+              <button class="primary" data-test="ctl-button" disabled={off(t)} onclick={() => set(t, true)}>{label(t)}</button>
             {:else}
-              <label class="switch"><input type="checkbox" data-test="ctl-switch" checked={controls[t.id] === true} onchange={(e) => set(t, (e.currentTarget as HTMLInputElement).checked)} /> {controls[t.id] === true ? 'on' : 'off'}</label>
+              <label class="switch"><input type="checkbox" data-test="ctl-switch" disabled={off(t)} checked={controls[t.id] === true} onchange={(e) => set(t, (e.currentTarget as HTMLInputElement).checked)} /> {controls[t.id] === true ? 'on' : 'off'}</label>
             {/if}
           {:else if t.kind === 'enum'}
-            <select data-test="ctl-enum" value={String(controls[t.id] ?? t.default ?? '')} onchange={(e) => set(t, (e.currentTarget as HTMLSelectElement).value)}>
+            <select data-test="ctl-enum" disabled={off(t)} value={String(controls[t.id] ?? t.default ?? '')} onchange={(e) => set(t, (e.currentTarget as HTMLSelectElement).value)}>
               {#each t.options ?? [] as o}<option value={o}>{o}</option>{/each}
             </select>
           {:else if t.kind === 'string'}
-            <input type="text" data-test="ctl-text" value={String(controls[t.id] ?? t.default ?? '')} onchange={(e) => set(t, (e.currentTarget as HTMLInputElement).value)} />
-          {:else if t.style === 'slider' && t.min !== undefined && t.max !== undefined}
-            <input type="range" data-test="ctl-slider" min={t.min} max={t.max} step={t.step ?? 'any'} value={Number(controls[t.id] ?? t.default ?? 0)} onchange={(e) => set(t, Number((e.currentTarget as HTMLInputElement).value))} />
+            <input type="text" data-test="ctl-text" disabled={off(t)} value={String(controls[t.id] ?? t.default ?? '')} onchange={(e) => set(t, (e.currentTarget as HTMLInputElement).value)} />
+          {:else if t.style === 'slider' && lo(t) !== undefined && hi(t) !== undefined}
+            <input type="range" data-test="ctl-slider" disabled={off(t)} min={lo(t)} max={hi(t)} step={t.step ?? 'any'} value={Number(controls[t.id] ?? t.default ?? 0)} onchange={(e) => set(t, Number((e.currentTarget as HTMLInputElement).value))} />
             <div class="mono">{controls[t.id] ?? t.default}</div>
           {:else}
-            <input type="number" data-test="ctl-number" min={t.min} max={t.max} step={t.step ?? 'any'} value={Number(controls[t.id] ?? t.default ?? 0)} onchange={(e) => set(t, Number((e.currentTarget as HTMLInputElement).value))} />
+            <input type="number" data-test="ctl-number" disabled={off(t)} min={lo(t)} max={hi(t)} step={t.step ?? 'any'} value={Number(controls[t.id] ?? t.default ?? 0)} onchange={(e) => set(t, Number((e.currentTarget as HTMLInputElement).value))} />
           {/if}
         </section>
       {/if}
