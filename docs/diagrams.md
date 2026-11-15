@@ -291,3 +291,7 @@ A case structure's cases are rows of a case name and a diagram picker, with a se
 ## Making a sub-diagram in the editor
 
 With nodes selected on a diagram, the bar's **Selection to sub-diagram** asks for a name, calls `POST /diagrams/{id}/sub` with the flow file the editor holds, and loads the answer as one undoable edit: the nodes move to a tab of their own and a sub-diagram node takes their place, with its inputs and outputs worked out from the wires that cross the selection. Nothing is saved until it is deployed.
+
+## Tidy layout
+
+The tab bar's **Tidy layout** lays out the nodes on view so data reads left to right and no wire runs through a node. A node's column is the longest chain of wires leading to it. A wire that skips columns gets a lane through them, nodes within a column are ordered to untangle the crossings, and then each long wire is checked along the curve it is actually drawn with against the nodes in the columns it crosses, and a node in the way is moved clear. The block keeps its top left corner, and the whole thing is one undoable edit. A loop in the wiring has its closing wire left out of the ranking, so it runs backward instead of making the layout loop.
