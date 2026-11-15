@@ -705,19 +705,25 @@ export class Canvas {
       // middle of the curve, and the whole story as the wire's tooltip. The chip
       // takes no pointer events, so it never gets between a press and the wire.
       const typed = wireTypeLabel(from, port, to, this.wireClashes);
-      if (typed) {
-        const tip = document.createElementNS(SVG_NS, 'title');
-        tip.textContent = typed.title;
-        path.append(tip);
-        path.setAttribute('data-type-state', typed.state);
+      // A wire of a diagram has a name, the output it comes from, written at its
+      // middle beside its type, so the diagram reads without hovering every wire.
+      const wname = this.graph.isDiagramTab(this.graph.activeTab) ? (this.graph.ports(from)?.out[port] ?? '') : '';
+      if (typed || wname) {
+        if (typed) {
+          const tip = document.createElementNS(SVG_NS, 'title');
+          tip.textContent = typed.title;
+          path.append(tip);
+          path.setAttribute('data-type-state', typed.state);
+        }
         frag.append(path);
 
         const mid = wireMid(a, b);
-        const text = truncate(typed.text, 26);
+        const text = truncate(wname && typed ? `${wname}: ${typed.text}` : (typed?.text ?? wname), 30);
         const width = Math.max(18, text.length * 6.4 + 12);
         const chip = document.createElementNS(SVG_NS, 'g');
-        chip.setAttribute('class', `wire-type ${typed.state}`);
+        chip.setAttribute('class', `wire-type ${typed ? typed.state : 'name'}`);
         chip.setAttribute('data-wire-type', `${from.id}:${port}:${to.id}`);
+        if (wname) chip.setAttribute('data-wire-name', wname);
         chip.setAttribute('transform', `translate(${mid.x} ${mid.y})`);
         const box = document.createElementNS(SVG_NS, 'rect');
         box.setAttribute('x', String(-width / 2));
