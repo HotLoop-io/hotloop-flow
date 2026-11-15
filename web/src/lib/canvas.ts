@@ -10,6 +10,7 @@ import {
   GROUP_HEAD, NODE_HEIGHT, NODE_WIDTH, PORT_RADIUS, SUBFLOW_PREFIX, inputPort, outputPort, snap, wireMid, wirePath,
 } from './graph';
 import { type DiffOverlay, wireKey } from './diff';
+import { SYMBOLS } from './symbols';
 import { type WireProblem, clashesByWire, wireTypeLabel } from './wiretypes';
 import type { TestMark } from './tests';
 import { type TraceOverlay, fmtNanos, tipFor } from './trace';
@@ -824,6 +825,18 @@ export class Canvas {
       warn.textContent = `${n.type} is not installed in this runtime`;
       g.append(warn);
       g.classList.add('unknown');
+    }
+
+    // A FlowLab node wears the symbol its type is drawn with, at the middle of
+    // its body between its input names and its output names.
+    const symbol = this.graph.ports(n) && d?.icon ? SYMBOLS[d.icon] : undefined;
+    if (symbol) {
+      const sym = document.createElementNS(SVG_NS, 'path');
+      sym.setAttribute('d', symbol);
+      sym.setAttribute('class', 'node-symbol');
+      sym.setAttribute('data-symbol', d!.icon);
+      sym.setAttribute('transform', `translate(${x - 12 + 3} ${y - 12})`);
+      g.append(sym);
     }
 
     const label = document.createElementNS(SVG_NS, 'text');
