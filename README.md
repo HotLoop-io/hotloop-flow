@@ -39,7 +39,7 @@ What that means on a bad night:
 It runs your existing flows unchanged, too. That's [further down](#bring-your-flows),
 because it's a feature, not the point.
 
-Current release is `2.10.1`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.10.1`
+Current release is `2.10.2`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.10.2`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
 104,000 lines of Go, a little under 40 percent of it tests, 108 node types for messages and 35 for FlowLab diagrams, and the race
@@ -2018,10 +2018,10 @@ podman run --rm -p 1880:1880 -v hotloop-flow-data:/data \
   -e HOTLOOP_FLOW_ADMIN_USER=admin \
   -e HOTLOOP_FLOW_ADMIN_PASSWORD_HASH='<bcrypt hash>' \
   -e HOTLOOP_FLOW_CREDENTIAL_SECRET="$(openssl rand -hex 32)" \
-  ghcr.io/hotloop-io/hotloop-flow:2.10.1
+  ghcr.io/hotloop-io/hotloop-flow:2.10.2
 ```
 
-Generate the hash with `podman run --rm ghcr.io/hotloop-io/hotloop-flow:2.10.1
+Generate the hash with `podman run --rm ghcr.io/hotloop-io/hotloop-flow:2.10.2
 hash-password -password 'something-long'`. The image is distroless nonroot with
 no shell in it, so there is nothing to `exec` into and nothing for anybody who
 gets code execution to pivot with.

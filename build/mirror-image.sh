@@ -21,6 +21,14 @@
 # only when the mirror cannot answer, and with backoff when it says to slow down.
 # Where the token cannot write to ghcr.io (a pull request from a fork), the image
 # is pulled from Docker Hub and tagged with the mirror's name, so the run goes on.
+
+# Root's podman, unless the caller names one. sudo keeps the runner user's
+# XDG_RUNTIME_DIR, and root's podman then writes its registry login into
+# /run/user/<uid>/containers/auth.json owned by root, so the user's own podman
+# login after it fails with "permission denied" (v2.10.1's image run). Without
+# XDG_RUNTIME_DIR root keeps its login in /run/containers/0/auth.json.
+PODMAN=${PODMAN:-sudo env -u XDG_RUNTIME_DIR podman}
+
 set -euo pipefail
 
 # build/mirror-pins.txt says which digest a tag has to be: "<mirror path> sha256:...".
@@ -32,7 +40,7 @@ check_pin() {
   path="${ref#"$PREFIX"}"
   want=$(awk -v p="$path" '$1 == p { print $2 }' "$here/mirror-pins.txt" 2>/dev/null || true)
   [ -z "$want" ] && return 0
-  got=$(${PODMAN:-sudo podman} image inspect --format '{{.Digest}}' "$ref")
+  got=$($PODMAN image inspect --format '{{.Digest}}' "$ref")
   if [ "$got" != "$want" ]; then
     echo "mirror-image: $ref is $got, and build/mirror-pins.txt says it must be $want" >&2
     return 1
@@ -45,7 +53,7 @@ PREFIX="ghcr.io/hotloop-io/mirror/"
 # them public, so read it signed in. A token that cannot is not an error here:
 # the pull below then fails and Docker Hub is the fallback.
 if [ -n "${GITHUB_TOKEN:-}" ]; then
-  printf '%s' "$GITHUB_TOKEN" | ${PODMAN:-sudo podman} login ghcr.io -u "${GITHUB_ACTOR:-x}" --password-stdin >/dev/null 2>&1 || true
+  printf '%s' "$GITHUB_TOKEN" | $PODMAN login ghcr.io -u "${GITHUB_ACTOR:-x}" --password-stdin >/dev/null 2>&1 || true
 fi
 
 for dst in "$@"; do
@@ -59,7 +67,7 @@ for dst in "$@"; do
   fi
   src="docker.io/${dst#"$PREFIX"}"
 
-  if ${PODMAN:-sudo podman} pull -q "$dst" >/dev/null 2>&1; then
+  if $PODMAN pull -q "$dst" >/dev/null 2>&1; then
     check_pin "$dst"
     echo "mirror-image: $dst from the mirror"
     continue
@@ -77,7 +85,7 @@ for dst in "$@"; do
       sleep $((attempt * 20))
     done
   fi
-  if [ -n "$copied" ] && ${PODMAN:-sudo podman} pull -q "$dst" >/dev/null; then
+  if [ -n "$copied" ] && $PODMAN pull -q "$dst" >/dev/null; then
     check_pin "$dst"
     echo "mirror-image: $dst copied into the mirror from Docker Hub"
     continue
@@ -85,8 +93,8 @@ for dst in "$@"; do
 
   echo "mirror-image: the mirror could not be filled, pulling $src from Docker Hub" >&2
   for attempt in 1 2 3 4 5 6; do
-    if ${PODMAN:-sudo podman} pull -q "$src" >/dev/null; then
-      ${PODMAN:-sudo podman} tag "$src" "$dst"
+    if $PODMAN pull -q "$src" >/dev/null; then
+      $PODMAN tag "$src" "$dst"
       check_pin "$dst"
       break
     fi
