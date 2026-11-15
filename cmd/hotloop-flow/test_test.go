@@ -107,3 +107,52 @@ func TestTheTestCommand(t *testing.T) {
 		t.Errorf("a missing flow file: %v", err)
 	}
 }
+
+// G6: a diagram that cannot run fails the file even when every test passes, and
+// the output names the diagram, the node and the input, the way the editor's
+// error list does. A diagram that is fine, or a missing default, does not.
+func TestTheTestCommandListsWhatKeepsADiagramFromRunning(t *testing.T) {
+	broken := `[
+  {"id":"t1","type":"tab","label":"Line 3"},
+  {"id":"chk","type":"switch","z":"t1","name":"over limit?","property":"payload","propertyType":"msg","rules":[{"t":"gt","v":"80","vt":"num"},{"t":"else"}],"checkall":"false","outputs":2,"x":300,"y":100,"wires":[[],[]]},
+  {"id":"d1","type":"tab","label":"Bench","ew_diagram":{}},
+  {"id":"b","type":"dia-const","z":"d1","x":1,"y":1,"value":"1","wires":[["add"]],"ew_in":[["b"]]},
+  {"id":"add","type":"dia-math","z":"d1","x":2,"y":1,"op":"add","wires":[[]]}
+]`
+	fine := `[
+  {"id":"t1","type":"tab","label":"Line 3"},
+  {"id":"chk","type":"switch","z":"t1","name":"over limit?","property":"payload","propertyType":"msg","rules":[{"t":"gt","v":"80","vt":"num"},{"t":"else"}],"checkall":"false","outputs":2,"x":300,"y":100,"wires":[[],[]]},
+  {"id":"d1","type":"tab","label":"Bench","ew_diagram":{}},
+  {"id":"a","type":"dia-const","z":"d1","x":1,"y":1,"value":"1","wires":[["add"]],"ew_in":[["a"]]},
+  {"id":"b","type":"dia-const","z":"d1","x":1,"y":2,"value":"2","wires":[["add"]],"ew_in":[["b"]]},
+  {"id":"add","type":"dia-math","z":"d1","x":2,"y":1,"op":"add","wires":[[]]}
+]`
+	dir := writeFiles(t, map[string]string{"bad.json": broken, "good.json": fine,
+		"bad.test.yaml":  "flows: bad.json\n" + testCmdSuite,
+		"good.test.yaml": "flows: good.json\n" + testCmdSuite})
+	junit := filepath.Join(dir, "r.xml")
+
+	var out bytes.Buffer
+	err := cmdTestFrom([]string{"-junit", junit, filepath.Join(dir, "bad.test.yaml")}, nil, &out)
+	var ec exitCode
+	if !errors.As(err, &ec) || ec != 1 {
+		t.Fatalf("a diagram with an unwired input: %v, want exit 1\n%s", err, out.String())
+	}
+	for _, want := range []string{"--- DIAGRAM: Bench: add input a: a required input has no wire", "1 diagram problems", "1 passed"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+	x, _ := os.ReadFile(junit)
+	if !strings.Contains(string(x), `type="diagram"`) {
+		t.Errorf("the JUnit report does not carry the diagram problem:\n%s", x)
+	}
+
+	out.Reset()
+	if err := cmdTestFrom([]string{filepath.Join(dir, "good.test.yaml")}, nil, &out); err != nil {
+		t.Fatalf("a diagram that can run: %v\n%s", err, out.String())
+	}
+	if strings.Contains(out.String(), "DIAGRAM") {
+		t.Errorf("a diagram that can run was listed:\n%s", out.String())
+	}
+}

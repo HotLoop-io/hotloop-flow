@@ -13,6 +13,9 @@ import (
 // under every test, not just the ones that failed.
 func WriteText(w io.Writer, r *Report, verbose bool) error {
 	var b strings.Builder
+	for _, d := range r.Diagrams {
+		fmt.Fprintf(&b, "--- DIAGRAM: %s\n", d.String())
+	}
 	for _, t := range r.Tests {
 		fmt.Fprintf(&b, "--- %s: %s (%.2fs)\n", strings.ToUpper(string(t.Status)), t.Name, t.Seconds)
 		for _, p := range t.Problems {
@@ -32,8 +35,12 @@ func WriteText(w io.Writer, r *Report, verbose bool) error {
 	if name == "" {
 		name = "tests"
 	}
-	fmt.Fprintf(&b, "%s\t%s\t%d passed, %d failed, %d errors (%.2fs)\n",
-		verdict, name, r.Passed, r.Failed, r.Errored, r.Seconds)
+	extra := ""
+	if n := Blocking(r.Diagrams); n > 0 {
+		extra = fmt.Sprintf(", %d diagram problems", n)
+	}
+	fmt.Fprintf(&b, "%s\t%s\t%d passed, %d failed, %d errors%s (%.2fs)\n",
+		verdict, name, r.Passed, r.Failed, r.Errored, extra, r.Seconds)
 	_, err := io.WriteString(w, b.String())
 	return err
 }
@@ -84,6 +91,17 @@ func WriteJUnit(w io.Writer, reports []Report) error {
 		s := junitSuite{
 			Name: r.File, Tests: len(r.Tests), Failures: r.Failed, Errors: r.Errored,
 			Time: seconds(r.Seconds),
+		}
+		for _, d := range r.Diagrams {
+			c := junitCase{Name: "diagram " + d.Diagram, Classname: r.File}
+			if !d.Warning {
+				c.Error = &junitProblem{Type: "diagram", Message: d.Message, Text: d.String()}
+				s.Errors++
+			} else {
+				c.SystemOut = d.String()
+			}
+			s.Tests++
+			s.Cases = append(s.Cases, c)
 		}
 		for _, t := range r.Tests {
 			c := junitCase{Name: t.Name, Classname: r.File, Time: seconds(t.Seconds)}
