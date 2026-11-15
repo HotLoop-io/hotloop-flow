@@ -30,6 +30,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
 	"github.com/HotLoop-io/hotloop-flow/internal/gitmirror"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
+	"github.com/HotLoop-io/hotloop-flow/internal/instruments"
 	"github.com/HotLoop-io/hotloop-flow/internal/mcphost"
 	"github.com/HotLoop-io/hotloop-flow/internal/memlimit"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
@@ -325,6 +326,12 @@ func cmdServe(args []string) error {
 		return err
 	}
 	defer trail.Close()
+	// Every instrument starts with its writes off; a diagram that writes to one is
+	// refused, and audited, until somebody with instrument.write turns it on.
+	instrumentSwitch, err := instruments.Open(cfg.InstrumentsPath())
+	if err != nil {
+		return err
+	}
 	extraMetrics = append(extraMetrics, metrics.Family{
 		Name: "hotloop_flow_audit_write_failures_total", Type: "counter",
 		Help: "Audit entries that could not be written. Anything above zero means the trail has a hole in it.",
@@ -344,6 +351,7 @@ func cmdServe(args []string) error {
 		SessionsPath: cfg.SessionsPath(),
 		MFA:          secondFactor,
 		Audit:        trail,
+		Instruments:  instrumentSwitch,
 		Mirror:       mirrorStatus,
 		Plugins:      func() any { return plugins.Report() },
 		Metrics:      extraMetrics,
@@ -375,7 +383,13 @@ func cmdServe(args []string) error {
 			}
 			return rt.ConfigNode(id)
 		},
-		Spool: spool,
+		Spool:       spool,
+		Instruments: instrumentSwitch,
+		Audit: func(event, who string, detail map[string]any) {
+			if err := trail.Record(audit.Entry{Event: event, User: who, Detail: detail}); err != nil {
+				log.Error("the audit log could not be written", "event", event, "error", err)
+			}
+		},
 	})
 	app.diagrams.SetPublisher(func(topic string, data map[string]any) {
 		srv.Hub().Broadcast(runtime.Event{Topic: topic, Data: data, At: time.Now()})

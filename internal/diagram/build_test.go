@@ -97,6 +97,8 @@ func (b *flowBuilder) flows() *engine.Flows {
 func (b *flowBuilder) manager() *Manager {
 	m := NewManager(nil)
 	b.t.Cleanup(m.Close)
+	// A test that is about something other than the write switch lets writes through.
+	m.SetServices(Services{Instruments: AllowAll{}})
 	m.Apply(b.flows())
 	return m
 }

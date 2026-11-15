@@ -21,6 +21,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/flowdiff"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
+	"github.com/HotLoop-io/hotloop-flow/internal/instruments"
 	"github.com/HotLoop-io/hotloop-flow/internal/mcphost"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
 	"github.com/HotLoop-io/hotloop-flow/internal/mfa"
@@ -47,6 +48,10 @@ const (
 	// status.read, so an operator can be given a panel to watch and a panel to
 	// run without being given the flows.
 	PermDiagramRun = "diagram.run"
+	// PermInstrumentWrite turns an instrument's writes on or off. Every instrument
+	// starts with them off, and a diagram's write to one is refused until somebody
+	// with this permission turns them on.
+	PermInstrumentWrite = "instrument.write"
 	// PermMCP is what a caller needs to reach the MCP endpoint, where flows are
 	// served as tools. A tool can ask for more.
 	PermMCP = mcphost.Permission
@@ -62,6 +67,8 @@ type Deps struct {
 	// Audit is the trail of who did what from where. Nil records nothing,
 	// which only tests that aren't about it should ever want.
 	Audit *audit.Log
+	// Instruments is the per-instrument write switch. Nil turns its routes off.
+	Instruments *instruments.Switch
 	// MFA holds two-factor enrollments. Nil means no second factor anywhere.
 	MFA *mfa.Store
 	// SessionsPath is where sign-in sessions are kept so they survive a
@@ -305,6 +312,7 @@ func (s *Server) routes() {
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))
 	s.diagramRoutes()
+	s.instrumentRoutes()
 	if s.deps.MCP != nil {
 		// POST for every request, and GET and DELETE for the handshake revisions
 		// of MCP, which open a stream and end a session with them. Each is named

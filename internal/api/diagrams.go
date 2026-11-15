@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/audit"
 	"github.com/HotLoop-io/hotloop-flow/internal/diagram"
+	"github.com/HotLoop-io/hotloop-flow/internal/instruments"
 )
 
 // diagramRoutes serves the diagrams of the flow file: what is there, the panel of
@@ -34,6 +36,82 @@ func (s *Server) diagramRoutes() {
 	s.mux.HandleFunc("GET "+s.path("/panel/{id}"), func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, s.path("/")+"#/panel/"+r.PathValue("id"), http.StatusSeeOther)
 	})
+}
+
+// instrumentRoutes serves the per-instrument write switch: which instruments the
+// deployed diagrams would write to, and whether each one's writes are on, and the
+// way somebody holding instrument.write turns one on or off.
+func (s *Server) instrumentRoutes() {
+	if s.deps.Instruments == nil {
+		return
+	}
+	s.mux.Handle("GET "+s.path("/instruments"), s.auth(PermStatusRead, s.handleInstruments))
+	s.mux.Handle("PUT "+s.path("/instruments/writes"), s.auth(PermInstrumentWrite, s.handleInstrumentWrites))
+}
+
+type instrumentRow struct {
+	Instrument string         `json:"instrument"`
+	Allowed    bool           `json:"allowed"`
+	By         string         `json:"by,omitempty"`
+	At         string         `json:"at,omitempty"`
+	Note       string         `json:"note,omitempty"`
+	Diagrams   map[string]any `json:"diagrams,omitempty"`
+}
+
+func (s *Server) handleInstruments(w http.ResponseWriter, _ *http.Request) {
+	rows := map[string]*instrumentRow{}
+	for id, a := range s.deps.Instruments.List() {
+		r := &instrumentRow{Instrument: id, Allowed: a.Allowed, By: a.By, Note: a.Note}
+		if !a.At.IsZero() {
+			r.At = a.At.Format(time.RFC3339)
+		}
+		rows[id] = r
+	}
+	if s.deps.Diagrams != nil {
+		for _, sum := range s.deps.Diagrams.List() {
+			if sum.Owner != "" && sum.Owner != sum.ID {
+				continue
+			}
+			for _, t := range s.deps.Diagrams.Writes(sum.ID) {
+				r := rows[t.Instrument]
+				if r == nil {
+					r = &instrumentRow{Instrument: t.Instrument, Allowed: s.deps.Instruments.Allowed(t.Instrument)}
+					rows[t.Instrument] = r
+				}
+				if r.Diagrams == nil {
+					r.Diagrams = map[string]any{}
+				}
+				r.Diagrams[sum.ID] = t.Nodes
+			}
+		}
+	}
+	out := make([]*instrumentRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Instrument < out[j].Instrument })
+	writeJSON(w, http.StatusOK, map[string]any{"instruments": out})
+}
+
+func (s *Server) handleInstrumentWrites(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Instrument string `json:"instrument"`
+		Allowed    bool   `json:"allowed"`
+		Note       string `json:"note"`
+	}
+	if err := readJSON(r, s.deps.Config.Server.MaxRequestBytes, &body); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	user := requestUser(r)
+	if err := s.deps.Instruments.Set(body.Instrument, body.Allowed, user, body.Note); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	id := instruments.Normalize(body.Instrument)
+	s.record(r, audit.InstrumentSwitch, user, map[string]any{"instrument": id, "allowed": body.Allowed, "note": body.Note})
+	a := s.deps.Instruments.List()[id]
+	writeJSON(w, http.StatusOK, instrumentRow{Instrument: id, Allowed: a.Allowed, By: a.By, At: a.At.Format(time.RFC3339), Note: a.Note})
 }
 
 func (s *Server) diagramError(w http.ResponseWriter, err error) {

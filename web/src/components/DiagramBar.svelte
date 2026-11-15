@@ -7,6 +7,7 @@
     runState: string;
     error: string;
     problems: DiagramProblem[];
+    warnings: DiagramProblem[];
     highlight: boolean;
     waiting: string[];
     hasSelection: boolean;
@@ -23,10 +24,11 @@
     onsub: () => void;
     onproblem: (nodeId: string) => void;
   }
-  let { runState, error, problems, highlight, waiting, hasSelection, breakOnSelection, panelHref, nodeName, onrun, onstop, onhighlight, onpause, onresume, onstep, onbreak, onsub, onproblem }: Props = $props();
+  let { runState, error, problems, warnings, highlight, waiting, hasSelection, breakOnSelection, panelHref, nodeName, onrun, onstop, onhighlight, onpause, onresume, onstep, onbreak, onsub, onproblem }: Props = $props();
 
   const running = $derived(runState === 'running' || runState === 'paused');
   let listOpen = $state(false);
+  let notesOpen = $state(false);
 </script>
 
 <div class="diagram-bar" data-test="diagram-bar">
@@ -47,6 +49,9 @@
   <a class="ghost link" data-test="diagram-panel" href={panelHref} target="_blank" rel="noopener">Open panel</a>
   <div class="spacer"></div>
   <span class="run-state mono" data-test="diagram-state" data-state={runState}>{runState}{waiting.length ? ` before ${nodeName(waiting[0]!.replace(/^(wire:|diagram:)/, ''))}` : ''}</span>
+  {#if warnings.length}
+    <button class="ghost" data-test="diagram-warnings" title="What this diagram does that is worth knowing before you deploy it" onclick={() => (notesOpen = !notesOpen)}>{warnings.length} note{warnings.length === 1 ? '' : 's'}</button>
+  {/if}
   {#if problems.length}
     <button class="ghost bad" data-test="diagram-problems" onclick={() => (listOpen = !listOpen)}>{problems.length} problem{problems.length === 1 ? '' : 's'}</button>
   {/if}
@@ -58,6 +63,13 @@
   <ul class="diagram-problems" data-test="diagram-problem-list">
     {#each problems as p}
       <li><button class="ghost" onclick={() => p.node && onproblem(p.node)}>{p.node ? nodeName(p.node) : 'Diagram'}{p.port ? `, input ${p.port}` : ''}: {p.text}</button></li>
+    {/each}
+  </ul>
+{/if}
+{#if notesOpen && warnings.length}
+  <ul class="diagram-problems" data-test="diagram-warning-list">
+    {#each warnings as p}
+      <li><button class="ghost" onclick={() => p.node && onproblem(p.node)}>{p.node ? nodeName(p.node) : 'Diagram'}: {p.text}</button></li>
     {/each}
   </ul>
 {/if}

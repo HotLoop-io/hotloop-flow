@@ -969,6 +969,9 @@ func (c *Config) StorePath() string {
 // AuditPath is where the audit trail lives.
 func (c *Config) AuditPath() string { return filepath.Join(c.Data.Dir, "audit.log") }
 
+// InstrumentsPath is where the per-instrument write switches are kept.
+func (c *Config) InstrumentsPath() string { return filepath.Join(c.Data.Dir, "instrument-writes.json") }
+
 // SessionsPath is where sign-in sessions are kept across restarts.
 func (c *Config) SessionsPath() string { return filepath.Join(c.Data.Dir, "sessions.json") }
 

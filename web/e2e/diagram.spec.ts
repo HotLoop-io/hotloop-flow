@@ -234,3 +234,20 @@ test('a diagram turns an indicator red, disables a control and hides an object b
   await expect(page.locator('[data-test="ctl"][data-id="ctl"] [data-test="ctl-number"]')).toBeDisabled();
   await expect(page.locator('[data-test="ind"][data-id="note"]')).toBeHidden();
 });
+
+// The instrument write switch: deploy says which instruments a diagram would write
+// to, in the diagram bar, before anyone runs it.
+test('a diagram that would write to an instrument says which one before it runs', async ({ page, request }) => {
+  const e = (id: string, type: string, x: number, y: number, extra: Record<string, unknown> = {}, wires: string[][] = [[]], ins: string[][] = [[]]): Entry =>
+    ({ id, type, z: 'main', x, y, wires, ew_in: ins, ...extra });
+  await seed(request, [
+    { id: 'main', type: 'tab', label: 'Supply', ew_diagram: {} },
+    e('open', 'dia-instr-open', 100, 100, { address: '10.0.0.5:5025' }, [['on'], []], [['session'], []]),
+    e('on', 'dia-instr-query', 340, 100, { command: 'OUTP ON', reply: 'none' }),
+  ]);
+  await signIn(page, 'on');
+  await expect(page.locator('[data-test="diagram-problems"]')).toHaveCount(0);
+  await page.locator('[data-test="diagram-warnings"]').click();
+  await expect(page.locator('[data-test="diagram-warning-list"]')).toContainText('writes to tcp://10.0.0.5:5025');
+  await expect(page.locator('[data-test="diagram-warning-list"]')).toContainText('instrument.write');
+});

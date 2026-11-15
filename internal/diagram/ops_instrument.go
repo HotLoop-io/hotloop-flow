@@ -260,6 +260,19 @@ func readBlock(ctx context.Context, l link, term []byte, timeout time.Duration) 
 
 const instrColor = "#bfd0d9"
 
+// queryWrites says whether an instrument query node can write: its command, when
+// it is set on the node, is not a query. A command wired in is not known until it
+// runs, so it is counted as one that may write.
+func queryWrites(n *DNode) bool {
+	cmd := strProp(n.Raw, "command", "*IDN?")
+	for _, p := range n.Needs {
+		if p == "command" {
+			return true
+		}
+	}
+	return isWriteCommand(cmd)
+}
+
 func init() {
 	register(Kind{
 		Descriptor: node.Descriptor{
@@ -314,6 +327,8 @@ func init() {
 			},
 			Help: "Writes a command and the terminator, then reads the reply: a line of text, nothing (a plain write), or a binary block that comes out as an array of samples. A reply that does not arrive in time is an error on the error wire, with the address and the wait in its source. Hands the session on.",
 		},
+		WritesInstrument: queryWrites,
+		Warn:             warnWrites(queryWrites),
 		New: func(raw map[string]any) (Op, error) {
 			term := unescape(strProp(raw, "terminator", `\n`))
 			mode := strProp(raw, "reply", "text")
@@ -321,7 +336,7 @@ func init() {
 			little := strProp(raw, "order", "big") == "little"
 			timeout := time.Duration(floatProp(raw, "timeoutMs", 2000)) * time.Millisecond
 			fixed := strProp(raw, "command", "")
-			return opFunc(func(ctx context.Context, _ *Ctx, in map[string]any) (map[string]any, error) {
+			return opFunc(func(ctx context.Context, rc *Ctx, in map[string]any) (map[string]any, error) {
 				l, ok := in["session"].(link)
 				if !ok {
 					return nil, &Fault{Code: CodeBadInput, Source: "the session input is not an instrument session"}
@@ -334,6 +349,17 @@ func init() {
 				}
 				if cmd == "" {
 					return nil, &Fault{Code: CodeBadInput, Source: "there is no command to send"}
+				}
+				// A query only asks and goes through. Anything that can change the
+				// instrument waits for that instrument's writes to be switched on.
+				if isWriteCommand(cmd) {
+					id := "(an instrument)"
+					if i, ok := l.(identified); ok {
+						id = i.id()
+					}
+					if err := rc.Run.mgr.guardWrite(rc, id, cmd); err != nil {
+						return nil, err
+					}
 				}
 				if err := l.write(append([]byte(cmd), term...)); err != nil {
 					return nil, err

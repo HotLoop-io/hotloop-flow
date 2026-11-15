@@ -1118,7 +1118,7 @@
   <main class="canvas-host" class:viewing={viewing !== null} class:has-bar={activeIsDiagram} bind:this={host}>
     {#if activeIsDiagram}
       <DiagramBar
-        runState={diagState} error={diag?.run?.error ?? ''} problems={diagProblems} highlight={highlightOn}
+        runState={diagState} error={diag?.run?.error ?? ''} problems={diagProblems} warnings={diag?.warnings ?? []} highlight={highlightOn}
         waiting={diag?.run?.waiting ?? []} hasSelection={selectionSize > 0} {breakOnSelection}
         panelHref={`panel/${encodeURIComponent(runId)}`} nodeName={nameOf}
         onrun={() => void diagAction(() => api.runDiagram(runId, { highlightMs: highlightOn ? HIGHLIGHT_MS : 0 }))}

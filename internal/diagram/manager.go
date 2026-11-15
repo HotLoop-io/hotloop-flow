@@ -28,6 +28,12 @@ type Publisher func(topic string, data map[string]any)
 type Services struct {
 	ConfigNode func(id string) (node.Node, bool)
 	Spool      *store.Spool
+	// Instruments is the write switch of the instruments a diagram talks to. With
+	// none, every write to an instrument is refused: reads are never asked.
+	Instruments InstrumentGate
+	// Audit records what a diagram did that somebody may have to answer for: an
+	// instrument write that went through, and one that was refused.
+	Audit func(event, who string, detail map[string]any)
 }
 
 // Manager owns the diagrams of the deployed flow file and the runs of them.

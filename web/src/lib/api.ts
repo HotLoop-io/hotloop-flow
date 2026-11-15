@@ -569,6 +569,8 @@ export interface DiagramSummary {
   autostart: boolean;
   state: string;
   problems: DiagramProblem[];
+  /** What is worth knowing and does not stop a run, such as the instruments a diagram would write to. */
+  warnings?: DiagramProblem[];
 }
 
 export interface PanelTerminal {
