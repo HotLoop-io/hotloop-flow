@@ -31,6 +31,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/gitmirror"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
 	"github.com/HotLoop-io/hotloop-flow/internal/mcphost"
+	"github.com/HotLoop-io/hotloop-flow/internal/memlimit"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
 	"github.com/HotLoop-io/hotloop-flow/internal/mfa"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
@@ -116,6 +117,9 @@ func cmdServe(args []string) error {
 
 	log := newLogger(cfg.Logging)
 	log.Info("starting", "version", version, "addr", cfg.Addr(), "dataDir", cfg.Data.Dir)
+	if ml := memlimit.Apply(); ml.Source != "" {
+		log.Info("memory limit for the collector", "bytes", ml.Limit, "from", ml.Source)
+	}
 	if !cfg.Auth.Enabled {
 		// Config.Validate only lets this through when HOTLOOP_FLOW_INSECURE was
 		// set on purpose. It still gets said at boot, every boot, because the
