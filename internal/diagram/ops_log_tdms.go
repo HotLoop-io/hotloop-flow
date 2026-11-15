@@ -18,6 +18,9 @@ type tdmsLog struct {
 	w       *tdms.Writer
 	columns []string
 	kinds   []tdmsKind
+	// waves is the columns whose waveform properties are written, so they go in
+	// once, with the first block, and not on every row.
+	waves map[string]bool
 }
 
 type tdmsKind int
@@ -102,6 +105,15 @@ func init() {
 				}
 				data := make([]tdms.ChannelData, len(lg.columns))
 				for i, c := range lg.columns {
+					if w, isWave := asWave(rec[c]); isWave && !lg.waves[c] {
+						if err := setWaveProps(lg.w, group, c, w); err != nil {
+							return nil, &Fault{Code: CodeFile, Source: err.Error()}
+						}
+						if lg.waves == nil {
+							lg.waves = map[string]bool{}
+						}
+						lg.waves[c] = true
+					}
 					vals, err := tdmsColumn(lg.kinds[i], rec[c])
 					if err != nil {
 						return nil, &Fault{Code: CodeBadInput, Source: fmt.Sprintf("column %s: %v", c, err)}
@@ -159,7 +171,43 @@ func tdmsFileProps(v any) ([]tdmsProp, error) {
 	return out, nil
 }
 
+// setWaveProps writes what makes a channel a waveform to a reader that knows the
+// format: the time of the first sample and the step between them, in the
+// property names TDMS tools look for, then the waveform's own attributes. A
+// number, text or true or false attribute is kept; others have no place in a
+// file.
+func setWaveProps(w *tdms.Writer, group, channel string, wv wave) error {
+	if !wv.T0.IsZero() {
+		if err := w.SetChannelProperty(group, channel, "wf_start_time", wv.T0); err != nil {
+			return err
+		}
+	}
+	if err := w.SetChannelProperty(group, channel, "wf_increment", wv.Dt); err != nil {
+		return err
+	}
+	if err := w.SetChannelProperty(group, channel, "wf_samples", int32(len(wv.Y))); err != nil {
+		return err
+	}
+	names := make([]string, 0, len(wv.Attrs))
+	for k := range wv.Attrs {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	for _, k := range names {
+		switch x := wv.Attrs[k].(type) {
+		case float64, string, bool:
+			if err := w.SetChannelProperty(group, channel, k, x); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func kindOf(v any) tdmsKind {
+	if _, ok := asWave(v); ok {
+		return kindNumber
+	}
 	switch x := v.(type) {
 	case float64, int, int64:
 		return kindNumber
@@ -184,6 +232,9 @@ func kindOf(v any) tdmsKind {
 func tdmsColumn(k tdmsKind, v any) (any, error) {
 	switch k {
 	case kindNumber:
+		if w, ok := asWave(v); ok {
+			return append([]float64(nil), w.Y...), nil
+		}
 		switch x := v.(type) {
 		case nil:
 			return []float64{math.NaN()}, nil

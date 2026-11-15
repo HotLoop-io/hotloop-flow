@@ -26,6 +26,9 @@ func toTokens(v []float64) []any {
 
 // array reads the y input as an array of numbers, or says why it can't.
 func array(in map[string]any) ([]float64, error) {
+	if w, ok := asWave(in["y"]); ok {
+		return w.Y, nil // a waveform stands in for its samples
+	}
 	y, ok := floats(in["y"])
 	if !ok {
 		return nil, &Fault{Code: CodeBadInput, Source: fmt.Sprintf("%v is not an array of numbers", in["y"])}
@@ -38,6 +41,11 @@ func badInput(err error) error { return &Fault{Code: CodeBadInput, Source: err.E
 // stepSize is the time between samples, in seconds. The dt input wins, then the
 // rate input in hertz, then the rate property.
 func stepSize(in map[string]any, rate float64) (float64, error) {
+	_, wired := in["dt"]
+	_, rated := in["rate"]
+	if w, ok := asWave(in["y"]); ok && !wired && !rated {
+		return w.Dt, nil // a waveform knows its own step
+	}
 	if v, wired := in["dt"]; wired {
 		dt, ok := num(v)
 		if !ok {

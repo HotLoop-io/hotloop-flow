@@ -260,3 +260,7 @@ device's own clock does it, and Flow only moves the data.
 ## The error list in CI
 
 `hotloop-flow test` and the deploy gate run the editor's check on every diagram in the flow file. A diagram that cannot run is listed as `--- DIAGRAM: <diagram>: <node> input <port>: <reason>` and fails the file even when every test passes; the JUnit report carries each one as an error of type `diagram`. A warning, such as a case structure with no default, is listed and does not fail.
+
+## Waveforms
+
+A waveform is a block of evenly spaced samples that knows when it started and how far apart they are, as a record on the wire: `{"type": "waveform", "t0": "2026-11-14T12:00:00Z", "dt": 0.001, "y": [...], "attrs": {"unit_string": "V"}}`. `dia-wave` builds one from an array (the step from `dt`, else `rate`, else its setting; the start from `t0`, else the moment it runs) and `dia-wave-parts` takes one apart, including how long it spans. A waveform holds at most `maxSamples` samples (1,048,576 by default); the rest are cut off and counted on `dropped`. The analysis nodes accept a waveform where they take an array and use its step. `dia-log-tdms` writes a waveform column as a channel with `wf_start_time`, `wf_increment`, `wf_samples` and the attributes as channel properties.
