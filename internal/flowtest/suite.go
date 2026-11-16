@@ -51,6 +51,11 @@ type Case struct {
 	// starts it at the real time the test runs.
 	Clock string `yaml:"clock,omitempty" json:"clock,omitempty"`
 
+	// Diagram, when set, makes this a test of a FlowLab diagram: its controls are set,
+	// it is run once, and its indicators are checked. The message fields below are not
+	// used by a diagram test.
+	Diagram *DiagramTest `yaml:"diagram,omitempty" json:"diagram,omitempty"`
+
 	// Inject is what goes into the flow, in order. Each one is handled before
 	// the next goes in, so a test reads in the order things happen.
 	Inject []Injection `yaml:"inject,omitempty" json:"inject,omitempty"`
@@ -273,6 +278,12 @@ func (s *Suite) Check() error {
 		}
 		if _, err := c.start(); err != nil {
 			return err
+		}
+		if c.Diagram != nil {
+			if len(c.Diagram.Expect) == 0 {
+				return fmt.Errorf("test %q expects nothing of its diagram, so it can't fail", c.Name)
+			}
+			continue
 		}
 		if len(c.Expect) == 0 {
 			return fmt.Errorf("test %q expects nothing, so it can't fail", c.Name)
