@@ -11,6 +11,9 @@
     highlight: boolean;
     waiting: string[];
     hasSelection: boolean;
+    /** A sub-diagram is selected, so it can be opened in place, and whether it is open now. */
+    canExpand: boolean;
+    expandedSelected: boolean;
     breakOnSelection: boolean;
     panelHref: string;
     nodeName: (id: string) => string;
@@ -22,9 +25,10 @@
     onstep: (mode: 'into' | 'over' | 'out') => void;
     onbreak: () => void;
     onsub: () => void;
+    onexpand: () => void;
     onproblem: (nodeId: string) => void;
   }
-  let { runState, error, problems, warnings, highlight, waiting, hasSelection, breakOnSelection, panelHref, nodeName, onrun, onstop, onhighlight, onpause, onresume, onstep, onbreak, onsub, onproblem }: Props = $props();
+  let { runState, error, problems, warnings, highlight, waiting, hasSelection, canExpand, expandedSelected, breakOnSelection, panelHref, nodeName, onrun, onstop, onhighlight, onpause, onresume, onstep, onbreak, onsub, onexpand, onproblem }: Props = $props();
 
   const running = $derived(runState === 'running' || runState === 'paused');
   let listOpen = $state(false);
@@ -45,6 +49,7 @@
   <button class="ghost" data-test="diagram-step-out" disabled={runState !== 'paused'} onclick={() => onstep('out')}>Step out</button>
   <button class="ghost" data-test="diagram-break" disabled={!hasSelection} onclick={onbreak}>{breakOnSelection ? 'Clear breakpoint' : 'Break on selected'}</button>
   <button class="ghost" data-test="selection-to-subdiagram" title="Cut the selected nodes out into a sub-diagram, with its inputs and outputs worked out from the wires that cross the selection" disabled={!hasSelection || running} onclick={onsub}>Selection to sub-diagram</button>
+  <button class="ghost" data-test="subdiagram-expand" title="Draw the selected sub-diagram open where it is, with its nodes and wires inside a frame, instead of going to its tab" disabled={!canExpand} onclick={onexpand}>{expandedSelected ? 'Close in place' : 'Open in place'}</button>
   <span class="sep"></span>
   <a class="ghost link" data-test="diagram-panel" href={panelHref} target="_blank" rel="noopener">Open panel</a>
   <div class="spacer"></div>

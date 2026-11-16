@@ -94,6 +94,13 @@
   const active = $derived.by(() => { void rev; return shown.activeTab; });
   const dirty = $derived.by(() => { void rev; return graph.dirty; });
   const selectionSize = $derived.by(() => { void rev; return shown.selection.size; });
+  /** The selected sub-diagrams that have a body to open in place. */
+  const openable = $derived.by(() => {
+    void rev;
+    if (viewing) return [] as string[];
+    return [...graph.selection].filter((id) => { const e = graph.byId(id); return !!e && graph.bodyOf(e) !== undefined; });
+  });
+  const openableOpen = $derived.by(() => { void rev; return openable.length > 0 && openable.every((id) => canvas?.isExpanded(id)); });
   const changedScopes = $derived((viewing ? viewOverlay : reviewOverlay)?.scopes ?? new Set<string>());
   const tabState = $derived(viewing ? `viewing deployment ${viewing.seq}, read only` : dirty ? 'unsaved changes' : 'saved');
   const showFlowProps = $derived.by(() => { void rev; return !viewing && !shown.isSubflowScope(shown.activeTab) && shown.tabs().some((t) => t.id === shown.activeTab); });
@@ -192,7 +199,9 @@
   /** Cuts the selection out of a diagram into a sub-diagram; the server works out the connector. */
   async function selectionToSubDiagram(): Promise<void> {
     if (viewing || graph.selection.size === 0 || !graph.isDiagramTab(graph.activeTab)) return;
-    const ids = [...graph.selection].filter((id) => graph.byId(id)?.type !== 'group');
+    // Only what is on this diagram: a node drawn inside a sub-diagram that is open
+    // in place belongs to that sub-diagram's own tab.
+    const ids = [...graph.selection].filter((id) => { const e = graph.byId(id); return !!e && e.type !== 'group' && e.z === graph.activeTab; });
     if (ids.length === 0) return;
     const name = await askName('Selection to sub-diagram', `Sub-diagram ${graph.tabs().length + 1}`, 'selection-subdiagram');
     if (!name) return;
@@ -205,6 +214,14 @@
       canvas.render();
     } catch (ex) {
       notice(ex instanceof ApiError ? ex.message : String(ex));
+    }
+  }
+
+  /** Opens the selected sub-diagrams in place, or closes them if they all are open. */
+  function toggleOpenInPlace(): void {
+    const close = openableOpen;
+    for (const id of openable) {
+      if (canvas.isExpanded(id) === close) canvas.toggleExpanded(id);
     }
   }
 
@@ -1020,6 +1037,7 @@
       onSelectionChange: bump,
       onNotice: notice,
       onEditWire: (w) => void editWire(w),
+      onViewChange: bump,
     });
     viewCanvas = new Canvas(viewHost!, viewGraph, {
       onEditNode: () => undefined,
@@ -1119,7 +1137,7 @@
     {#if activeIsDiagram}
       <DiagramBar
         runState={diagState} error={diag?.run?.error ?? ''} problems={diagProblems} warnings={diag?.warnings ?? []} highlight={highlightOn}
-        waiting={diag?.run?.waiting ?? []} hasSelection={selectionSize > 0} {breakOnSelection}
+        waiting={diag?.run?.waiting ?? []} hasSelection={selectionSize > 0} canExpand={openable.length > 0} expandedSelected={openableOpen} {breakOnSelection}
         panelHref={`panel/${encodeURIComponent(runId)}`} nodeName={nameOf}
         onrun={() => void diagAction(() => api.runDiagram(runId, { highlightMs: highlightOn ? HIGHLIGHT_MS : 0 }))}
         onstop={() => void diagAction(() => api.stopDiagram(runId))}
@@ -1129,6 +1147,7 @@
         onstep={(m) => void diagAction(() => api.debugDiagram(runId, `step-${m}`))}
         onbreak={() => void toggleBreakOnSelection()}
         onsub={() => void selectionToSubDiagram()}
+        onexpand={toggleOpenInPlace}
         onproblem={(id) => selectNode(id)}
       />
     {/if}

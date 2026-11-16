@@ -487,6 +487,26 @@ details[open] > summary::before { transform: rotate(90deg); }
 .diagram-error { position: absolute; top: 52px; left: 8px; right: 8px; z-index: 5; padding: 6px 10px; border-radius: 8px; background: var(--hl-danger-tint); color: var(--hl-danger-text); border: 1px solid var(--hl-danger); font-size: var(--hl-fs-xs); }
 .diagram-problems { position: absolute; top: 52px; right: 8px; z-index: 6; margin: 0; padding: 6px; list-style: none; max-width: 420px; background: var(--hl-card); border: 1px solid var(--hl-border); border-radius: 10px; }
 .diagram-problems button { text-align: left; white-space: normal; }
+.node-expand rect { fill: var(--hl-card); stroke: var(--hl-line-strong); stroke-width: 1; cursor: pointer; }
+.node-expand path { stroke: var(--hl-ink); stroke-width: 1.6; stroke-linecap: round; fill: none; pointer-events: none; }
+.node-expand:hover rect { stroke: var(--hl-orange); }
+/* A sub-diagram drawn open in place: its frame sits under the wires and nodes, so what is drawn inside it can be pressed. */
+.frame-bg { fill: var(--hl-sunken); fill-opacity: .55; pointer-events: none; }
+.frame-border { fill: none; stroke: var(--hl-line-strong); stroke-width: 2; pointer-events: stroke; cursor: move; }
+.frame-head { fill: var(--hl-card); pointer-events: all; cursor: move; }
+.frame.selected .frame-border { stroke: var(--hl-orange); }
+.frame:hover .frame-border { stroke: var(--hl-ink-soft); }
+.frame.selected:hover .frame-border { stroke: var(--hl-orange); }
+.frame.disabled { opacity: .5; }
+.frame-title { fill: var(--hl-ink); font-size: 12px; font-weight: 600; font-family: var(--hl-font); pointer-events: none; user-select: none; }
+.frame-toggle-box { fill: var(--hl-sunken); stroke: var(--hl-line-strong); stroke-width: 1; cursor: pointer; }
+.frame-toggle:hover .frame-toggle-box { stroke: var(--hl-orange); }
+.frame-toggle-glyph { stroke: var(--hl-ink); stroke-width: 1.8; stroke-linecap: round; fill: none; pointer-events: none; }
+.frame-bind { fill: none; stroke: var(--hl-line-strong); stroke-width: 1; stroke-dasharray: 3 4; opacity: .7; pointer-events: none; }
+.frame.run-start .frame-border { stroke: var(--hl-ok); stroke-width: 3; }
+.frame.run-ready .frame-border { stroke: var(--hl-warn); stroke-width: 3; }
+.frame.run-error .frame-border { stroke: var(--hl-danger); stroke-width: 3; }
+.frame.has-break .frame-border { stroke: var(--hl-danger); stroke-width: 3; stroke-dasharray: 5 3; }
 .port-name { fill: var(--hl-ink-soft); font-size: 9.5px; font-family: var(--hl-font); pointer-events: none; user-select: none; }
 .node.run-start .node-body { stroke: var(--hl-ok); stroke-width: 3; }
 .node.run-ready .node-body { stroke: var(--hl-warn); stroke-width: 3; }
@@ -543,4 +563,10 @@ details[open] > summary::before { transform: rotate(90deg); }
 .probe-history li span { color: var(--hl-ink-soft); margin-right: 8px; }
 .wire.probed { stroke-dasharray: 2 4; }
 .canvas-host.has-bar > .canvas { margin-top: 84px; height: calc(100% - 84px); }
+/* On a phone the bar wraps onto many rows. Floating over the canvas it hid every node, so there it takes its own room and the canvas takes what is left. */
+@media (max-width: 820px) {
+  .canvas-host.has-bar { display: flex; flex-direction: column; }
+  .canvas-host.has-bar > .diagram-bar { position: static; flex: none; margin: 8px; }
+  .canvas-host.has-bar > .canvas { margin-top: 0; height: auto; flex: 1 1 0; min-height: 0; }
+}
 .diagram-bar .bar-tag { color: var(--hl-ink-soft); letter-spacing: var(--hl-ls-label); text-transform: uppercase; font-size: var(--hl-fs-2xs); padding-right: 4px; }
