@@ -638,8 +638,9 @@ refuses waits and catches up when it stops refusing, and a deploy with a git
 server that takes ten seconds to say no returns in milliseconds.
 
 It's pure Go (go-git), so the binary stays static. It costs about 3.8 MB of
-binary, which is why it's measured and not assumed, and why the 42 MiB ceiling
-in CI still has room.
+binary, which is why it's measured and not assumed. The ceiling in CI is 46 MiB,
+moved up from 42 in 2.13.0 for Kafka out, and the binary is 48,083,106 bytes,
+about 150 KB under it.
 
 ---
 
