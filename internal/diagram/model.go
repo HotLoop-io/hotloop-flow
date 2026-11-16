@@ -16,6 +16,9 @@
 package diagram
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -142,6 +145,9 @@ type Diagram struct {
 	Warnings []Problem
 	// Bodies lists the diagrams this one runs inside its structures, by tab id.
 	Bodies []string
+	// Sig is a hash of everything that makes this diagram what it is: its settings,
+	// its nodes with every property, and its wires. Two diagrams with one Sig run alike.
+	Sig string
 }
 
 // Problem is one reason a diagram cannot run, for the error list.
@@ -168,6 +174,9 @@ type Set struct {
 	// bodyOf maps a structure node to the diagram it runs. A loop names its body
 	// by the tab's id or, since nobody can read an id, by its name.
 	bodyOf map[string]string
+	// cfg is a hash of every config node in the flow file: a diagram's nodes name
+	// them (a broker, a HotLoop) and run with what they say.
+	cfg string
 	// caseOf maps a case structure node to the diagram of each of its cases,
 	// by case name. The default case is under DefaultCase.
 	caseOf map[string]map[string]string
@@ -232,8 +241,10 @@ func CompileAll(flows *engine.Flows) *Set {
 	sort.Slice(ids, func(i, j int) bool { return pos[ids[i]] < pos[ids[j]] })
 	for _, id := range ids {
 		s.Diagrams[id] = compile(flows, id)
+		s.Diagrams[id].Sig = diagramSig(s.Diagrams[id])
 		s.Order = append(s.Order, id)
 	}
+	s.cfg = configSig(flows)
 	// Resolve each structure's body: an id, or a name that only one diagram has.
 	byName := map[string][]string{}
 	for _, id := range s.Order {
@@ -544,5 +555,78 @@ func (s *Set) Terminals(id string) []*DNode {
 		}
 	}
 	walk(id)
+	return out
+}
+
+// diagramSig hashes what a diagram is made of, so a deploy can tell a diagram it
+// changed from one it only carried along.
+func diagramSig(d *Diagram) string {
+	h := sha256.New()
+	enc := json.NewEncoder(h)
+	_ = enc.Encode(d.Settings)
+	_ = enc.Encode(d.Label)
+	for _, id := range d.Order {
+		n := d.Nodes[id]
+		_ = enc.Encode([]any{n.ID, n.Type, n.Name, withoutLayout(n.Raw)})
+	}
+	_ = enc.Encode(d.Wires)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func configSig(flows *engine.Flows) string {
+	h := sha256.New()
+	enc := json.NewEncoder(h)
+	for _, id := range flows.Order {
+		if n, ok := flows.Nodes[id]; ok && n.IsConfig {
+			_ = enc.Encode([]any{n.ID, n.Type, n.Raw})
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// DefinitionSig hashes a diagram together with every diagram it runs inside its
+// structures and every config node, which is all a run of it reads. It is empty
+// for a diagram the set does not have.
+func (s *Set) DefinitionSig(id string) string {
+	h := sha256.New()
+	seen := map[string]bool{}
+	var walk func(id string) bool
+	walk = func(id string) bool {
+		d, ok := s.Diagrams[id]
+		if !ok {
+			return false
+		}
+		if seen[id] {
+			return true
+		}
+		seen[id] = true
+		h.Write([]byte(id + "=" + d.Sig + ";"))
+		bodies := append([]string(nil), d.Bodies...)
+		sort.Strings(bodies)
+		for _, b := range bodies {
+			if !walk(b) {
+				return false
+			}
+		}
+		return true
+	}
+	if !walk(id) {
+		return ""
+	}
+	h.Write([]byte(s.cfg))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// withoutLayout is a node's properties without where it is drawn, which is not
+// what it does: moving a node on the canvas must not restart a run.
+func withoutLayout(raw map[string]any) map[string]any {
+	out := make(map[string]any, len(raw))
+	for k, v := range raw {
+		switch k {
+		case "x", "y", "g", "w", "h", PanelKey:
+		default:
+			out[k] = v
+		}
+	}
 	return out
 }

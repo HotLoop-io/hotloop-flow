@@ -148,9 +148,10 @@ func (m *Manager) publish(topic string, data map[string]any) {
 	}
 }
 
-// Apply swaps in the diagrams of a deployed flow file. Runs of the old ones stop,
-// and a diagram that says autostart starts again, so a deploy of a headless
-// logger is a restart of the logger and nothing else.
+// Apply swaps in the diagrams of a deployed flow file. The run of a diagram that
+// did not change keeps running. Runs of the ones that did stop, and a diagram that
+// says autostart starts again, so a deploy of a headless logger is a restart of
+// the logger when the logger changed and nothing at all when it did not.
 func (m *Manager) Apply(flows *engine.Flows) {
 	if m == nil {
 		return
@@ -159,7 +160,18 @@ func (m *Manager) Apply(flows *engine.Flows) {
 
 	m.mu.Lock()
 	old := m.runs
-	m.runs = map[string]*Run{}
+	// A run whose diagram, bodies and config nodes are exactly as they were goes on
+	// running, so a deploy of something else does not restart a plant's logger.
+	kept := map[string]*Run{}
+	for id, r := range old {
+		if st, _ := r.State(); st != StateRunning && st != StatePaused {
+			continue
+		}
+		if sig := set.DefinitionSig(id); sig != "" && sig == r.set.DefinitionSig(id) {
+			kept[id] = r
+		}
+	}
+	m.runs = kept
 	m.set = set
 	for id := range m.panels {
 		if _, ok := set.Diagrams[id]; !ok {
@@ -168,16 +180,23 @@ func (m *Manager) Apply(flows *engine.Flows) {
 	}
 	m.mu.Unlock()
 
-	for _, r := range old {
-		r.Stop()
+	for id, r := range old {
+		if kept[id] == nil {
+			r.Stop()
+		}
 	}
-	for _, r := range old {
-		<-r.Done()
+	for id, r := range old {
+		if kept[id] == nil {
+			<-r.Done()
+		}
 	}
 	m.startOutboxes(set)
 
 	for _, id := range set.Order {
 		d := set.Diagrams[id]
+		if _, running := kept[id]; running {
+			continue
+		}
 		if auto, _ := d.Settings["autostart"].(bool); auto && len(d.Problems) == 0 && !isBody(d) {
 			if _, err := m.Start(id, StartOptions{}); err != nil {
 				m.publish("diagram/"+id+"/run", map[string]any{"diagram": id, "state": string(StateFailed), "error": err.Error()})
