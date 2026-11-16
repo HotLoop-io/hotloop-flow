@@ -554,6 +554,7 @@ details[open] > summary::before { transform: rotate(90deg); }
 .panel-card .spin input { text-align: center; min-width: 0; }
 .panel-card .led-toggle { display: inline-flex; align-items: center; gap: 12px; justify-content: flex-start; min-height: 52px; }
 .panel-card .led-toggle .led { flex: none; }
+.chart-grid { width: 100%; height: 180px; image-rendering: pixelated; background: var(--hl-sunken); border-radius: 8px; object-fit: fill; }
 .chart-svg { width: 100%; height: 180px; background: var(--hl-sunken); border-radius: 8px; }
 .chart-svg polyline { fill: none; stroke: var(--hl-orange); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .chart-svg .axis { stroke: var(--hl-line-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }

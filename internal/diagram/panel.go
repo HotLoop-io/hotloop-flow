@@ -39,16 +39,19 @@ type Chart struct {
 	T    []int64   `json:"t,omitempty"` // unix milliseconds, for a chart
 	X    []float64 `json:"x,omitempty"`
 	Y    []float64 `json:"y"`
+	// Z is the grid of an intensity chart, rows of values, replaced with each grid.
+	Z [][]float64 `json:"z,omitempty"`
 	// Dropped counts samples a full chart let go of, so nothing is thrown away
 	// without being counted.
 	Dropped int64 `json:"dropped"`
 }
 
 type chartDelta struct {
-	Replace bool      `json:"replace,omitempty"`
-	T       []int64   `json:"t,omitempty"`
-	X       []float64 `json:"x,omitempty"`
-	Y       []float64 `json:"y"`
+	Replace bool        `json:"replace,omitempty"`
+	Z       [][]float64 `json:"z,omitempty"`
+	T       []int64     `json:"t,omitempty"`
+	X       []float64   `json:"x,omitempty"`
+	Y       []float64   `json:"y"`
 }
 
 func newPanel(id string, publish func(map[string]any)) *Panel {
@@ -219,6 +222,19 @@ func (p *Panel) PutChart(id string, x, y []float64) {
 	}
 }
 
+// PutGrid gives an intensity chart its grid, which replaces the last one.
+func (p *Panel) PutGrid(id string, z [][]float64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	c := p.charts[id]
+	if c == nil {
+		c = &Chart{Mode: "intensity", Cap: 1}
+		p.charts[id] = c
+	}
+	c.Z = z
+	p.dirtyCharts[id] = chartDelta{Replace: true, Z: z, Y: []float64{}}
+}
+
 // SetAttr changes one property of a panel object for the rest of the run and tells
 // everyone watching. The object is named by its label, or its id.
 func (p *Panel) SetAttr(target, prop string, v any) error {
@@ -280,6 +296,7 @@ func (p *Panel) Snapshot() PanelSnapshot {
 		cc.T = append([]int64(nil), c.T...)
 		cc.X = append([]float64(nil), c.X...)
 		cc.Y = append([]float64(nil), c.Y...)
+		cc.Z = c.Z
 		s.Charts[k] = &cc
 	}
 	return s

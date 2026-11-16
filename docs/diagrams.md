@@ -245,7 +245,7 @@ stand-in does.
 indicators and charts, signed in the same way as the editor. It is built to be used
 with a thumb: nothing on it is smaller than a finger. A chart keeps its last 1,024
 points unless you change it, and says how many it has let go of. A graph replaces its
-data with each array. An XY chart plots x against y and keeps history too.
+data with each array. An XY chart plots x against y and keeps history too. An intensity chart takes a grid, an array of rows of numbers that are all the same length (up to 512 by 512), and draws each value as a color from the smallest to the largest in it, replacing the picture with each grid; a flat array or a ragged grid is an error on the node's error wire.
 
 Several people can watch one run. Setting a control from the browser needs
 `diagram.run`, is checked on the server, and is written to the audit log.
