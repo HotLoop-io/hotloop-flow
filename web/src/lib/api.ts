@@ -595,7 +595,7 @@ export interface PanelTerminal {
   history?: number;
 }
 
-export interface PanelChart { mode: string; history: number; t?: number[]; x?: number[]; y: number[]; dropped: number }
+export interface PanelChart { mode: string; history: number; t?: number[]; x?: number[]; y: number[]; z?: number[][]; dropped: number }
 
 export interface WireSnapshot { last: unknown; at: string; count: number; history?: { value: unknown; at: string }[] }
 

@@ -64,13 +64,13 @@
       for (const [k, a] of Object.entries(changed)) next[k] = { ...(next[k] ?? {}), ...a };
       attrs = next;
     }
-    const deltas = (e.data.charts ?? {}) as Record<string, { replace?: boolean; t?: number[]; x?: number[]; y: number[] }>;
+    const deltas = (e.data.charts ?? {}) as Record<string, { replace?: boolean; t?: number[]; x?: number[]; y: number[]; z?: number[][] }>;
     if (Object.keys(deltas).length) {
       const next = { ...charts };
       for (const [k, d] of Object.entries(deltas)) {
         const cur = next[k] ?? { mode: 'chart', history: 1024, y: [], dropped: 0 };
         const keep = cur.history || 1024;
-        if (d.replace) next[k] = { ...cur, t: d.t, x: d.x, y: d.y ?? [] };
+        if (d.replace) next[k] = { ...cur, t: d.t, x: d.x, y: d.y ?? [], z: d.z };
         else {
           const y = [...cur.y, ...(d.y ?? [])];
           const over = Math.max(0, y.length - keep);
@@ -152,6 +152,41 @@
     const sy = y1 === y0 ? 1 : (h - 16) / (y1 - y0);
     return c.y.map((y, i) => `${((xs[i]! - x0) * sx).toFixed(1)},${(h - 8 - (y - y0) * sy).toFixed(1)}`).join(' ');
   }
+  // An intensity chart: each value of the grid as a color from the smallest to the largest.
+  function ramp(v: number): [number, number, number] {
+    const stops: [number, number, number][] = [[30, 60, 140], [30, 160, 190], [240, 220, 80], [255, 90, 0]];
+    const pos = Math.min(1, Math.max(0, v)) * (stops.length - 1);
+    const i = Math.min(stops.length - 2, Math.floor(pos));
+    const f = pos - i;
+    const a = stops[i]!, b = stops[i + 1]!;
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+  }
+  function paintGrid(node: HTMLCanvasElement, z: number[][] | undefined) {
+    const draw = (grid: number[][] | undefined) => {
+      const rows = grid?.length ?? 0, cols = rows ? grid![0]!.length : 0;
+      node.width = Math.max(1, cols);
+      node.height = Math.max(1, rows);
+      const ctx = node.getContext('2d');
+      if (!ctx || !rows) return;
+      let lo = Infinity, hi = -Infinity;
+      for (const r of grid!) for (const v of r) { if (v < lo) lo = v; if (v > hi) hi = v; }
+      const img = ctx.createImageData(cols, rows);
+      grid!.forEach((r, y) => r.forEach((v, x) => {
+        const [R, G, B] = ramp(hi === lo ? 0.5 : (v - lo) / (hi - lo));
+        const o = (y * cols + x) * 4;
+        img.data[o] = R; img.data[o + 1] = G; img.data[o + 2] = B; img.data[o + 3] = 255;
+      }));
+      ctx.putImageData(img, 0, 0);
+    };
+    draw(z);
+    return { update: draw };
+  }
+  const gridRange = (c?: PanelChart): string => {
+    if (!c?.z?.length) return 'no data yet';
+    let lo = Infinity, hi = -Infinity;
+    for (const r of c.z) for (const v of r) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    return `${c.z.length} by ${c.z[0]!.length}, ${lo.toFixed(2)} to ${hi.toFixed(2)}`;
+  };
   const range = (c?: PanelChart): string => (c && c.y.length ? `${Math.min(...c.y).toFixed(2)} to ${Math.max(...c.y).toFixed(2)}` : 'no data yet');
 </script>
 
@@ -186,11 +221,16 @@
       {:else if t.type === 'dia-chart'}
         <section class="panel-card wide tint-{tint(t)}" hidden={!shown(t)} data-test="chart" data-id={t.id}>
           <div class="cap">{label(t)} <span style="text-transform:none">({charts[t.id]?.mode ?? t.mode ?? 'chart'})</span></div>
-          <svg class="chart-svg" viewBox="0 0 600 180" preserveAspectRatio="none" role="img" aria-label={`${label(t)} chart`}>
+          {#if (charts[t.id]?.mode ?? t.mode) === 'intensity'}
+            <canvas class="chart-grid" data-test="chart-grid" aria-label={`${label(t)} intensity chart`} use:paintGrid={charts[t.id]?.z}></canvas>
+            <div class="chart-note"><span data-test="chart-count">{gridRange(charts[t.id])}</span><span>{t.unit ?? ''}</span></div>
+          {:else}
+            <svg class="chart-svg" viewBox="0 0 600 180" preserveAspectRatio="none" role="img" aria-label={`${label(t)} chart`}>
             <line class="axis" x1="0" y1="172" x2="600" y2="172" />
             <polyline data-test="chart-line" points={points(charts[t.id], 600, 180)} />
-          </svg>
-          <div class="chart-note"><span data-test="chart-count">{charts[t.id]?.y.length ?? 0} of {t.history ?? 1024} points</span><span>{range(charts[t.id])}{t.unit ? ` ${t.unit}` : ''}</span></div>
+            </svg>
+            <div class="chart-note"><span data-test="chart-count">{charts[t.id]?.y.length ?? 0} of {t.history ?? 1024} points</span><span>{range(charts[t.id])}{t.unit ? ` ${t.unit}` : ''}</span></div>
+          {/if}
         </section>
       {:else if t.type === 'dia-control'}
         <section class="panel-card tint-{tint(t)}" hidden={!shown(t)} data-test="ctl" data-id={t.id} data-enabled={!off(t)}>

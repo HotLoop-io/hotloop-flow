@@ -86,14 +86,26 @@ func init() {
 			InputPorts: []string{"y", "x?"},
 			Props: []node.Prop{
 				prop("label", "Label", node.PropString, "chart"),
-				choice("mode", "Mode", "chart", "chart", "graph", "xy"),
+				choice("mode", "Mode", "chart", "chart", "graph", "xy", "intensity"),
 				prop("history", "Points kept", node.PropNumber, 1024),
 				prop("unit", "Unit", node.PropString, ""),
 			},
-			Help: "A chart keeps a rolling history of what it is given, 1,024 points unless you change it. A graph replaces its data with each array. An XY chart plots x against y and keeps its history too. Change the mode and nothing needs rewiring.",
+			Help: "A chart keeps a rolling history of what it is given, 1,024 points unless you change it. A graph replaces its data with each array. An XY chart plots x against y and keeps its history too. An intensity chart takes a grid (an array of rows of numbers, up to 512 by 512) and draws it as colors from its smallest value to its largest, replacing the picture with each grid. Change the mode and nothing needs rewiring.",
 		},
 		New: func(raw map[string]any) (Op, error) {
+			isGrid := strProp(raw, "mode", "chart") == "intensity"
 			return opFunc(func(_ context.Context, rc *Ctx, in map[string]any) (map[string]any, error) {
+				if isGrid {
+					if in["y"] == nil {
+						return nil, nil
+					}
+					rows, err := gridOf(in["y"])
+					if err != nil {
+						return nil, &Fault{Code: CodeBadInput, Source: err.Error()}
+					}
+					rc.Run.Panel().PutGrid(rc.Node.ID, rows)
+					return nil, nil
+				}
 				y, ok := floats(in["y"])
 				if !ok {
 					if in["y"] == nil {
@@ -166,4 +178,34 @@ func floats(v any) ([]float64, bool) {
 		return []float64{f}, true
 	}
 	return nil, false
+}
+
+// intensityMax is the most rows and the most columns an intensity chart takes.
+const intensityMax = 512
+
+// gridOf reads an array of rows of numbers. Every row has to be as long as the first.
+func gridOf(v any) ([][]float64, error) {
+	rows, ok := v.([]any)
+	if !ok || len(rows) == 0 {
+		return nil, fmt.Errorf("an intensity chart takes an array of rows of numbers")
+	}
+	if len(rows) > intensityMax {
+		return nil, fmt.Errorf("%d rows is more than an intensity chart draws, %d", len(rows), intensityMax)
+	}
+	out := make([][]float64, len(rows))
+	for i, r := range rows {
+		_, isList := r.([]any)
+		row, ok := floats(r)
+		if !isList || !ok || len(row) == 0 {
+			return nil, fmt.Errorf("row %d is not an array of numbers", i+1)
+		}
+		if len(row) > intensityMax {
+			return nil, fmt.Errorf("row %d has %d columns, more than an intensity chart draws, %d", i+1, len(row), intensityMax)
+		}
+		if i > 0 && len(row) != len(out[0]) {
+			return nil, fmt.Errorf("row %d has %d columns and row 1 has %d", i+1, len(row), len(out[0]))
+		}
+		out[i] = row
+	}
+	return out, nil
 }
