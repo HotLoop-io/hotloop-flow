@@ -28,6 +28,7 @@ type SerialConfig struct {
 	DataBits int
 	StopBits int
 	Parity   string // N, E or O
+	Flow     string // none, rtscts or xonxoff
 }
 
 type serialSession struct {
@@ -53,10 +54,18 @@ func (s *serialSession) MarshalJSON() ([]byte, error) {
 const readTick = 100 * time.Millisecond
 
 func openPort(c SerialConfig) (serial.Port, error) {
-	return serial.Open(&serial.Config{
+	p, err := serial.Open(&serial.Config{
 		Address: c.Device, BaudRate: c.Baud, DataBits: c.DataBits, StopBits: c.StopBits,
 		Parity: c.Parity, Timeout: readTick,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := applyFlow(c.Device, c.Flow); err != nil {
+		_ = p.Close()
+		return nil, err
+	}
+	return p, nil
 }
 
 func (s *serialSession) ensure() error {
@@ -216,6 +225,7 @@ func init() {
 				prop("baud", "Baud rate", node.PropNumber, 9600),
 				choice("data", "Data bits", "8", "5", "6", "7", "8"),
 				choice("parity", "Parity", "none", "none", "even", "odd"),
+				choice("flow", "Flow control", "none", "none", "rtscts", "xonxoff"),
 				choice("stop", "Stop bits", "1", "1", "2"),
 			},
 			Help: "Opens a serial port and hands on a session. The run closes it when it ends. If the cable is pulled the read says so on its error wire and opens the port again on the next read.",
@@ -224,6 +234,7 @@ func init() {
 			cfg := SerialConfig{
 				Device: strProp(raw, "device", ""), Baud: intProp(raw, "baud", 9600),
 				DataBits: intOr(strProp(raw, "data", "8"), 8), StopBits: intOr(strProp(raw, "stop", "1"), 1),
+				Flow: strProp(raw, "flow", "none"),
 			}
 			switch strProp(raw, "parity", "none") {
 			case "even":

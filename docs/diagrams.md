@@ -180,7 +180,7 @@ wire naming the address.
 
 A port that goes away, such as a pulled cable or an unplugged adapter, is a fault on
 the read's error wire. The next read tries to open it again, once a second, and counts
-the loss and the return. Flow control lines are not offered.
+the loss and the return. A port has flow control, none, hardware (RTS and CTS) or software (XON and XOFF), on Linux, set on the terminal itself; a pseudo terminal shows the setting arrived, and what the lines do on a real adapter has not been shown.
 
 ### Data acquisition
 

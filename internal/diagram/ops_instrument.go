@@ -194,6 +194,13 @@ func parseAddress(addr string) (link, error) {
 		}
 		q := u.Query()
 		cfg := SerialConfig{Device: dev, Baud: intOr(q.Get("baud"), 9600), DataBits: intOr(q.Get("data"), 8), StopBits: intOr(q.Get("stop"), 1), Parity: "N"}
+		switch strings.ToLower(q.Get("flow")) {
+		case "", "none":
+		case "rtscts", "xonxoff":
+			cfg.Flow = strings.ToLower(q.Get("flow"))
+		default:
+			return nil, fmt.Errorf("flow=%q is not none, rtscts or xonxoff", q.Get("flow"))
+		}
 		switch strings.ToUpper(q.Get("parity")) {
 		case "E", "EVEN":
 			cfg.Parity = "E"
