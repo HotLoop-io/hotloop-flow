@@ -250,6 +250,40 @@ data with each array. An XY chart plots x against y and keeps history too.
 Several people can watch one run. Setting a control from the browser needs
 `diagram.run`, is checked on the server, and is written to the audit log.
 
+## Controls
+
+A `dia-control` has a **kind** (what it holds) and a **look** (how the panel draws it).
+The server checks every value against the kind, whatever the look is, so a script
+that calls `PUT /diagrams/{id}/controls/{node}` is held to the same rules as a finger.
+What an operator sets is on the panel as soon as the diagram is deployed, before the
+first run, and the control node hands the diagram that value each time it runs.
+
+| Kind | Looks | What the diagram reads |
+|---|---|---|
+| `number` | `entry` (typed), `spin` (typed, with a minus and a plus button that step by `step` and stop at the range), `slider`, `knob` | a number, held to `min` and `max` when they are set |
+| `bool` | `switch`, `button` (a press sets it true, and `latch` puts it back when the diagram reads it), `led` (an LED you press) | true or false |
+| `string` | a text box | text |
+| `enum` | a dropdown of `options` | one of the options |
+| `array` | a list the operator adds items to and removes items from | a list of numbers, switches or text, by `elem`; `min` and `max` hold each number item, and `maxlen` holds the length |
+| `record` | one input per field | an object with exactly the `fields` (`rate:number, on:bool, note:string`), every field always present |
+
+A slider and a knob need a smallest and a largest value. A knob without both is a
+warning at deploy and is drawn as a typed entry until it has them (a slider already
+did the same). The knob is a dial that sweeps 270 degrees: drag round it with a mouse
+or a finger, press on it to put it there, or use the arrow keys (one `step`), Page Up
+and Page Down (ten steps), Home and End. It writes when you let go. The starting
+value of an array is JSON (`[1, 2, 3]`) or a plain comma list (`1, 2, 3`), and the
+starting value of a record is a JSON object (`{"rate": 3}`); a field that is left out
+starts empty. A record with no fields, an unknown field name, or a starting value that
+does not fit is a problem at deploy.
+
+Every button, input, switch and dial on the panel is at least 44 pixels in both
+directions, and the page does not scroll sideways on a 390 pixel phone.
+
+A control is written when it is changed, and the diagram reads it when the control
+node runs; there is no control that starts a run or fires a node by itself when it
+changes. That is the event structure, and it is not built.
+
 ## What this is not
 
 A diagram runs in a Go process on a general purpose operating system. Garbage

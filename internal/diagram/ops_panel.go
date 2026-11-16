@@ -20,17 +20,21 @@ func init() {
 			OutputPorts: []string{"value"},
 			Props: []node.Prop{
 				prop("label", "Label", node.PropString, "control"),
-				choice("kind", "Kind", "number", "number", "bool", "string", "enum"),
-				choice("style", "Look", "entry", "entry", "slider", "knob", "switch", "button", "led"),
+				choice("kind", "Kind", "number", "number", "bool", "string", "enum", "array", "record"),
+				choice("style", "Look", "entry", "entry", "spin", "slider", "knob", "switch", "button", "led"),
 				prop("default", "Starting value", node.PropString, "0"),
 				prop("min", "Smallest", node.PropString, ""),
 				prop("max", "Largest", node.PropString, ""),
 				prop("step", "Step", node.PropString, ""),
 				prop("options", "Choices, comma separated (for a dropdown)", node.PropString, ""),
+				choice("elem", "Items are (for an array)", "number", "number", "bool", "string"),
+				prop("maxlen", "Most items (for an array, empty for no limit)", node.PropString, ""),
+				prop("fields", "Fields, name:number or name:bool or name:string, comma separated (for a record)", node.PropString, ""),
 				prop("latch", "A button stays pressed until the diagram reads it", node.PropBool, false),
 			},
-			Help: "An input on the panel. The operator sets it in the browser and the diagram reads it when this node runs.",
+			Help: "An input on the panel. The operator sets it in the browser and the diagram reads it when this node runs. A number is typed, stepped with the spin look, slid or turned (a slider and a knob need a smallest and a largest value). An array is a list of numbers, switches or text the operator adds to and removes from, and the diagram reads it as a list. A record is a fixed set of named fields and the diagram reads it as an object. The starting value of an array or a record is JSON.",
 		},
+		Warn: warnControl,
 		New: func(raw map[string]any) (Op, error) {
 			def, err := controlDefault(raw)
 			if err != nil {
@@ -105,7 +109,24 @@ func init() {
 	})
 }
 
+// warnControl says when a knob has no range to turn through. It is a warning
+// and not a refusal: the panel falls back to a typed entry, as a slider does.
+func warnControl(_ *Set, _ *Diagram, n *DNode) []Problem {
+	if strProp(n.Raw, "style", "") != "knob" || strProp(n.Raw, "kind", "number") != "number" {
+		return nil
+	}
+	_, lo := limit(n.Raw["min"])
+	_, hi := limit(n.Raw["max"])
+	if lo && hi {
+		return nil
+	}
+	return []Problem{{Node: n.ID, Text: "a knob needs a smallest and a largest value to turn through, and shows a typed entry until it has both"}}
+}
+
 func controlDefault(raw map[string]any) (any, error) {
+	if k := strProp(raw, "kind", "number"); k == "array" || k == "record" {
+		return compoundDefault(raw, k)
+	}
 	d := raw["default"]
 	if d == nil || d == "" {
 		switch strProp(raw, "kind", "number") {

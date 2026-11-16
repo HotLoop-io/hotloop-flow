@@ -586,6 +586,10 @@ export interface PanelTerminal {
   max?: number;
   step?: number;
   options?: string[];
+  /** The kind of an array control's items, the fields of a record control, and the most items an array holds. */
+  elem?: string;
+  fields?: { name: string; kind: string }[];
+  maxlen?: number;
   default?: unknown;
   mode?: string;
   history?: number;
