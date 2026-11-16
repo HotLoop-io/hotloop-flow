@@ -42,7 +42,7 @@ because it's a feature, not the point.
 Current release is `2.12.1`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.12.1`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-104,000 lines of Go, a little under 40 percent of it tests, 108 node types for messages and 37 for FlowLab diagrams, and the race
+104,000 lines of Go, a little under 40 percent of it tests, 117 node types for messages and 37 for FlowLab diagrams, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
 use through EmberNET, business use included, is unrestricted, under HotLoop's EmberNet Source License.
 
@@ -1273,25 +1273,62 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**108 node types for messages, and 37 more for FlowLab diagrams.**
+**117 node types for messages, and 37 more for FlowLab diagrams.**
 
 | Category | Nodes |
 |---|---|
 | Common | inject, debug, complete, catch, status, link in, link out, comment, junction |
 | Function | function, switch, change, range, template, delay, trigger, exec, rbe |
-| Network | mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, s7 read/write, ethernetip read/write, opcua read/write/subscribe, sparkplug in/out/command, hotloop in/state/script/recipe, mcp tool/result/client, e-mail, and Node-RED's modbus-read/getter/flex-getter/write/flex-write/server |
+| Network | ntfy out, gotify out, discord out, discord bot out, kafka out, mqtt in/out, http in, http response, http request, websocket in/out, tcp in/out, tcp request, udp in/out, modbus read/write, s7 read/write, ethernetip read/write, opcua read/write/subscribe, sparkplug in/out/command, hotloop in/state/script/recipe, mcp tool/result/client, e-mail, and Node-RED's modbus-read/getter/flex-getter/write/flex-write/server |
 | Sequence | split, join, sort, batch |
 | Parser | csv, html, json, xml, yaml |
 | Storage | file, file in, watch, influxdb out, postgres, postgresql |
 | Dashboard | ui_text, ui_numeric, ui_button, ui_switch, ui_text_input, ui_led, ui_gauge, ui_chart, ui_template, and the ui_base, ui_tab, ui_group, ui_link and ui_spacer that lay the page out |
 | Discover | scan, netinfo, for inventorying an OT segment |
-| Config | mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug, hotloop, mcp-server, modbus-client, postgreSQLConfig |
+| Config | hotloop-flow-ntfy, hotloop-flow-gotify, hotloop-flow-discord-bot, hotloop-flow-kafka, mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug, hotloop, mcp-server, modbus-client, postgreSQLConfig |
 | FlowLab | constant, math, compare, logic, wait, bundle, field, build array, while loop, for loop, body in, body out, serial port, serial read, serial write, parse reading, stable value, log to text file, log to TDMS file, statistics, integral, derivative, filter, read DAQ task, mqtt out, control, indicator, chart |
 
 The FlowLab row is a different kind of node. It runs on a tab that is a diagram, where
 a node runs once when every input has a value, and never takes a message. What
 FlowLab is, and how its loops, error wire, panel and debugger work, is
 [docs/diagrams.md](docs/diagrams.md).
+
+### Telling people, and Kafka
+
+Five nodes send what a message carries somewhere and pass the message on: **ntfy out**,
+**gotify out**, **discord out** (a webhook), **discord bot out** and **kafka out**. They
+take the same settings HotLoop core sends its alarms and events with, so a plant that
+already has an ntfy topic, a Gotify application, a Discord webhook or a Kafka cluster
+points Flow at the same ones.
+
+- **ntfy.** A server config node (address, then an access token or a username and password,
+  or neither for a server that lets anyone publish), and per node a topic, a title, a
+  priority (min to max, or `msg.priority`), tags and a click address. An empty topic or title
+  takes `msg.topic` or `msg.title`. On a public server the topic is the only secret there
+  is, so it is kept out of every error and status.
+- **Gotify.** A server config node with the application's token, and per node a title
+  and a priority from 0 to 10.
+- **Discord webhook.** The webhook URL is the whole credential, on the node, and is never
+  shown in a status, a log or an error, not even in a network error that names the address.
+  A title or a color makes the message an embed. Content is cut at 2,000 characters and an
+  embed's description at 4,096, counted the way Discord counts them, and nothing in a
+  message can ping anyone.
+- **Discord bot.** A bot config node with its token, and per node a channel ID (or `msg.channel`).
+  It posts as the bot and needs the bot to be in the channel with permission to send.
+- **Kafka out.** A cluster config node (brokers, SASL PLAIN or SCRAM-SHA-256 or SCRAM-SHA-512,
+  TLS), and per node a topic and an optional key. The value is `msg.payload`, as text, or as
+  JSON when it is not text, and the message is passed on once the cluster has acknowledged it
+  from every in-sync replica. It uses franz-go, the client core's Kafka output uses.
+
+A server that refuses says why in the node's error, with none of what was sent in it. A rate
+limit is waited out once, as long as the server says up to a minute, and after that the
+message fails. There is no Slack and no Teams node, and no UADP node: HotLoop takes UADP in and
+Flow reads those values through the HotLoop nodes.
+
+Proven against a real ntfy 2.38.0, a real Gotify and a real Redpanda in the lab: the node
+publishes and the server is asked what it holds. Discord was proven only against servers
+written from its documentation, because no test channel exists, so what a real Discord does
+with a bot or a webhook has not been seen.
 
 `scan` sweeps a CIDR range and identifies Modbus and EtherNet/IP endpoints, and
 `netinfo` reports the interfaces the runtime can actually see, which in macvlan

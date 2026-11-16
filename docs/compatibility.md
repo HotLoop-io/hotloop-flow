@@ -46,14 +46,14 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 ## Summary
 
-108 node types registered.
+117 node types registered.
 
 | Level | Count |
 |---|---|
 | full | 12 |
 | partial | 50 |
 | divergent | 14 |
-| hotloop-flow-only | 32 |
+| hotloop-flow-only | 41 |
 
 ## Common
 
@@ -74,11 +74,15 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 | Type | Level | Notes |
 |---|---|---|
+| `hotloop-flow-discord-bot` | hotloop-flow-only | HotLoop Flow's own Discord bot, the same bot token HotLoop core's bot uses. |
 | `hotloop-flow-ethernetip` | hotloop-flow-only | HotLoop Flow's own EtherNet/IP connection, for tag access on ControlLogix, CompactLogix and Micro800 controllers. It connects on the first request, drops the connection on any failure that makes it untrustworthy, and reconnects on the next one. |
+| `hotloop-flow-gotify` | hotloop-flow-only | HotLoop Flow's own Gotify server, the same settings HotLoop core publishes alarms with. |
 | `hotloop-flow-hotloop` | hotloop-flow-only | HotLoop Flow's own connection to a HotLoop. Logs in with an account and sends the bearer token HotLoop hands back, and logs in again when it expires. |
 | `hotloop-flow-influxdb` | hotloop-flow-only | HotLoop Flow's own InfluxDB connection, targeting the App Store's influxdb-app. |
+| `hotloop-flow-kafka` | hotloop-flow-only | HotLoop Flow's own Kafka connection, the same settings HotLoop core's Kafka output uses. |
 | `hotloop-flow-mcp-server` | hotloop-flow-only | HotLoop Flow's own connection to a Model Context Protocol server over Streamable HTTP. It sends a bearer token if it has one, connects on the first call and reconnects on the call after a failure. |
 | `hotloop-flow-modbus` | hotloop-flow-only | HotLoop Flow's own Modbus TCP connection. It connects on the first request, drops the connection on any failure that makes it untrustworthy, and reconnects on the next one. |
+| `hotloop-flow-ntfy` | hotloop-flow-only | HotLoop Flow's own ntfy server, the same settings HotLoop core publishes alarms with. |
 | `hotloop-flow-opcua` | hotloop-flow-only | HotLoop Flow's own OPC UA connection. It connects on first use, notices when the server goes away, and opens a new session on the next request or, for a subscription, by itself with a growing wait between tries. |
 | `hotloop-flow-postgres` | hotloop-flow-only | HotLoop Flow's own PostgreSQL connection. Targets the App Store's postgresql-app and timescale-db-pod, which share a wire protocol. |
 | `hotloop-flow-s7` | hotloop-flow-only | HotLoop Flow's own Siemens S7 connection, over ISO on TCP. It connects on the first request, drops the connection on any failure that makes it untrustworthy, and reconnects on the next one. |
@@ -134,9 +138,12 @@ stopped with D1012 instead of stalling the node's whole queue.
 
 | Type | Level | Notes |
 |---|---|---|
+| `discord bot out` | hotloop-flow-only | HotLoop Flow's own node. |
+| `discord out` | hotloop-flow-only | HotLoop Flow's own node. |
 | `e-mail` | partial | Sends msg.payload as the body and msg.topic as the subject, to the node's To (the name property) or, when that is empty, msg.to. msg.cc, msg.bcc, msg.from, msg.html and msg.attachments ([{filename, content, contentType}]) are honored, and a Buffer payload goes as an attachment. secure is an encrypted connection from the first byte (port 465). Otherwise the node asks for STARTTLS when the server offers it. tls means only connect to a server with a valid certificate. Authentication is BASIC (PLAIN, or LOGIN as a fallback), XOAUTH2 with the access token read from the message property in token, or NONE. A password is refused over a connection that is not encrypted unless the server is this host. Sending only: the e-mail in node (reading a mailbox) is not provided. msg.header and the saslformat switch are ignored. networkInterface (not in Node-RED) sends the connection over one network interface. Ignored properties: `saslformat`. |
 | `ethernetip read` | hotloop-flow-only | HotLoop Flow's own EtherNet/IP tag read. Not the same configuration as the community node-red-contrib-cip-ethernet-ip, which does not run here. |
 | `ethernetip write` | hotloop-flow-only | HotLoop Flow's own EtherNet/IP tag write. Not the same configuration as the community node-red-contrib-cip-ethernet-ip, which does not run here. |
+| `gotify out` | hotloop-flow-only | HotLoop Flow's own node. |
 | `hotloop in` | hotloop-flow-only | HotLoop Flow's own node. It follows HotLoop's live feed (GET /api/stream), which has no Node-RED counterpart. |
 | `hotloop recipe` | hotloop-flow-only | HotLoop Flow's own node. It applies a HotLoop recipe (POST /api/recipes/{id}/apply). |
 | `hotloop script` | hotloop-flow-only | HotLoop Flow's own node. It runs a HotLoop script (POST /api/scripts/{id}/run). |
@@ -144,6 +151,7 @@ stopped with D1012 instead of stalling the node's whole queue.
 | `http in` | divergent | Serves a path, with Express-style :params and a trailing *, and builds the same msg.req / msg.res / msg.payload shape Node-RED does, including JSON, form-encoded and raw bodies. Three deliberate differences. A request that no HTTP Response node answers is closed with 504 after a timeout instead of being held open forever, because Node-RED's version leaks a connection per request until the process runs out of sockets and stops answering with nothing in the log. Two nodes claiming the same method and path is refused at deploy time rather than one of them silently never firing. And a path that would shadow the editor or the admin API is refused for the same reason. Uploads parse the way multer does in Node-RED: text fields into msg.payload, files into msg.req.files, a broken upload answered with 500. One bound multer lacks: an array index over 10,000 in a field name, a[99999999], is refused instead of building a sparse array that long. msg.req.cookies is cookie-parser's, j: values included. Ignored properties: `swaggerDoc`. |
 | `http request` | partial | Method, URL, headers, basic authentication, redirects and the three return types, with msg.url, msg.method and msg.headers overriding the node. The response body is size-capped and the call is bounded by a timeout, neither of which Node-RED does. TLS comes from a tls-config, or without one msg.rejectUnauthorized = false skips the certificate check for that one message, as in Node-RED. msg.cookies and a cookie header go out through a cookie jar, cookies a redirect sets follow the redirect, and msg.responseCookies and msg.redirectList come back, all as in Node-RED. A multipart/form-data content type with an object payload sends it as a form. Proxy settings and connection persistence are not implemented in this build. There is no egress allowlist: this node can reach anything the pod can, exactly as Node-RED's can, and the place to bound that is a NetworkPolicy rather than an edit dialog nobody outside the cluster can trust. networkInterface (not in Node-RED) binds the connections to one network interface. Ignored properties: `proxy`, `persist`. |
 | `http response` | partial | Status code and headers from the node or from msg.statusCode and msg.headers, with the payload as the body. msg.cookies sets and clears cookies exactly as Express does for Node-RED, options and all; with more than one, they go out in name order rather than the order the object was built in. |
+| `kafka out` | hotloop-flow-only | HotLoop Flow's own node. |
 | `mcp client` | hotloop-flow-only | HotLoop Flow's own node. It calls a tool on a Model Context Protocol server, or lists the tools it has. |
 | `mcp result` | hotloop-flow-only | HotLoop Flow's own node. It answers the call an mcp tool node started. |
 | `mcp tool` | hotloop-flow-only | HotLoop Flow's own node. It serves a flow as a Model Context Protocol tool at /mcp, for a caller authenticated like the admin API's, and it has no Node-RED counterpart. |
@@ -157,6 +165,7 @@ stopped with D1012 instead of stalling the node's whole queue.
 | `modbus-write` | partial | Writes msg.payload (a value, or a list the length of quantity) with function code 5, 6, 15 or 16, whichever fits. The output is the incoming message with msg.responseBuffer, and failures go out the second output. networkInterface (not in Node-RED) binds this node's connection to one network interface. Without it the node's tab's FLOW_NETWORK_INTERFACE, then the client's interface, then the host's choice. Ignored properties: `logIOActivities`. |
 | `mqtt in` | partial | Topic subscription with QoS and payload decoding, and on MQTT 5 the no local, retain as published and retain handling options, with the message's properties on msg.userProperties, msg.contentType, msg.responseTopic, msg.correlationData and msg.messageExpiryInterval, and its content type steering the auto-detect decoding the way Node-RED's does. Dynamic subscription via a control message is not implemented. |
 | `mqtt out` | partial | Publishing with topic, QoS and retain from the node or the message, and on MQTT 5 the content type, response topic, correlation data, message expiry and user properties, from the node or from msg.contentType, msg.responseTopic, msg.correlationData, msg.messageExpiryInterval and msg.userProperties, with msg.responseTopic as the topic when there is no other. Topic aliases are not used: the full topic always goes. The connect and disconnect control messages are not implemented. Ignored properties: `topicAlias`. |
+| `ntfy out` | hotloop-flow-only | HotLoop Flow's own node. |
 | `opcua read` | hotloop-flow-only | HotLoop Flow's own OPC UA read. Not the same configuration as the community node-red-contrib-opcua, which does not run here. |
 | `opcua subscribe` | hotloop-flow-only | HotLoop Flow's own OPC UA subscription. Not the same configuration as the community node-red-contrib-opcua, which does not run here. |
 | `opcua write` | hotloop-flow-only | HotLoop Flow's own OPC UA write. Not the same configuration as the community node-red-contrib-opcua, which does not run here. |

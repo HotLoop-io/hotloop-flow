@@ -19,6 +19,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/simonvetter/modbus v1.6.4
 	github.com/tetratelabs/wazero v1.12.0
+	github.com/twmb/franz-go v1.22.2
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.56.0
@@ -53,10 +54,12 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
+	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/npat-efault/crc16 v0.0.0-20161013170008-4128ccbe47c3 // indirect
+	github.com/pierrec/lz4/v4 v4.1.33 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rogpeppe/go-internal v1.16.0 // indirect
@@ -67,6 +70,7 @@ require (
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/twmb/franz-go/pkg/kmsg v1.15.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
