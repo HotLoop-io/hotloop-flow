@@ -385,8 +385,10 @@ can help, and ask it what it is:
 echo '{}' > anon.json
 podman pull --authfile anon.json ghcr.io/hotloop-io/hotloop-flow:X.Y.Z
 podman run --rm ghcr.io/hotloop-io/hotloop-flow:X.Y.Z version
-podman image inspect ghcr.io/hotloop-io/hotloop-flow:X.Y.Z --format '{{.Digest}}'
+podman image inspect ghcr.io/hotloop-io/hotloop-flow:X.Y.Z --format '{{range .RepoDigests}}{{println .}}{{end}}'
 ```
+
+Read the digest from `RepoDigests`, not `.Digest`. On a multi-platform tag, podman 4 reports the index as `.Digest`, but podman 5 (the ubuntu-26.04 runner and newer laptops) reports the platform manifest it pulled, so `.Digest` is a different image's digest depending on the machine. `RepoDigests` is the registry's own digest on both, and the one to compare with the `Docker-Content-Digest` above. `skopeo inspect --raw docker://ghcr.io/hotloop-io/hotloop-flow:X.Y.Z | sha256sum` gives the same index digest with no podman at all.
 
 The image ships its licenses, because Apache, MIT, BSD and ISC all say the
 notice goes wherever the binary goes:
