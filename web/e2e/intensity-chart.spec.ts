@@ -16,6 +16,8 @@ test('an intensity chart draws its grid as colors and keeps the shape of the gri
   await signIn(page, 'g');
   await page.evaluate(() => { location.hash = '#/panel/main'; location.reload(); });
   await expect(page.locator('[data-test="panel"]')).toBeVisible();
+  // The run's events reach the panel over the socket, so run once it is up, as every other spec does.
+  await expect(page.locator('.conn')).toContainText('live');
   await page.locator('[data-test="panel-run"]').click();
   const canvas = page.locator('[data-test="chart"][data-id="c"] [data-test="chart-grid"]');
   await expect(canvas).toHaveAttribute('width', '4');
