@@ -180,6 +180,10 @@ func runCase(ctx context.Context, doc []byte, c *Case, opts Options) (res Result
 		return res
 	}
 
+	if c.Diagram != nil {
+		return runDiagramCase(ctx, doc, c)
+	}
+
 	// Parsed afresh for every test. A test gets a runtime, contexts and node
 	// instances of its own, and nothing one test does can be seen by the next.
 	flows, err := engine.ParseFlows(doc)

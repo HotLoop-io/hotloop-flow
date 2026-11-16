@@ -292,6 +292,29 @@ a deadline. Work that has to meet one belongs in a PLC or a runtime built for it
 timing of samples from a data acquisition device is not affected by any of this: the
 device's own clock does it, and Flow only moves the data.
 
+## Tests of a diagram
+
+A flow test file can hold a test of a diagram beside the message tests. It sets the diagram's
+controls, runs it once with the real diagram engine, and says what its indicators hold:
+
+```yaml
+tests:
+  - name: weighs and flags a heavy load
+    diagram:
+      name: Scale logger          # the diagram's name or id
+      controls: {Limit: 10}       # by label or id, checked like an operator's entry
+      expect:
+        Weight: 12.5              # a number matches to within a millionth
+        Heavy: true
+        Reading: {min: 12, max: 13}
+```
+
+A control the diagram does not have, a value it refuses, an indicator that is not one, a name
+two things share, and a diagram that cannot run are errors with the reason. A diagram with a
+node that would reach outside the test (a serial port, an instrument, a data acquisition device,
+MQTT out, a HotLoop write, a log file) is refused, because a diagram test has no stand-in for
+them. A scripted serial device, to test a cable pull or a run of garbage frames, is not built.
+
 ## The error list in CI
 
 `hotloop-flow test` and the deploy gate run the editor's check on every diagram in the flow file. A diagram that cannot run is listed as `--- DIAGRAM: <diagram>: <node> input <port>: <reason>` and fails the file even when every test passes; the JUnit report carries each one as an error of type `diagram`. A warning, such as a case structure with no default, is listed and does not fail.
