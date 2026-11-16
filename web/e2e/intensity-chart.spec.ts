@@ -20,7 +20,16 @@ test('an intensity chart draws its grid as colors and keeps the shape of the gri
   await expect(page.locator('.conn')).toContainText('live');
   await page.locator('[data-test="panel-run"]').click();
   const canvas = page.locator('[data-test="chart"][data-id="c"] [data-test="chart-grid"]');
-  await expect(canvas).toHaveAttribute('width', '4');
+  try { await expect(canvas).toHaveAttribute('width', '4', { timeout: 4000 }); } catch (ex) {
+    const st = await page.evaluate(async () => {
+      const keys = Object.keys(sessionStorage).concat(Object.keys(localStorage));
+      let body = '';
+      for (const k of keys) { const v = sessionStorage.getItem(k) ?? localStorage.getItem(k) ?? ''; if (/token/i.test(k)) { try { const r = await fetch('/api/diagrams/main', { headers: { Authorization: 'Bearer ' + v } }); body = r.status + ' ' + (await r.text()).slice(0, 1500); } catch (e) { body = String(e); } } }
+      return { keys, body, conn: document.querySelector('.conn')?.textContent, state: document.querySelector('[data-test="panel-state"]')?.textContent, text: document.body.innerText.slice(0, 400), url: location.href };
+    });
+    console.log('FAILDUMP ' + JSON.stringify(st));
+    throw ex;
+  }
   await expect(canvas).toHaveAttribute('height', '3');
   await expect(page.locator('[data-test="chart"][data-id="c"] [data-test="chart-count"]')).toHaveText('3 by 4, 0.00 to 10.00');
   const px = await canvas.evaluate((c: HTMLCanvasElement) => {
