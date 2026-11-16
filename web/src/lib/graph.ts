@@ -851,6 +851,21 @@ export class Graph {
     return !!t && t.type === 'tab' && DIAGRAM_KEY in t;
   }
 
+  /**
+   * The diagram a sub-diagram node runs, read the way the runtime reads it: its
+   * `body` is the id of a diagram tab, or else the name of the one diagram that has
+   * that name. A name two diagrams share is no body at all, since the runtime
+   * refuses it too.
+   */
+  bodyOf(e: FlowEntry): FlowEntry | undefined {
+    if (e.type !== 'dia-sub' || typeof e.body !== 'string' || e.body === '') return undefined;
+    const diagrams = this.entries.filter((t) => t.type === 'tab' && DIAGRAM_KEY in t);
+    const byId = diagrams.find((t) => t.id === e.body);
+    if (byId) return byId;
+    const named = diagrams.filter((t) => t.label === e.body);
+    return named.length === 1 ? named[0] : undefined;
+  }
+
   /** Applies edited properties to a node. */
   updateNode(id: string, props: Record<string, unknown>): void {
     const e = this.byId(id);

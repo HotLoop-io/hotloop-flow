@@ -322,6 +322,36 @@ A field is `number`, `integer`, `boolean`, `string`, `timestamp`, `array`, `wave
 
 A case structure's cases are rows of a case name and a diagram picker, with a second picker for the default case, and the property that names the diagram a loop or a sub-diagram runs is a picker too. The pickers list the FlowLab diagrams of the flow file and store the tab's id; a name written by hand in an older flow file is shown as that tab and saved as its id, which the runtime reads the same way. The stored values are the same JSON as before (`cases` is an object of case name to diagram), so a flow file edited in the dialog and one edited by hand are the same file.
 
+## Opening a sub-diagram in place
+
+A sub-diagram node has a small box at its top right corner. Press it, or select the
+node and press **Open in place** in the diagram bar, and the node is drawn
+open where it was: a frame with the sub-diagram's name, its connector named on the
+two edges (the inputs on the left, the outputs on the right, with the `after` and
+`done` ports and the error wire like any node), and inside it the nodes and wires of
+its body. Nothing opens in a second window and the tab you are on does not change.
+Wires that led to the node lead to the frame's connector, and a faint dashed line runs
+from each connector name to the body in or body out node of that name. The box in the
+frame's title bar (or **Close in place**) closes it again.
+
+What is drawn inside the frame is the body's own nodes, not a copy. Select one, drag
+it, double-click it for its properties, change its value or delete it, and you have
+edited the body, as one undoable step, and a deploy saves it. Moving the frame by its
+title bar moves the sub-diagram node, and the body goes with it. A wire joins two
+nodes of one diagram, so a wire from a node outside to a node inside is refused in
+words; wire to the connector on the frame. Zoom, pan, fit and the marquee work as they
+do anywhere else.
+
+Which sub-diagrams are open is how you are looking at the diagram. It is not in the
+flow file, it is not an undo step, and a reload closes them all, so opening one never
+changes what a deploy sends. A sub-diagram inside an open one has its own box and can
+be opened too, three deep. A body that is already open somewhere is not opened a
+second time, and a sub-diagram whose body leads back to a diagram that is already open
+is drawn closed, so a diagram that contains itself cannot loop the editor. A body
+named by nothing, or by a name two diagrams share, has no box, because the runtime
+cannot find it either. Loops and case structures own bodies too and are not opened in
+place yet.
+
 ## Making a sub-diagram in the editor
 
 With nodes selected on a diagram, the bar's **Selection to sub-diagram** asks for a name, calls `POST /diagrams/{id}/sub` with the flow file the editor holds, and loads the answer as one undoable edit: the nodes move to a tab of their own and a sub-diagram node takes their place, with its inputs and outputs worked out from the wires that cross the selection. Nothing is saved until it is deployed.

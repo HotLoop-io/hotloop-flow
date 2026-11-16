@@ -7,7 +7,7 @@
 
 import {
   type FlowEntry, type Graph, type Point,
-  GROUP_HEAD, NODE_HEIGHT, NODE_WIDTH, PORT_RADIUS, SUBFLOW_PREFIX, inputPort, outputPort, snap, wireMid, wirePath,
+  GROUP_HEAD, NODE_HEIGHT, NODE_WIDTH, PORT_RADIUS, PORT_STEP, SUBFLOW_PREFIX, inputPort, outputPort, snap, wireMid, wirePath,
 } from './graph';
 import { type DiffOverlay, wireKey } from './diff';
 import { SYMBOLS } from './symbols';
@@ -28,6 +28,31 @@ type Mode =
   | { kind: 'wire'; fromId: string; port: number; cursor: Point }
   | { kind: 'marquee'; start: Point; current: Point };
 
+/** A sub-diagram drawn open in place: where its frame is on the canvas. */
+interface Frame {
+  /** The sub-diagram node it is the open form of. */
+  id: string;
+  /** The tab the node is on, and the tab whose nodes are drawn inside. */
+  tab: string;
+  body: string;
+  /** How many open sub-diagrams it sits inside. */
+  depth: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+interface Box { x0: number; y0: number; x1: number; y1: number }
+
+const FRAME_HEAD = 26;
+const FRAME_PAD = 18;
+/** Room at each side of an open sub-diagram for its own connector, named. */
+const FRAME_GUTTER = 64;
+const FRAME_MIN_W = 220;
+/** An open sub-diagram can hold open sub-diagrams, this many deep. */
+const FRAME_DEPTH = 3;
+
 export interface CanvasCallbacks {
   onEditNode: (entry: FlowEntry) => void;
   onSelectionChange: () => void;
@@ -35,6 +60,8 @@ export interface CanvasCallbacks {
   onNotice?: (message: string) => void;
   /** A wire was double-clicked. */
   onEditWire?: (wire: { from: FlowEntry; port: number; to: FlowEntry }) => void;
+  /** A sub-diagram was opened or closed in place. */
+  onViewChange?: () => void;
 }
 
 export interface CanvasOptions {
@@ -51,7 +78,9 @@ export class Canvas {
   private layers: {
     grid: SVGGElement;
     groups: SVGGElement;
+    frames: SVGGElement;
     wires: SVGGElement;
+    inner: SVGGElement;
     nodes: SVGGElement;
     overlay: SVGGElement;
   };
@@ -75,6 +104,16 @@ export class Canvas {
   private lastPress = { id: '', at: 0 };
   /** Where the pointer last was over the canvas, in canvas coordinates. */
   private pointer: Point | null = null;
+  /**
+   * The sub-diagrams drawn open, by the id of the sub-diagram node. This is how
+   * the person is looking at the diagram, not part of it: it is not in the flow
+   * file, it is not an undo step, and a reload closes them all.
+   */
+  private expanded = new Set<string>();
+  /** Where each open sub-diagram is drawn, worked out afresh by every render. */
+  private frames = new Map<string, Frame>();
+  /** How far the nodes inside an open sub-diagram are moved from where the file puts them. */
+  private offsets = new Map<string, Point>();
 
   constructor(
     private readonly host: HTMLElement,
@@ -90,16 +129,20 @@ export class Canvas {
     this.layers = {
       grid: this.group('layer-grid'),
       groups: this.group('layer-groups'),
+      frames: this.group('layer-frames'),
       wires: this.group('layer-wires'),
+      inner: this.group('layer-inner'),
       nodes: this.group('layer-nodes'),
       overlay: this.group('layer-overlay'),
     };
-    this.svg.append(this.layers.grid, this.layers.groups, this.layers.wires, this.layers.nodes, this.layers.overlay);
+    this.svg.append(this.layers.grid, this.layers.groups, this.layers.frames, this.layers.wires, this.layers.inner, this.layers.nodes, this.layers.overlay);
     host.append(this.svg);
 
     this.bindEvents();
     this.resize();
-    new ResizeObserver(() => this.resize()).observe(host);
+    const watch = new ResizeObserver(() => this.resize());
+    watch.observe(host);
+    watch.observe(this.svg);
     graph.onChange(() => this.render());
   }
 
@@ -110,7 +153,12 @@ export class Canvas {
   }
 
   private resize(): void {
-    const rect = this.host.getBoundingClientRect();
+    // What the viewBox is drawn onto is the svg, which is shorter than the host when
+    // the bar over a diagram takes room at the top. The view has to have the
+    // svg's own shape, or the browser letterboxes it and a pointer is read onto
+    // the wrong part of the canvas.
+    const own = this.svg.getBoundingClientRect();
+    const rect = own.width > 0 && own.height > 0 ? own : this.host.getBoundingClientRect();
     // The viewBox keeps its scale; only the visible extent changes, so
     // resizing the window pans rather than zooming.
     const scale = this.view.w / (this.svg.clientWidth || rect.width || 1);
@@ -207,6 +255,14 @@ export class Canvas {
       this.lastPress = { id: key, at: now };
     }
 
+    // The small boxes that open a sub-diagram in place and close it again. A press
+    // on one is only that: it never starts a drag or a selection.
+    const toggleEl = target.closest('[data-expand],[data-collapse]');
+    if (toggleEl) {
+      this.toggleExpanded(toggleEl.getAttribute('data-expand') ?? toggleEl.getAttribute('data-collapse')!);
+      return;
+    }
+
     // A wire carries data-port too, which is the output it leaves from and not a place to start a new one.
     const portEl = this.readOnly ? null : target.closest('[data-port]:not(.wire)');
     if (portEl) {
@@ -242,6 +298,7 @@ export class Canvas {
       } else if (!this.graph.selection.has(id)) {
         this.graph.selection = new Set([id]);
       }
+      this.dropInsideOfSelectedFrames();
       this.cb.onSelectionChange();
       if (this.readOnly) {
         this.render();
@@ -345,7 +402,12 @@ export class Canvas {
       if (target) {
         const toId = target.getAttribute('data-node-id')!;
         const inEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-in-port]');
-        this.graph.connect(this.mode.fromId, this.mode.port, toId, inEl?.getAttribute('data-in-port') ?? undefined);
+        // A wire joins two nodes of one diagram. With a sub-diagram open, a node of
+        // its body is drawn beside the nodes of the diagram it is in, and a wire
+        // between them would be a wire between two tabs, which the file cannot say.
+        const a = this.graph.byId(this.mode.fromId), b = this.graph.byId(toId);
+        if (a && b && a.z !== b.z) this.cb.onNotice?.('A wire joins two nodes of the same diagram. Wire into the sub-diagram at its connector, on the frame.');
+        else this.graph.connect(this.mode.fromId, this.mode.port, toId, inEl?.getAttribute('data-in-port') ?? undefined);
       }
     } else if (this.mode.kind === 'drag') {
       if (this.mode.moved) {
@@ -372,17 +434,56 @@ export class Canvas {
     const y1 = Math.min(a.y, b.y), y2 = Math.max(a.y, b.y);
     if (!additive) this.graph.selection.clear();
 
-    for (const n of this.graph.visibleNodes(this.graph.activeTab)) {
-      const nx = n.x ?? 0, ny = n.y ?? 0;
-      const left = nx - NODE_WIDTH / 2, right = nx + NODE_WIDTH / 2;
-      const top = ny - NODE_HEIGHT / 2, bottom = ny + NODE_HEIGHT / 2;
+    for (const { entry, box } of this.drawnNodes()) {
       // Intersection rather than containment: dragging a box across a row of
-      // nodes should catch them, not require enclosing them exactly.
-      if (right >= x1 && left <= x2 && bottom >= y1 && top <= y2) {
-        this.graph.selection.add(n.id);
-      }
+      // nodes should catch them, not require enclosing them exactly. An open
+      // sub-diagram is the exception: its inside is not a hit, so a box drawn over
+      // some of what is in it picks those nodes, and takes the sub-diagram itself
+      // only when it surrounds the whole frame.
+      const hit = this.frames.has(entry.id)
+        ? box.x0 >= x1 && box.x1 <= x2 && box.y0 >= y1 && box.y1 <= y2
+        : box.x1 >= x1 && box.x0 <= x2 && box.y1 >= y1 && box.y0 <= y2;
+      if (hit) this.graph.selection.add(entry.id);
     }
+    this.dropInsideOfSelectedFrames();
     this.cb.onSelectionChange();
+  }
+
+  /**
+   * Every node the canvas is drawing, with the box it fills where it is drawn:
+   * the nodes of the diagram on view, and the nodes inside each open sub-diagram.
+   */
+  private drawnNodes(): { entry: FlowEntry; box: Box }[] {
+    const out: { entry: FlowEntry; box: Box }[] = [];
+    const add = (n: FlowEntry): void => {
+      const frame = this.frames.get(n.id);
+      if (frame) { out.push({ entry: n, box: { x0: frame.x, y0: frame.y, x1: frame.x + frame.w, y1: frame.y + frame.h } }); return; }
+      const o = this.offsets.get(n.id) ?? { x: 0, y: 0 };
+      const nx = (n.x ?? 0) + o.x, ny = (n.y ?? 0) + o.y;
+      out.push({ entry: n, box: { x0: nx - NODE_WIDTH / 2, y0: ny - NODE_HEIGHT / 2, x1: nx + NODE_WIDTH / 2, y1: ny + NODE_HEIGHT / 2 } });
+    };
+    for (const n of this.graph.visibleNodes(this.graph.activeTab)) add(n);
+    for (const f of this.frames.values()) for (const n of this.graph.nodesOn(f.body)) add(n);
+    return out;
+  }
+
+  /**
+   * An open sub-diagram moves with its nodes drawn in it. If the frame and a node
+   * inside it are both selected, moving the selection would move that node twice,
+   * so the frame stands for them all.
+   */
+  private dropInsideOfSelectedFrames(): void {
+    for (const f of this.frames.values()) {
+      if (this.graph.selection.has(f.id)) this.dropDescendants(f.body);
+    }
+  }
+
+  private dropDescendants(tab: string): void {
+    for (const n of this.graph.nodesOn(tab)) {
+      this.graph.selection.delete(n.id);
+      const inner = this.frames.get(n.id);
+      if (inner) this.dropDescendants(inner.body);
+    }
   }
 
   private onWheel(e: WheelEvent): void {
@@ -541,23 +642,169 @@ export class Canvas {
   centerOn(id: string): void {
     const n = this.graph.byId(id);
     if (!n || n.x === undefined || n.y === undefined) return;
-    const x = n.type === 'group' ? Number(n.x) + Number(n.w) / 2 : n.x;
-    const y = n.type === 'group' ? Number(n.y) + Number(n.h) / 2 : n.y;
+    const o = this.offsets.get(id) ?? { x: 0, y: 0 };
+    const x = (n.type === 'group' ? Number(n.x) + Number(n.w) / 2 : n.x) + o.x;
+    const y = (n.type === 'group' ? Number(n.y) + Number(n.h) / 2 : n.y) + o.y;
     this.view.x = x - this.view.w / 2;
     this.view.y = y - this.view.h / 2;
     this.applyView();
   }
 
   render(): void {
+    this.layout();
     this.renderGrid();
     this.renderGroups();
+    this.renderFrames();
     this.renderWires();
     this.renderNodes();
     this.renderOverlay();
   }
 
-  /** Fits the view to the nodes on the active tab. */
+  // ── Sub-diagrams open in place ─────────────────────────────────────────────
+
+  /** Whether this sub-diagram node is drawn open. */
+  isExpanded(id: string): boolean { return this.expanded.has(id); }
+
+  /** Whether a node is a sub-diagram that has a body to open. */
+  canExpand(n: FlowEntry | undefined): boolean { return !!n && n.type === 'dia-sub' && !!this.graph.bodyOf(n); }
+
+  /** The sub-diagrams that are open now. */
+  expandedIds(): string[] { return [...this.expanded]; }
+
+  /**
+   * Opens a sub-diagram in place, or closes it. Opened, its nodes and wires are
+   * drawn inside a frame where the node was, and they are the same nodes as the
+   * ones on its own tab: moving one, wiring two or editing one here is editing
+   * that tab. Returns whether it is open afterwards.
+   */
+  toggleExpanded(id: string): boolean {
+    const n = this.graph.byId(id);
+    if (this.expanded.has(id)) {
+      this.expanded.delete(id);
+    } else {
+      if (!n || !this.canExpand(n)) {
+        this.cb.onNotice?.('This sub-diagram has no diagram to open yet. Pick its body in its properties.');
+        return false;
+      }
+      const body = this.graph.bodyOf(n)!.id;
+      const other = [...this.expanded].find((e) => this.graph.bodyOf(this.graph.byId(e) ?? n)?.id === body);
+      if (other) {
+        this.cb.onNotice?.(`That body is already open in place on ${this.graph.label(this.graph.byId(other)!)}. Close that one first.`);
+        return false;
+      }
+      this.expanded.add(id);
+    }
+    this.render();
+    // Opened somewhere that does not fit the view, it is brought into view, since
+    // the point of opening it is to look at it.
+    const f = this.frames.get(id);
+    if (f && (f.x < this.view.x || f.y < this.view.y || f.x + f.w > this.view.x + this.view.w || f.y + f.h > this.view.y + this.view.h)) this.fit();
+    this.cb.onViewChange?.();
+    return this.expanded.has(id);
+  }
+
+  private nodeBox(n: FlowEntry): Box {
+    const H = this.graph.nodeHeight(n);
+    const x = n.x ?? 0, y = n.y ?? 0;
+    // A little above and below for the label over the ports and the status line under the body.
+    return { x0: x - NODE_WIDTH / 2, y0: y - H / 2 - 16, x1: x + NODE_WIDTH / 2, y1: y + H / 2 + 16 };
+  }
+
+  /** The body to draw inside this node, if it is open, has a body and nothing makes that a loop. */
+  private openBody(n: FlowEntry, depth: number, seen: Set<string>): string | undefined {
+    if (!this.expanded.has(n.id) || depth >= FRAME_DEPTH) return undefined;
+    const tab = this.graph.bodyOf(n)?.id;
+    return tab && !seen.has(tab) ? tab : undefined;
+  }
+
+  /** How big the frame of an open sub-diagram is, and the box its nodes fill where the file puts them. */
+  private frameSize(n: FlowEntry, body: string, depth: number, seen: Set<string>): { w: number; h: number; box: Box | null } {
+    const box = this.tabBox(body, depth + 1, new Set([...seen, body]));
+    const ports = this.graph.ports(n);
+    const rows = Math.max(ports?.in.length ?? 1, ports?.out.length ?? 1);
+    const innerW = box ? box.x1 - box.x0 : 0;
+    const innerH = box ? box.y1 - box.y0 : 0;
+    return {
+      box,
+      w: Math.max(FRAME_MIN_W, innerW + 2 * FRAME_GUTTER),
+      h: Math.max(FRAME_HEAD + innerH + 2 * FRAME_PAD, FRAME_HEAD + rows * PORT_STEP + 24, 90),
+    };
+  }
+
+  /** The box a tab's nodes fill, counting each open sub-diagram as its frame. */
+  private tabBox(tab: string, depth: number, seen: Set<string>): Box | null {
+    let box: Box | null = null;
+    for (const n of this.graph.nodesOn(tab)) {
+      if (n.x === undefined || n.y === undefined) continue;
+      const body = this.openBody(n, depth, seen);
+      let b: Box;
+      if (body) {
+        const size = this.frameSize(n, body, depth, seen);
+        const H = this.graph.nodeHeight(n);
+        b = { x0: n.x - NODE_WIDTH / 2, y0: n.y - H / 2, x1: n.x - NODE_WIDTH / 2 + size.w, y1: n.y - H / 2 + size.h };
+      } else {
+        b = this.nodeBox(n);
+      }
+      box = box ? { x0: Math.min(box.x0, b.x0), y0: Math.min(box.y0, b.y0), x1: Math.max(box.x1, b.x1), y1: Math.max(box.y1, b.y1) } : b;
+    }
+    return box;
+  }
+
+  /**
+   * Works out where every open sub-diagram is drawn. The frame grows right and
+   * down from the corner of the node it replaces, and its nodes are moved as one
+   * piece to sit inside it. Nothing here touches the flow: the nodes keep the
+   * coordinates the file gives them, and these are only how far to move them.
+   */
+  private layout(): void {
+    for (const id of [...this.expanded]) {
+      if (!this.graph.byId(id)) this.expanded.delete(id);
+    }
+    this.frames.clear();
+    this.offsets.clear();
+    if (this.expanded.size === 0) return;
+    this.placeFrames(this.graph.activeTab, { x: 0, y: 0 }, 0, new Set([this.graph.activeTab]));
+  }
+
+  private placeFrames(tab: string, off: Point, depth: number, seen: Set<string>): void {
+    for (const n of this.graph.nodesOn(tab)) {
+      if (n.x === undefined || n.y === undefined) continue;
+      const body = this.openBody(n, depth, seen);
+      if (!body) continue;
+      const size = this.frameSize(n, body, depth, seen);
+      const H = this.graph.nodeHeight(n);
+      const frame: Frame = { id: n.id, tab, body, depth, x: n.x - NODE_WIDTH / 2 + off.x, y: n.y - H / 2 + off.y, w: size.w, h: size.h };
+      this.frames.set(n.id, frame);
+      const bodyOff = {
+        x: frame.x + FRAME_GUTTER - (size.box?.x0 ?? 0),
+        y: frame.y + FRAME_HEAD + FRAME_PAD - (size.box?.y0 ?? 0),
+      };
+      for (const m of this.graph.nodesOn(body)) this.offsets.set(m.id, bodyOff);
+      this.placeFrames(body, bodyOff, depth + 1, new Set([...seen, body]));
+    }
+  }
+
+  /** Where a node's input port is drawn: on its frame when it is open. */
+  private inAt(e: FlowEntry, k = 0): Point {
+    const f = this.frames.get(e.id);
+    if (f) return { x: f.x, y: f.y + FRAME_HEAD + 14 + k * PORT_STEP };
+    const p = this.graph.inPos(e, k);
+    const o = this.offsets.get(e.id);
+    return o ? { x: p.x + o.x, y: p.y + o.y } : p;
+  }
+
+  /** Where a node's output port is drawn. */
+  private outAt(e: FlowEntry, port: number): Point {
+    const f = this.frames.get(e.id);
+    if (f) return { x: f.x + f.w, y: f.y + FRAME_HEAD + 14 + port * PORT_STEP };
+    const p = this.graph.outPos(e, port);
+    const o = this.offsets.get(e.id);
+    return o ? { x: p.x + o.x, y: p.y + o.y } : p;
+  }
+
+  /** Fits the view to the nodes on the active tab, and to any sub-diagram open in them. */
   fit(): void {
+    this.layout();
     const nodes = this.graph.visibleNodes(this.graph.activeTab);
     if (nodes.length === 0) {
       this.view = { x: -100, y: -100, w: 1200, h: 800 };
@@ -571,6 +818,12 @@ export class Canvas {
       minY = Math.min(minY, (n.y ?? 0) - NODE_HEIGHT * 2);
       maxY = Math.max(maxY, (n.y ?? 0) + NODE_HEIGHT * 2);
     }
+    for (const f of this.frames.values()) {
+      minX = Math.min(minX, f.x - 20);
+      maxX = Math.max(maxX, f.x + f.w + 20);
+      minY = Math.min(minY, f.y - 20);
+      maxY = Math.max(maxY, f.y + f.h + 20);
+    }
     // A group reaches past its nodes, and its title bar is what you grab.
     for (const g of this.graph.groupsOn(this.graph.activeTab)) {
       if (!(Number(g.w) > 0)) continue;
@@ -581,8 +834,11 @@ export class Canvas {
     }
     const rect = this.svg.getBoundingClientRect();
     const aspect = rect.height / (rect.width || 1);
-    const w = Math.max(maxX - minX, 400);
-    this.view = { x: minX, y: minY, w, h: Math.max(w * aspect, maxY - minY) };
+    // As wide as the nodes need, and wide enough that they are not too tall for the
+    // canvas either, with the shape of the canvas, so what is drawn is where the
+    // pointer says it is.
+    const w = Math.max(maxX - minX, 400, (maxY - minY) / (aspect || 1));
+    this.view = { x: minX, y: minY, w, h: w * aspect };
     this.applyView();
   }
 
@@ -680,10 +936,12 @@ export class Canvas {
     const frag = document.createDocumentFragment();
     const chips: SVGGElement[] = [];
 
-    for (const { from, port, to } of this.graph.wiresOn(this.graph.activeTab)) {
+    const tabs = [this.graph.activeTab, ...[...this.frames.values()].map((f) => f.body)];
+    const drawn = tabs.flatMap((tab) => this.graph.wiresOn(tab).map((w) => ({ ...w, tab })));
+    for (const { from, port, to, tab } of drawn) {
       const inK = this.graph.inIndex(from, port, to);
-      const a = this.graph.outPos(from, port);
-      const b = this.graph.inPos(to, inK);
+      const a = this.outAt(from, port);
+      const b = this.inAt(to, inK);
       const path = document.createElementNS(SVG_NS, 'path');
       path.setAttribute('d', wirePath(a, b));
       const added = this.diff?.addedWires.has(wireKey(from.id, port, to.id));
@@ -703,7 +961,7 @@ export class Canvas {
       }
       const wkey = `${from.id}.${this.graph.ports(from)?.out[port] ?? ''}>${to.id}.${this.graph.ports(to)?.in[inK] ?? ''}`;
       if (this.litWires.has(wkey)) path.classList.add('live');
-      if (this.probed.has(`${this.graph.activeTab}/${wkey}`)) path.classList.add('probed');
+      if (this.probed.has(`${tab}/${wkey}`)) path.classList.add('probed');
 
       // The type on the wire, when either end declares one: a chip at the
       // middle of the curve, and the whole story as the wire's tooltip. The chip
@@ -711,7 +969,7 @@ export class Canvas {
       const typed = wireTypeLabel(from, port, to, this.wireClashes);
       // A wire of a diagram has a name, the output it comes from, written at its
       // middle beside its type, so the diagram reads without hovering every wire.
-      const wname = this.graph.isDiagramTab(this.graph.activeTab) ? (this.graph.ports(from)?.out[port] ?? '') : '';
+      const wname = this.graph.isDiagramTab(tab) ? (this.graph.ports(from)?.out[port] ?? '') : '';
       if (typed || wname) {
         if (typed) {
           const tip = document.createElementNS(SVG_NS, 'title');
@@ -766,6 +1024,7 @@ export class Canvas {
 
   private renderNodes(): void {
     this.layers.nodes.replaceChildren();
+    this.layers.inner.replaceChildren();
     const frag = document.createDocumentFragment();
 
     for (const ghost of this.diff?.ghosts ?? []) {
@@ -777,9 +1036,137 @@ export class Canvas {
       frag.append(g);
     }
     for (const n of this.graph.visibleNodes(this.graph.activeTab)) {
+      // An open sub-diagram is its frame, drawn a layer down.
+      if (this.frames.has(n.id)) continue;
       frag.append(this.renderNode(n));
     }
     this.layers.nodes.append(frag);
+
+    // What is inside each open sub-diagram: the nodes of its own tab, moved to sit
+    // in its frame. They are the same entries, so everything that works on a node
+    // works on them.
+    const inner = document.createDocumentFragment();
+    for (const f of this.frames.values()) {
+      for (const n of this.graph.nodesOn(f.body)) {
+        if (this.frames.has(n.id)) continue;
+        const o = this.offsets.get(n.id) ?? { x: 0, y: 0 };
+        const wrap = document.createElementNS(SVG_NS, 'g');
+        wrap.setAttribute('class', 'inner-node');
+        wrap.setAttribute('transform', `translate(${o.x} ${o.y})`);
+        wrap.append(this.renderNode(n));
+        inner.append(wrap);
+      }
+    }
+    this.layers.inner.append(inner);
+  }
+
+  /** The frame of each sub-diagram that is open: its outline, title, closing box and connector. */
+  private renderFrames(): void {
+    this.layers.frames.replaceChildren();
+    const frag = document.createDocumentFragment();
+    for (const f of this.frames.values()) {
+      const n = this.graph.byId(f.id);
+      if (!n) continue;
+      const selected = this.graph.selection.has(f.id);
+      const runState = this.nodeStates.get(f.id);
+      const g = document.createElementNS(SVG_NS, 'g');
+      g.setAttribute('class', `frame${selected ? ' selected' : ''}${n.d ? ' disabled' : ''}${runState ? ` run-${runState}` : ''}${this.breakpoints.has(f.id) ? ' has-break' : ''}`);
+      g.setAttribute('data-node-id', f.id);
+      g.setAttribute('data-frame', f.id);
+      g.setAttribute('data-depth', String(f.depth));
+
+      const rect = (cls: string, x: number, y: number, w: number, h: number, rx = 0): SVGRectElement => {
+        const r = document.createElementNS(SVG_NS, 'rect');
+        r.setAttribute('x', String(x));
+        r.setAttribute('y', String(y));
+        r.setAttribute('width', String(w));
+        r.setAttribute('height', String(h));
+        if (rx) r.setAttribute('rx', String(rx));
+        r.setAttribute('class', cls);
+        return r;
+      };
+      g.append(rect('frame-bg', f.x, f.y, f.w, f.h, 8), rect('frame-head', f.x, f.y, f.w, FRAME_HEAD, 8), rect('frame-border', f.x, f.y, f.w, f.h, 8));
+
+      const title = document.createElementNS(SVG_NS, 'text');
+      title.setAttribute('x', String(f.x + 12));
+      title.setAttribute('y', String(f.y + FRAME_HEAD - 9));
+      title.setAttribute('class', 'frame-title');
+      const bodyLabel = this.graph.byId(f.body)?.label;
+      const own = this.graph.label(n);
+      title.textContent = truncate(typeof bodyLabel === 'string' && bodyLabel && bodyLabel !== own ? `${own}  /  ${bodyLabel}` : own, Math.max(10, Math.floor((f.w - 60) / 7)));
+      g.append(title);
+
+      const close = document.createElementNS(SVG_NS, 'g');
+      close.setAttribute('class', 'frame-toggle');
+      close.setAttribute('data-collapse', f.id);
+      close.setAttribute('role', 'button');
+      close.setAttribute('aria-label', `Close ${this.graph.label(n)}`);
+      const hit = rect('frame-toggle-box', f.x + f.w - FRAME_HEAD + 3, f.y + 3, FRAME_HEAD - 6, FRAME_HEAD - 6, 4);
+      const bar = document.createElementNS(SVG_NS, 'path');
+      bar.setAttribute('d', `M${f.x + f.w - FRAME_HEAD + 8} ${f.y + FRAME_HEAD / 2}h${FRAME_HEAD - 16}`);
+      bar.setAttribute('class', 'frame-toggle-glyph');
+      const tip = document.createElementNS(SVG_NS, 'title');
+      tip.textContent = 'Close this sub-diagram';
+      close.append(hit, bar, tip);
+      g.append(close);
+
+      // The connector, on the frame's own edges, named.
+      const ports = this.graph.ports(n);
+      ports?.in.forEach((name, k) => {
+        const p = this.inAt(n, k);
+        const c = this.portCircle(p, 'port-in');
+        c.setAttribute('data-in-port', name);
+        c.setAttribute('data-node', n.id);
+        const t = document.createElementNS(SVG_NS, 'text');
+        t.setAttribute('x', String(p.x + 8));
+        t.setAttribute('y', String(p.y + 3));
+        t.setAttribute('class', 'port-name');
+        t.textContent = name;
+        g.append(c, t);
+      });
+      ports?.out.forEach((name, k) => {
+        const p = this.outAt(n, k);
+        const t = document.createElementNS(SVG_NS, 'text');
+        t.setAttribute('x', String(p.x - 8));
+        t.setAttribute('y', String(p.y + 3));
+        t.setAttribute('text-anchor', 'end');
+        t.setAttribute('class', 'port-name');
+        t.textContent = name;
+        const c = this.portCircle(p, 'port-out');
+        c.setAttribute('data-port', String(k));
+        c.setAttribute('data-node', n.id);
+        g.append(t, c);
+      });
+
+      // Which node inside is each connector name, drawn as a faint dashed line, so
+      // the way into the body and the way out of it can be followed with the eye.
+      for (const m of this.graph.nodesOn(f.body)) {
+        if (m.type !== 'dia-body-in' && m.type !== 'dia-body-out') continue;
+        const key = typeof m.name === 'string' ? m.name : '';
+        const o = this.offsets.get(m.id) ?? { x: 0, y: 0 };
+        const mx = (m.x ?? 0) + o.x, my = (m.y ?? 0) + o.y;
+        if (m.type === 'dia-body-in') {
+          const k = ports?.in.indexOf(key) ?? -1;
+          if (k < 0) continue;
+          const p = this.inAt(n, k);
+          g.append(this.bindLine(p.x, p.y, mx - NODE_WIDTH / 2, my));
+        } else {
+          const k = ports?.out.indexOf(key) ?? -1;
+          if (k < 0) continue;
+          const p = this.outAt(n, k);
+          g.append(this.bindLine(mx + NODE_WIDTH / 2, my, p.x, p.y));
+        }
+      }
+      frag.append(g);
+    }
+    this.layers.frames.append(frag);
+  }
+
+  private bindLine(x1: number, y1: number, x2: number, y2: number): SVGPathElement {
+    const l = document.createElementNS(SVG_NS, 'path');
+    l.setAttribute('d', `M${x1} ${y1}L${x2} ${y2}`);
+    l.setAttribute('class', 'frame-bind');
+    return l;
   }
 
   private renderNode(n: FlowEntry): SVGGElement {
@@ -884,6 +1271,28 @@ export class Canvas {
       g.append(c);
     }
 
+    // A sub-diagram with a body to open wears a small box at its corner that opens
+    // it in place.
+    if (this.canExpand(n)) {
+      const open = document.createElementNS(SVG_NS, 'g');
+      open.setAttribute('class', 'node-expand');
+      open.setAttribute('data-expand', n.id);
+      open.setAttribute('role', 'button');
+      open.setAttribute('aria-label', `Open ${this.graph.label(n)} in place`);
+      const box = document.createElementNS(SVG_NS, 'rect');
+      box.setAttribute('x', String(x + NODE_WIDTH / 2 - 17));
+      box.setAttribute('y', String(y - H / 2 + 3));
+      box.setAttribute('width', '14');
+      box.setAttribute('height', '14');
+      box.setAttribute('rx', '3');
+      const plus = document.createElementNS(SVG_NS, 'path');
+      plus.setAttribute('d', `M${x + NODE_WIDTH / 2 - 13} ${y - H / 2 + 10}h6M${x + NODE_WIDTH / 2 - 10} ${y - H / 2 + 7}v6`);
+      const tip = document.createElementNS(SVG_NS, 'title');
+      tip.textContent = 'Open this sub-diagram in place';
+      open.append(box, plus, tip);
+      g.append(open);
+    }
+
     // The path of a traced message: how long it was in this node, and what
     // it looked like when it got there.
     const hit = this.trace?.nodes.get(n.id);
@@ -961,7 +1370,7 @@ export class Canvas {
       const from = this.graph.byId(this.mode.fromId);
       if (!from) return;
       const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('d', wirePath(this.graph.outPos(from, this.mode.port), this.mode.cursor));
+      path.setAttribute('d', wirePath(this.outAt(from, this.mode.port), this.mode.cursor));
       path.setAttribute('class', 'wire wire-pending');
       this.layers.overlay.append(path);
       return;
