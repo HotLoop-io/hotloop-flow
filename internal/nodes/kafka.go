@@ -8,26 +8,28 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
-	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
 	"github.com/twmb/franz-go/pkg/sasl/plain"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
+	"github.com/HotLoop-io/hotloop-flow/internal/kafkaw"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 )
 
 // Kafka out: a producer, beside HotLoop core's Kafka event stream output, with the
-// same client (franz-go, pure Go, BSD-3-Clause, credited in NOTICE) and the same
-// settings: a comma separated list of brokers, SASL plain or SCRAM-SHA-256 or
+// same settings: a comma separated list of brokers, SASL plain or SCRAM-SHA-256 or
 // SCRAM-SHA-512, and TLS. Anything that speaks the Kafka API answers it: Apache
 // Kafka, Redpanda and the rest.
 //
 // A message is sent when the node receives it and passed on once the broker has
 // acknowledged it from every in-sync replica. A broker that refuses or cannot be
 // reached is an error on that message, and the credentials are in none of it.
+//
+// The wire is internal/kafkaw, a producer of our own: core's client library is more
+// than five megabytes of this binary, and a producer is all Flow needs. Only the SASL
+// login packages of franz-go (BSD-3-Clause, credited in NOTICE) are linked.
 
 func init() { registerKafka() }
 
@@ -39,38 +41,18 @@ type kafkaConn struct {
 	mech    sasl.Mechanism
 	tls     *tls.Config
 	secrets []string
-	client  *kgo.Client
+	client  *kafkaw.Client
 }
 
 func (k *kafkaConn) Receive(context.Context, *engine.Msg, node.Emitter) error { return nil }
 
-func (k *kafkaConn) get() (*kgo.Client, error) {
+func (k *kafkaConn) get() (*kafkaw.Client, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if k.client != nil {
-		return k.client, nil
+	if k.client == nil {
+		k.client = kafkaw.New(kafkaw.Config{Brokers: k.brokers, SASL: k.mech, TLS: k.tls})
 	}
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(k.brokers...),
-		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.ProduceRequestTimeout(10 * time.Second),
-		kgo.RecordDeliveryTimeout(20 * time.Second),
-		kgo.RecordRetries(3),
-		// Whether a topic that is not there is made is the broker's policy, not ours.
-		kgo.AllowAutoTopicCreation(),
-	}
-	if k.mech != nil {
-		opts = append(opts, kgo.SASL(k.mech))
-	}
-	if k.tls != nil {
-		opts = append(opts, kgo.DialTLSConfig(k.tls))
-	}
-	c, err := kgo.NewClient(opts...)
-	if err != nil {
-		return nil, fmt.Errorf("kafka: %s", k.mask(err.Error()))
-	}
-	k.client = c
-	return c, nil
+	return k.client, nil
 }
 
 func (k *kafkaConn) mask(s string) string {
@@ -192,11 +174,12 @@ func (n *kafkaOut) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 		notifyStatus(out, err, "")
 		return err
 	}
-	rec := &kgo.Record{Topic: topic, Value: []byte(kafkaValue(m))}
-	if key := pick(n.def, m, "key", "key"); key != "" {
-		rec.Key = []byte(key)
+	value := []byte(kafkaValue(m))
+	var key []byte
+	if k := pick(n.def, m, "key", "key"); k != "" {
+		key = []byte(k)
 	}
-	if ok, err := standIn(n.def.Services, "kafka", map[string]any{"topic": topic, "key": string(rec.Key), "value": string(rec.Value)}); ok {
+	if ok, err := standIn(n.def.Services, "kafka", map[string]any{"topic": topic, "key": string(key), "value": string(value)}); ok {
 		notifyStatus(out, err, "sent")
 		if err != nil {
 			return err
@@ -206,7 +189,7 @@ func (n *kafkaOut) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 	}
 	c, err := k.get()
 	if err == nil {
-		err = c.ProduceSync(ctx, rec).FirstErr()
+		err = c.Produce(ctx, topic, key, value)
 		if err != nil {
 			err = fmt.Errorf("kafka: %s", k.mask(err.Error()))
 		}

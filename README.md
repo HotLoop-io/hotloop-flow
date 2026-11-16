@@ -1318,14 +1318,17 @@ points Flow at the same ones.
 - **Kafka out.** A cluster config node (brokers, SASL PLAIN or SCRAM-SHA-256 or SCRAM-SHA-512,
   TLS), and per node a topic and an optional key. The value is `msg.payload`, as text, or as
   JSON when it is not text, and the message is passed on once the cluster has acknowledged it
-  from every in-sync replica. It uses franz-go, the client core's Kafka output uses.
+  from every in-sync replica. It is a small producer of our own (`internal/kafkaw`) that picks a
+  key's partition the way Kafka's Java client does and finds a moved leader again; it is not a
+  consumer and does not compress. It takes franz-go's SASL login packages, which core's Kafka
+  output also uses.
 
 A server that refuses says why in the node's error, with none of what was sent in it. A rate
 limit is waited out once, as long as the server says up to a minute, and after that the
 message fails. There is no Slack and no Teams node, and no UADP node: HotLoop takes UADP in and
 Flow reads those values through the HotLoop nodes.
 
-Proven against a real ntfy 2.38.0, a real Gotify and a real Redpanda in the lab: the node
+Proven against a real ntfy 2.38.0, a real Gotify and a real Redpanda (plain, and with SCRAM-SHA-256 login) in the lab: the node
 publishes and the server is asked what it holds. Discord was proven only against servers
 written from its documentation, because no test channel exists, so what a real Discord does
 with a bot or a webhook has not been seen.

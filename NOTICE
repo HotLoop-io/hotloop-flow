@@ -330,11 +330,12 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 twmb/franz-go
 --------------------------------------------------------------------------------
 
-The Kafka out node (internal/nodes/kafka.go) produces to any broker that speaks
-the Kafka API with franz-go v1.22.2, the same client HotLoop core's Kafka output
-uses. It is a Go module dependency, not copied into this repository.
+The Kafka out node's login (internal/nodes/kafka.go, internal/kafkaw) uses the SASL
+packages of franz-go v1.22.2 (pkg/sasl, pkg/sasl/plain, pkg/sasl/scram), the same
+login HotLoop core's Kafka output uses. Nothing else of franz-go is linked: the
+producer itself is internal/kafkaw, written for Flow. It is a Go module dependency,
+not copied into this repository.
     https://github.com/twmb/franz-go
     Copyright 2020, Travis Bischel.
-    Licensed under the BSD 3-Clause License. The full text, and the licenses of
-    the modules franz-go itself pulls in (klauspost/compress, pierrec/lz4), are
-    in THIRD_PARTY_LICENSES in the image.
+    Licensed under the BSD 3-Clause License. The full text is in
+    THIRD_PARTY_LICENSES in the image.
