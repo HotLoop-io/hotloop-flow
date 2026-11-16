@@ -156,7 +156,7 @@ func registerKafka() {
 	})
 
 	node.MustRegister(node.Descriptor{
-		Type: "kafka out", Category: node.CategoryNetwork, Color: colorStorage, Icon: "db",
+		Type: "kafka out", Category: node.CategoryNetwork, StandIn: true, Color: colorStorage, Icon: "db",
 		Inputs: 1, Outputs: 1, PaletteLabel: "kafka", LabelProp: "name",
 		Compatibility: node.Compatibility{Level: node.CompatOnly, Notes: "HotLoop Flow's own node."},
 		Props: []node.Prop{
@@ -195,6 +195,14 @@ func (n *kafkaOut) Receive(ctx context.Context, m *engine.Msg, out node.Emitter)
 	rec := &kgo.Record{Topic: topic, Value: []byte(kafkaValue(m))}
 	if key := pick(n.def, m, "key", "key"); key != "" {
 		rec.Key = []byte(key)
+	}
+	if ok, err := standIn(n.def.Services, "kafka", map[string]any{"topic": topic, "key": string(rec.Key), "value": string(rec.Value)}); ok {
+		notifyStatus(out, err, "sent")
+		if err != nil {
+			return err
+		}
+		out.Send(0, m)
+		return nil
 	}
 	c, err := k.get()
 	if err == nil {

@@ -218,6 +218,17 @@ func notifyPriority(v string, def int) int {
 	return def
 }
 
+// standIn hands what a node would have sent to a flow test's stand-in, when there is
+// one, so a test sees exactly the call and nothing leaves the process.
+func standIn(svc node.Services, kind string, sent map[string]any) (handled bool, err error) {
+	si := node.StandInOf(svc)
+	if si == nil {
+		return false, nil
+	}
+	_, err = si.Call(kind, sent)
+	return true, err
+}
+
 func notifyStatus(out node.Emitter, err error, ok string) {
 	if err != nil {
 		out.Status(node.Status{Fill: "red", Shape: "dot", Text: truncate(err.Error(), 32)})
@@ -272,7 +283,7 @@ func registerNtfy() {
 	})
 
 	node.MustRegister(node.Descriptor{
-		Type: "ntfy out", Category: node.CategoryNetwork, Color: colorStorage, Icon: "bell",
+		Type: "ntfy out", Category: node.CategoryNetwork, StandIn: true, Color: colorStorage, Icon: "bell",
 		Inputs: 1, Outputs: 1, PaletteLabel: "ntfy", LabelProp: "name",
 		Compatibility: node.Compatibility{Level: node.CompatOnly, Notes: "HotLoop Flow's own node."},
 		Props: []node.Prop{
@@ -321,6 +332,14 @@ func (n *ntfyOut) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) 
 	prio := notifyPriority(pick(n.def, m, "priority", "priority"), 3)
 	tags := strings.TrimSpace(n.def.Node.PropString("tags", ""))
 	click := strings.TrimSpace(n.def.Node.PropString("click", ""))
+	if ok, err := standIn(n.def.Services, "ntfy", map[string]any{"topic": topic, "title": title, "message": body, "priority": prio, "tags": tags, "click": click}); ok {
+		notifyStatus(out, err, "sent")
+		if err != nil {
+			return err
+		}
+		out.Send(0, m)
+		return nil
+	}
 	c := newNotifyClient("ntfy", topic, srv.token, srv.password)
 	_, err := c.do(ctx, func() (*http.Request, error) {
 		req, err := http.NewRequest(http.MethodPost, srv.base+"/"+topic, strings.NewReader(body))
@@ -387,7 +406,7 @@ func registerGotify() {
 	})
 
 	node.MustRegister(node.Descriptor{
-		Type: "gotify out", Category: node.CategoryNetwork, Color: colorStorage, Icon: "bell",
+		Type: "gotify out", Category: node.CategoryNetwork, StandIn: true, Color: colorStorage, Icon: "bell",
 		Inputs: 1, Outputs: 1, PaletteLabel: "gotify", LabelProp: "name",
 		Compatibility: node.Compatibility{Level: node.CompatOnly, Notes: "HotLoop Flow's own node."},
 		Props: []node.Prop{
@@ -433,6 +452,14 @@ func (n *gotifyOut) Receive(ctx context.Context, m *engine.Msg, out node.Emitter
 		text = " "
 	}
 	payload, _ := json.Marshal(map[string]any{"title": title, "message": text, "priority": prio})
+	if ok, err := standIn(n.def.Services, "gotify", map[string]any{"title": title, "message": text, "priority": prio}); ok {
+		notifyStatus(out, err, "sent")
+		if err != nil {
+			return err
+		}
+		out.Send(0, m)
+		return nil
+	}
 	c := newNotifyClient("gotify", srv.token)
 	_, err := c.do(ctx, func() (*http.Request, error) {
 		req, err := http.NewRequest(http.MethodPost, srv.base+"/message", bytes.NewReader(payload))
@@ -530,7 +557,7 @@ func discordColorProp() node.Prop {
 
 func registerDiscordWebhook() {
 	node.MustRegister(node.Descriptor{
-		Type: "discord out", Category: node.CategoryNetwork, Color: colorStorage, Icon: "bell",
+		Type: "discord out", Category: node.CategoryNetwork, StandIn: true, Color: colorStorage, Icon: "bell",
 		Inputs: 1, Outputs: 1, PaletteLabel: "discord", LabelProp: "name",
 		Compatibility: node.Compatibility{Level: node.CompatOnly, Notes: "HotLoop Flow's own node."},
 		Props: []node.Prop{
@@ -568,6 +595,14 @@ func (n *discordWebhookOut) Receive(ctx context.Context, m *engine.Msg, out node
 	body, err := discordBody(pick(n.def, m, "title", "title"), n.def.Node.PropString("color", ""), text, n.def.Node.PropString("username", ""))
 	if err != nil {
 		return err
+	}
+	if ok, serr := standIn(n.def.Services, "discord", map[string]any{"body": string(body)}); ok {
+		notifyStatus(out, serr, "sent")
+		if serr != nil {
+			return serr
+		}
+		out.Send(0, m)
+		return nil
 	}
 	c := newNotifyClient("discord", n.secret, n.post)
 	_, err = c.do(ctx, func() (*http.Request, error) {
@@ -616,7 +651,7 @@ func registerDiscordBot() {
 	})
 
 	node.MustRegister(node.Descriptor{
-		Type: "discord bot out", Category: node.CategoryNetwork, Color: colorStorage, Icon: "bell",
+		Type: "discord bot out", Category: node.CategoryNetwork, StandIn: true, Color: colorStorage, Icon: "bell",
 		Inputs: 1, Outputs: 1, PaletteLabel: "discord bot", LabelProp: "name",
 		Compatibility: node.Compatibility{Level: node.CompatOnly, Notes: "HotLoop Flow's own node."},
 		Props: []node.Prop{
@@ -660,6 +695,14 @@ func (n *discordBotOut) Receive(ctx context.Context, m *engine.Msg, out node.Emi
 	body, err := discordBody(pick(n.def, m, "title", "title"), n.def.Node.PropString("color", ""), text, "")
 	if err != nil {
 		return err
+	}
+	if ok, serr := standIn(n.def.Services, "discord bot", map[string]any{"channel": ch, "body": string(body)}); ok {
+		notifyStatus(out, serr, "sent")
+		if serr != nil {
+			return serr
+		}
+		out.Send(0, m)
+		return nil
 	}
 	c := newNotifyClient("discord", bot.token)
 	_, err = c.do(ctx, func() (*http.Request, error) {

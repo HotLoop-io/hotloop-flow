@@ -441,3 +441,29 @@ func TestGotifyAgainstARealServer(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 }
+
+// Under a flow test nothing leaves the process: the node hands what it would have
+// sent to the stand-in.
+func TestTheNotificationNodesHandWhatTheyWouldSendToAStandIn(t *testing.T) {
+	cases := []struct {
+		typ, cfgType, cfg, nodeCfg string
+		creds                      map[string]string
+	}{
+		{"ntfy out", "hotloop-flow-ntfy", `{"server":"http://127.0.0.1:1"}`, `{"server":"srv","topic":"t"}`, nil},
+		{"gotify out", "hotloop-flow-gotify", `{"server":"http://127.0.0.1:1"}`, `{"server":"srv"}`, map[string]string{"token": "x"}},
+		{"discord bot out", "hotloop-flow-discord-bot", `{"api":"http://127.0.0.1:1"}`, `{"bot":"srv","channel":"123456789012345678"}`, map[string]string{"token": "x"}},
+		{"kafka out", "hotloop-flow-kafka", `{"brokers":"127.0.0.1:1"}`, `{"broker":"srv","topic":"t"}`, nil},
+	}
+	for _, c := range cases {
+		cfg, _ := configured(t, c.cfgType, c.cfg, c.creds)
+		si := &recordingStandIn{}
+		base := newTestServices()
+		base.standIn = si
+		svc := &servicesWithConfig{testServices: base, configs: map[string]node.Node{"srv": cfg}}
+		n := build(t, c.typ, c.nodeCfg, svc)
+		e, err := send(t, n, msg(t, `{"payload":"hi"}`))
+		if err != nil || len(si.calls) != 1 || len(e.sent[0]) != 1 {
+			t.Errorf("%s: err %v calls %d sent %d", c.typ, err, len(si.calls), len(e.sent[0]))
+		}
+	}
+}
