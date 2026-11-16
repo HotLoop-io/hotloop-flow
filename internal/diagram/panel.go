@@ -87,6 +87,30 @@ func (p *Panel) begin(terms []*DNode) {
 	}
 }
 
+// learn gives the panel the terminals of the diagram as it is deployed now. A
+// control the deploy changed so that what the operator last set no longer fits it
+// goes back to its default, so a diagram never reads a number from a control that
+// became a list.
+func (p *Panel) learn(terms []*DNode) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	known := make(map[string]*DNode, len(terms))
+	for _, t := range terms {
+		known[t.ID] = t
+	}
+	p.terms = known
+	for id, v := range p.controls {
+		t, ok := known[id]
+		if !ok || t.Type != "dia-control" {
+			delete(p.controls, id)
+			continue
+		}
+		if _, err := coerceControl(t.Raw, v); err != nil {
+			delete(p.controls, id)
+		}
+	}
+}
+
 // Control reads a control's value, falling back to its default.
 func (p *Panel) Control(id string, def any) any {
 	p.mu.Lock()
@@ -299,25 +323,9 @@ func coerceControl(raw map[string]any, v any) (any, error) {
 	kind := strProp(raw, "kind", "number")
 	switch kind {
 	case "bool":
-		switch x := v.(type) {
-		case bool:
-			return x, nil
-		case string:
-			b, err := strconv.ParseBool(x)
-			if err != nil {
-				return nil, fmt.Errorf("%q is not true or false", x)
-			}
-			return b, nil
-		case float64:
-			return x != 0, nil
-		}
-		return nil, fmt.Errorf("a switch takes true or false")
+		return coerceBool(v)
 	case "string":
-		s, ok := v.(string)
-		if !ok {
-			return nil, fmt.Errorf("a text control takes text")
-		}
-		return s, nil
+		return coerceText(v)
 	case "enum":
 		s, ok := v.(string)
 		if !ok {
@@ -329,7 +337,41 @@ func coerceControl(raw map[string]any, v any) (any, error) {
 			}
 		}
 		return nil, fmt.Errorf("%q is not one of the choices", s)
+	case "array":
+		return coerceArray(raw, v)
+	case "record":
+		return coerceRecord(raw, v)
 	}
+	return coerceNumber(raw["min"], raw["max"], v)
+}
+
+func coerceBool(v any) (any, error) {
+	switch x := v.(type) {
+	case bool:
+		return x, nil
+	case string:
+		b, err := strconv.ParseBool(x)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not true or false", x)
+		}
+		return b, nil
+	case float64:
+		return x != 0, nil
+	}
+	return nil, fmt.Errorf("a switch takes true or false")
+}
+
+func coerceText(v any) (any, error) {
+	s, ok := v.(string)
+	if !ok {
+		return nil, fmt.Errorf("a text control takes text")
+	}
+	return s, nil
+}
+
+// coerceNumber reads a number, held to a range whose ends are as the dialog
+// stores them: text, or empty for no end.
+func coerceNumber(minV, maxV, v any) (any, error) {
 	f, ok := num(v)
 	if s, isStr := v.(string); isStr && !ok {
 		var err error
@@ -341,10 +383,10 @@ func coerceControl(raw map[string]any, v any) (any, error) {
 	if !ok {
 		return nil, fmt.Errorf("a numeric control takes a number")
 	}
-	if lo, has := limit(raw["min"]); has && f < lo {
+	if lo, has := limit(minV); has && f < lo {
 		return nil, fmt.Errorf("%v is below the minimum %v", f, lo)
 	}
-	if hi, has := limit(raw["max"]); has && f > hi {
+	if hi, has := limit(maxV); has && f > hi {
 		return nil, fmt.Errorf("%v is above the maximum %v", f, hi)
 	}
 	return f, nil

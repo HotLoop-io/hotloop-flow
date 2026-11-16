@@ -21,18 +21,23 @@ type Summary struct {
 
 // Terminal is a control, indicator or chart as the panel draws it.
 type Terminal struct {
-	ID      string         `json:"id"`
-	Type    string         `json:"type"`
-	Diagram string         `json:"diagram"`
-	Label   string         `json:"label"`
-	Kind    string         `json:"kind,omitempty"`
-	Style   string         `json:"style,omitempty"`
-	Unit    string         `json:"unit,omitempty"`
-	Digits  int            `json:"digits"`
-	Min     *float64       `json:"min,omitempty"`
-	Max     *float64       `json:"max,omitempty"`
-	Step    *float64       `json:"step,omitempty"`
-	Options []string       `json:"options,omitempty"`
+	ID      string   `json:"id"`
+	Type    string   `json:"type"`
+	Diagram string   `json:"diagram"`
+	Label   string   `json:"label"`
+	Kind    string   `json:"kind,omitempty"`
+	Style   string   `json:"style,omitempty"`
+	Unit    string   `json:"unit,omitempty"`
+	Digits  int      `json:"digits"`
+	Min     *float64 `json:"min,omitempty"`
+	Max     *float64 `json:"max,omitempty"`
+	Step    *float64 `json:"step,omitempty"`
+	Options []string `json:"options,omitempty"`
+	// Elem is the kind of an array control's items, Fields the fields of a record
+	// control, and MaxLen the most items an array holds.
+	Elem    string         `json:"elem,omitempty"`
+	Fields  []recField     `json:"fields,omitempty"`
+	MaxLen  int            `json:"maxlen,omitempty"`
 	Default any            `json:"default,omitempty"`
 	Mode    string         `json:"mode,omitempty"`
 	History int            `json:"history,omitempty"`
@@ -205,6 +210,13 @@ func terminalOf(t *DNode, order int) Terminal {
 	}
 	if t.Type == "dia-control" {
 		out.Default, _ = controlDefault(r)
+		switch out.Kind {
+		case "array":
+			out.Elem, _ = elemKind(r)
+			out.MaxLen = intProp(r, "maxlen", 0)
+		case "record":
+			out.Fields, _ = recordFields(r)
+		}
 	}
 	out.Layout, _ = r[PanelKey].(map[string]any)
 	return out

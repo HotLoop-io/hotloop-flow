@@ -520,6 +520,20 @@ details[open] > summary::before { transform: rotate(90deg); }
 .panel-card input[type='range'] { width: 100%; min-height: 44px; }
 .panel-card button { min-height: 44px; font-size: var(--hl-fs-base); }
 .panel-card .switch { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; }
+.panel-card input[type='checkbox'] { width: 24px; height: 24px; }
+/* The controls that hold several values: a list the operator grows, a record of named fields, a spin entry. */
+.panel-card .compound { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.panel-card .item-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.panel-card .item-row input[type='number'], .panel-card .item-row input[type='text'] { flex: 1; min-width: 0; }
+.panel-card .item-row .switch { flex: 1; }
+.panel-card .field-row { display: grid; grid-template-columns: minmax(0, 8rem) minmax(0, 1fr); align-items: center; gap: 8px; min-height: 44px; }
+.panel-card .field-row input[type='checkbox'] { justify-self: start; }
+.panel-card .field-row .mono, .panel-card .hint { color: var(--hl-ink-soft); font-size: var(--hl-fs-sm); overflow-wrap: anywhere; }
+.panel-card .spin { display: grid; grid-template-columns: 56px minmax(0, 1fr) 56px; gap: 8px; align-items: center; }
+.panel-card .spin button { min-width: 56px; font-size: var(--hl-fs-lg, 1.5rem); font-weight: 700; justify-content: center; }
+.panel-card .spin input { text-align: center; min-width: 0; }
+.panel-card .led-toggle { display: inline-flex; align-items: center; gap: 12px; justify-content: flex-start; min-height: 52px; }
+.panel-card .led-toggle .led { flex: none; }
 .chart-svg { width: 100%; height: 180px; background: var(--hl-sunken); border-radius: 8px; }
 .chart-svg polyline { fill: none; stroke: var(--hl-orange); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .chart-svg .axis { stroke: var(--hl-line-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }

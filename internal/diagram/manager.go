@@ -360,7 +360,11 @@ func (m *Manager) Panel(id string) (*Panel, error) {
 	if _, ok := m.set.Diagrams[id]; !ok {
 		return nil, ErrNoDiagram
 	}
-	return m.panelLocked(id), nil
+	p := m.panelLocked(id)
+	// A panel knows its controls from the deployed diagram, not from the last run,
+	// so an operator can set one before the first run ever starts.
+	p.learn(m.set.Terminals(id))
+	return p, nil
 }
 
 // SetProbes sets which wires are watched, and how many values each remembers. A

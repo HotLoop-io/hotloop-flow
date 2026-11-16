@@ -4,6 +4,7 @@
   // editor uses and watches the same event stream, so several people can watch one
   // run and a headless run can have a panel opened on it later.
   import { onMount } from 'svelte';
+  import Knob from './Knob.svelte';
   import { type Api, type DiagramDescription, type PanelChart, type PanelTerminal, type RuntimeEvent } from '../lib/api';
 
   interface Props { api: Api; id: string; onsessionlost: () => void }
@@ -104,6 +105,31 @@
     return String(v);
   };
 
+  const zero = (kind: string | undefined): unknown => (kind === 'bool' ? false : kind === 'string' ? '' : 0);
+  // The list an array control holds, and the object a record control holds, with
+  // every field present, whatever the run or the operator has set so far.
+  const items = (t: PanelTerminal): unknown[] => {
+    const v = controls[t.id] ?? t.default;
+    return Array.isArray(v) ? v : [];
+  };
+  const record = (t: PanelTerminal): Record<string, unknown> => {
+    const v = (controls[t.id] ?? t.default) as Record<string, unknown> | undefined;
+    const out: Record<string, unknown> = {};
+    for (const f of t.fields ?? []) out[f.name] = v && f.name in v ? v[f.name] : zero(f.kind);
+    return out;
+  };
+  const hasRange = (t: PanelTerminal) => lo(t) !== undefined && hi(t) !== undefined;
+  const numberOf = (t: PanelTerminal): number => { const n = Number(controls[t.id] ?? t.default ?? 0); return Number.isFinite(n) ? n : 0; };
+  const stepOf = (t: PanelTerminal): number => (typeof t.step === 'number' && t.step > 0 ? t.step : 1);
+  /** One step up or down, held to the range, with the float noise a step of 0.1 leaves taken off. */
+  const nudge = (t: PanelTerminal, dir: 1 | -1): number => {
+    let v = Number((numberOf(t) + dir * stepOf(t)).toFixed(10));
+    const a = lo(t), b = hi(t);
+    if (a !== undefined) v = Math.max(a, v);
+    if (b !== undefined) v = Math.min(b, v);
+    return v;
+  };
+
   async function set(t: PanelTerminal, value: unknown): Promise<void> {
     try {
       const res = await api.setControl(id, t.id, value);
@@ -172,6 +198,10 @@
           {#if t.kind === 'bool'}
             {#if t.style === 'button'}
               <button class="primary" data-test="ctl-button" disabled={off(t)} onclick={() => set(t, true)}>{label(t)}</button>
+            {:else if t.style === 'led'}
+              <button type="button" class="led-toggle" role="switch" aria-checked={controls[t.id] === true} aria-label={label(t)} data-test="ctl-led" data-on={controls[t.id] === true} disabled={off(t)} onclick={() => set(t, controls[t.id] !== true)}>
+                <span class="led" class:on={controls[t.id] === true}></span>{controls[t.id] === true ? 'on' : 'off'}
+              </button>
             {:else}
               <label class="switch"><input type="checkbox" data-test="ctl-switch" disabled={off(t)} checked={controls[t.id] === true} onchange={(e) => set(t, (e.currentTarget as HTMLInputElement).checked)} /> {controls[t.id] === true ? 'on' : 'off'}</label>
             {/if}
@@ -181,9 +211,49 @@
             </select>
           {:else if t.kind === 'string'}
             <input type="text" data-test="ctl-text" disabled={off(t)} value={String(controls[t.id] ?? t.default ?? '')} onchange={(e) => set(t, (e.currentTarget as HTMLInputElement).value)} />
-          {:else if t.style === 'slider' && lo(t) !== undefined && hi(t) !== undefined}
+          {:else if t.kind === 'array'}
+            <div class="compound" data-test="ctl-array" data-id={t.id} data-count={items(t).length}>
+              {#each items(t) as item, i (i)}
+                <div class="item-row" data-test="ctl-array-item">
+                  {#if t.elem === 'bool'}
+                    <label class="switch"><input type="checkbox" data-test="ctl-array-value" aria-label={`${label(t)} item ${i + 1}`} disabled={off(t)} checked={item === true} onchange={(e) => set(t, items(t).map((x, j) => (j === i ? (e.currentTarget as HTMLInputElement).checked : x)))} /> {item === true ? 'on' : 'off'}</label>
+                  {:else if t.elem === 'string'}
+                    <input type="text" data-test="ctl-array-value" aria-label={`${label(t)} item ${i + 1}`} disabled={off(t)} value={String(item ?? '')} onchange={(e) => set(t, items(t).map((x, j) => (j === i ? (e.currentTarget as HTMLInputElement).value : x)))} />
+                  {:else}
+                    <input type="number" data-test="ctl-array-value" aria-label={`${label(t)} item ${i + 1}`} disabled={off(t)} min={lo(t)} max={hi(t)} step={t.step ?? 'any'} value={Number(item ?? 0)} onchange={(e) => set(t, items(t).map((x, j) => (j === i ? Number((e.currentTarget as HTMLInputElement).value) : x)))} />
+                  {/if}
+                  <button type="button" class="ghost" data-test="ctl-array-remove" aria-label={`Remove item ${i + 1} of ${label(t)}`} disabled={off(t)} onclick={() => set(t, items(t).filter((_, j) => j !== i))}>Remove</button>
+                </div>
+              {/each}
+              {#if items(t).length === 0}<div class="mono hint" data-test="ctl-array-empty">no items</div>{/if}
+              <button type="button" data-test="ctl-array-add" disabled={off(t) || (typeof t.maxlen === 'number' && t.maxlen > 0 && items(t).length >= t.maxlen)} onclick={() => set(t, [...items(t), zero(t.elem)])}>Add an item</button>
+            </div>
+          {:else if t.kind === 'record'}
+            <div class="compound" data-test="ctl-record" data-id={t.id}>
+              {#each t.fields ?? [] as f (f.name)}
+                <label class="field-row" data-test="ctl-field" data-field={f.name}>
+                  <span class="mono">{f.name}</span>
+                  {#if f.kind === 'bool'}
+                    <input type="checkbox" data-test="ctl-field-value" disabled={off(t)} checked={record(t)[f.name] === true} onchange={(e) => set(t, { ...record(t), [f.name]: (e.currentTarget as HTMLInputElement).checked })} />
+                  {:else if f.kind === 'string'}
+                    <input type="text" data-test="ctl-field-value" disabled={off(t)} value={String(record(t)[f.name] ?? '')} onchange={(e) => set(t, { ...record(t), [f.name]: (e.currentTarget as HTMLInputElement).value })} />
+                  {:else}
+                    <input type="number" step="any" data-test="ctl-field-value" disabled={off(t)} value={Number(record(t)[f.name] ?? 0)} onchange={(e) => set(t, { ...record(t), [f.name]: Number((e.currentTarget as HTMLInputElement).value) })} />
+                  {/if}
+                </label>
+              {/each}
+            </div>
+          {:else if t.style === 'knob' && hasRange(t)}
+            <Knob value={numberOf(t)} min={lo(t)!} max={hi(t)!} step={t.step} unit={t.unit} label={label(t)} disabled={off(t)} oncommit={(v) => set(t, v)} />
+          {:else if t.style === 'slider' && hasRange(t)}
             <input type="range" data-test="ctl-slider" disabled={off(t)} min={lo(t)} max={hi(t)} step={t.step ?? 'any'} value={Number(controls[t.id] ?? t.default ?? 0)} onchange={(e) => set(t, Number((e.currentTarget as HTMLInputElement).value))} />
             <div class="mono">{controls[t.id] ?? t.default}</div>
+          {:else if t.style === 'spin'}
+            <div class="spin" data-test="ctl-spin">
+              <button type="button" data-test="ctl-spin-down" aria-label={`Lower ${label(t)}`} disabled={off(t) || (lo(t) !== undefined && numberOf(t) <= lo(t)!)} onclick={() => set(t, nudge(t, -1))}>-</button>
+              <input type="number" data-test="ctl-spin-input" aria-label={label(t)} disabled={off(t)} min={lo(t)} max={hi(t)} step={t.step ?? 'any'} value={numberOf(t)} onchange={(e) => set(t, Number((e.currentTarget as HTMLInputElement).value))} />
+              <button type="button" data-test="ctl-spin-up" aria-label={`Raise ${label(t)}`} disabled={off(t) || (hi(t) !== undefined && numberOf(t) >= hi(t)!)} onclick={() => set(t, nudge(t, 1))}>+</button>
+            </div>
           {:else}
             <input type="number" data-test="ctl-number" disabled={off(t)} min={lo(t)} max={hi(t)} step={t.step ?? 'any'} value={Number(controls[t.id] ?? t.default ?? 0)} onchange={(e) => set(t, Number((e.currentTarget as HTMLInputElement).value))} />
           {/if}
