@@ -1328,7 +1328,7 @@ limit is waited out once, as long as the server says up to a minute, and after t
 message fails. There is no Slack and no Teams node, and no UADP node: HotLoop takes UADP in and
 Flow reads those values through the HotLoop nodes.
 
-Proven against a real ntfy 2.38.0, a real Gotify and a real Redpanda (plain, and with SCRAM-SHA-256 login) in the lab: the node
+Proven against a real ntfy 2.38.0, a real Gotify, and for Kafka a real Redpanda (plain, with SCRAM-SHA-256 login, with TLS from a lab CA and a refused untrusted one, three brokers with one stopped while a flow produced) and Apache Kafka 4.3.1 (PLAIN, SCRAM-SHA-256 and SCRAM-SHA-512) in the lab: the node
 publishes and the server is asked what it holds. Discord was proven only against servers
 written from its documentation, because no test channel exists, so what a real Discord does
 with a bot or a webhook has not been seen.

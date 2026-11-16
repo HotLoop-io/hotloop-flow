@@ -399,3 +399,39 @@ func strconvAtoi(s string) (int, error) {
 	}
 	return n, nil
 }
+
+// Many callers at once, so the race detector has something to look at: one client,
+// one connection, every record stored exactly once.
+func TestManyCallersAtOnceStoreEveryRecordOnce(t *testing.T) {
+	f := newFake(t, 4)
+	c := New(Config{Brokers: []string{f.addr()}})
+	defer c.Close()
+	var wg sync.WaitGroup
+	for g := 0; g < 8; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < 40; i++ {
+				key := []byte("k" + string(rune('a'+g)))
+				if i%2 == 0 {
+					key = nil
+				}
+				if err := c.Produce(context.Background(), "t", key, []byte("v")); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.got) != 320 {
+		t.Fatalf("%d records stored, want 320", len(f.got))
+	}
+	for _, g := range f.got {
+		if !g.crcOK {
+			t.Fatal("a record arrived with a bad checksum")
+		}
+	}
+}
