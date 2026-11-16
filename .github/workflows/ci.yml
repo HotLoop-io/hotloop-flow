@@ -836,13 +836,14 @@ jobs:
         # The whole premise of this project is that it is small. If the binary
         # grows past the budget, that is a finding, not a footnote. Moved from 40
         # to 42 MiB in 2.9.0 for the native Node-RED connector nodes (Modbus, the
-        # dashboard, PostgreSQL, e-mail), by Patrick's call.
+        # dashboard, PostgreSQL, e-mail), by Patrick's call. Moved from 42 to
+        # 46 MiB in 2.13.0 for Kafka out, by Patrick's call, 2026-11-16.
         run: |
           SIZE=$(stat -c%s hotloop-flow)
           echo "hotloop-flow: $SIZE bytes ($((SIZE/1024/1024)) MiB)"
           echo "### Binary size: $((SIZE/1024/1024)) MiB" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$SIZE" -gt 44040192 ]; then
-            echo "::error::binary exceeds the 42 MiB budget"
+          if [ "$SIZE" -gt 48234496 ]; then
+            echo "::error::binary exceeds the 46 MiB budget"
             exit 1
           fi
 

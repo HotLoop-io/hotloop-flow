@@ -40,9 +40,14 @@ check_pin() {
   path="${ref#"$PREFIX"}"
   want=$(awk -v p="$path" '$1 == p { print $2 }' "$here/mirror-pins.txt" 2>/dev/null || true)
   [ -z "$want" ] && return 0
-  got=$($PODMAN image inspect --format '{{.Digest}}' "$ref")
-  if [ "$got" != "$want" ]; then
-    echo "mirror-image: $ref is $got, and build/mirror-pins.txt says it must be $want" >&2
+  # The pin is the digest the registry serves for the tag: the index for a
+  # multi-platform image. podman 4 reports that as .Digest, but podman 5 (the
+  # ubuntu-26.04 runner) reports the digest of the platform manifest it picked
+  # there, so .Digest means different things on different runners. RepoDigests
+  # holds the registry's own digest on both, so the pin is looked for in it.
+  got=$($PODMAN image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$ref")
+  if ! grep -q "@${want}\$" <<<"$got"; then
+    echo "mirror-image: $ref is $(echo "$got" | tr '\n' ' '), and build/mirror-pins.txt says it must be $want" >&2
     return 1
   fi
 }
