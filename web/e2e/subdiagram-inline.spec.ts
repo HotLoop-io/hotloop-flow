@@ -251,21 +251,18 @@ for (const scheme of ['light', 'dark'] as const) {
       await page.emulateMedia({ colorScheme: scheme });
       await seed(request, addTen());
       await signIn(page, 'sub');
-      // At this width the diagram bar wraps onto many rows and covers the top of the canvas,
-      // as it does for every diagram, so the press on the node's box is sent to the box itself.
-      const press = (sel: string) => page.evaluate((s) => {
-        const el = document.querySelector(`.canvas-host > .canvas ${s}`)!;
-        const r = el.getBoundingClientRect();
-        el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'touch', clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
-        el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, button: 0, pointerType: 'touch', clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
-      }, sel);
-      await press('[data-expand="sub"]');
+      // A finger on the node, then on the bar's button: the bar takes its own room at this
+      // width, so nothing is under it.
+      await nodeBody(page, 'sub').tap();
+      await expect(canvasNode(page, 'sub')).toHaveClass(/selected/);
+      await expect(openButton(page)).toBeEnabled();
+      expect((await box(openButton(page))).height, 'the bar button').toBeGreaterThanOrEqual(24);
+      await openButton(page).tap();
       await expect(frameOf(page, 'sub')).toHaveCount(1);
       await expect(canvasNode(page, 'm')).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), 'the page scrolls sideways').toBeLessThanOrEqual(0);
-      expect((await box(openButton(page))).height, 'the bar button').toBeGreaterThanOrEqual(24);
       await shot(page, `editor-phone-${scheme}-open`);
-      await press('[data-collapse="sub"]');
+      await openButton(page).tap();
       await expect(frameOf(page, 'sub')).toHaveCount(0);
     });
   });
