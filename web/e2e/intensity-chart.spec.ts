@@ -3,7 +3,7 @@
 import { expect, test } from '@playwright/test';
 import { seed, signIn, type Entry } from './helpers';
 
-test('an intensity chart draws its grid as colors and keeps the shape of the grid', async ({ page }) => {
+for (let n = 0; n < 12; n++) test(`DBG ${n} an intensity chart`, async ({ page }) => {
   const e = (id: string, type: string, x: number, y: number, extra: Record<string, unknown> = {}, wires: string[][] = [[]], ins: string[][] = [[]]): Entry =>
     ({ id, type, z: 'main', x, y, wires, ew_in: ins, ...extra });
   await seed(page.request, [
@@ -13,12 +13,17 @@ test('an intensity chart draws its grid as colors and keeps the shape of the gri
     e('flat', 'dia-const', 100, 220, { value: '[1,2,3]' }, [['bad']], [['y']]),
     e('bad', 'dia-chart', 400, 220, { label: 'Not a grid', mode: 'intensity' }),
   ]);
+  const log: string[] = [];
+  const t0 = Date.now();
+  page.on('websocket', (ws) => { log.push(`${Date.now()-t0} ws open`); ws.on('framereceived', (f) => log.push(`${Date.now()-t0} ws< ${String(f.payload).slice(0, 300)}`)); ws.on('close', () => log.push(`${Date.now()-t0} ws close`)); });
+  page.on('response', async (r) => { if (/\/diagrams\/main/.test(r.url())) log.push(`${Date.now()-t0} GET ${r.url().slice(-30)} ${r.status()} ${(await r.text().catch(() => '')).slice(-400)}`); });
+  page.on('request', (r) => { if (/run|diagrams/.test(r.url()) && r.method() !== 'GET') log.push(`${Date.now()-t0} ${r.method()} ${r.url().slice(-30)}`); });
   await signIn(page, 'g');
   await page.evaluate(() => { location.hash = '#/panel/main'; location.reload(); });
   await expect(page.locator('[data-test="panel"]')).toBeVisible();
   await page.locator('[data-test="panel-run"]').click();
   const canvas = page.locator('[data-test="chart"][data-id="c"] [data-test="chart-grid"]');
-  await expect(canvas).toHaveAttribute('width', '4');
+  try { await expect(canvas).toHaveAttribute('width', '4', { timeout: 4000 }); } catch (ex) { console.log('FAILLOG\n' + log.join('\n')); throw ex; }
   await expect(canvas).toHaveAttribute('height', '3');
   await expect(page.locator('[data-test="chart"][data-id="c"] [data-test="chart-count"]')).toHaveText('3 by 4, 0.00 to 10.00');
   const px = await canvas.evaluate((c: HTMLCanvasElement) => {
