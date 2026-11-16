@@ -13,17 +13,20 @@ for (let n = 0; n < 12; n++) test(`DBG ${n} an intensity chart`, async ({ page }
     e('flat', 'dia-const', 100, 220, { value: '[1,2,3]' }, [['bad']], [['y']]),
     e('bad', 'dia-chart', 400, 220, { label: 'Not a grid', mode: 'intensity' }),
   ]);
-  const log: string[] = [];
-  const t0 = Date.now();
-  page.on('websocket', (ws) => { log.push(`${Date.now()-t0} ws open`); ws.on('framereceived', (f) => log.push(`${Date.now()-t0} ws< ${String(f.payload).slice(0, 300)}`)); ws.on('close', () => log.push(`${Date.now()-t0} ws close`)); });
-  page.on('response', async (r) => { if (/\/diagrams\/main/.test(r.url())) log.push(`${Date.now()-t0} GET ${r.url().slice(-30)} ${r.status()} ${(await r.text().catch(() => '')).slice(-400)}`); });
-  page.on('request', (r) => { if (/run|diagrams/.test(r.url()) && r.method() !== 'GET') log.push(`${Date.now()-t0} ${r.method()} ${r.url().slice(-30)}`); });
   await signIn(page, 'g');
   await page.evaluate(() => { location.hash = '#/panel/main'; location.reload(); });
   await expect(page.locator('[data-test="panel"]')).toBeVisible();
   await page.locator('[data-test="panel-run"]').click();
   const canvas = page.locator('[data-test="chart"][data-id="c"] [data-test="chart-grid"]');
-  try { await expect(canvas).toHaveAttribute('width', '4', { timeout: 4000 }); } catch (ex) { console.log('FAILLOG\n' + log.join('\n')); throw ex; }
+  try { await expect(canvas).toHaveAttribute('width', '4', { timeout: 4000 }); } catch (ex) {
+    const st = await page.evaluate(async () => {
+      const tok = (Object.entries(sessionStorage).concat(Object.entries(localStorage)).find(([k]) => /token/i.test(k)) ?? ['', ''])[1];
+      const r = await fetch('/api/diagrams/main', { headers: tok ? { Authorization: 'Bearer ' + tok } : {} });
+      return { status: r.status, body: (await r.text()).slice(0, 1500), conn: document.querySelector('.conn')?.textContent, state: document.querySelector('[data-test="panel-state"]')?.textContent, notice: document.body.innerText.slice(0, 300), storage: Object.keys(sessionStorage).concat(Object.keys(localStorage)) };
+    });
+    console.log('FAILDUMP ' + JSON.stringify(st));
+    throw ex;
+  }
   await expect(canvas).toHaveAttribute('height', '3');
   await expect(page.locator('[data-test="chart"][data-id="c"] [data-test="chart-count"]')).toHaveText('3 by 4, 0.00 to 10.00');
   const px = await canvas.evaluate((c: HTMLCanvasElement) => {
