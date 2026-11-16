@@ -31,9 +31,22 @@
     runError = d.run?.error ?? '';
   }
 
+  // Events that have arrived. A snapshot fetched before one of them is older than
+  // the panel, and applying it would put back what the event had already replaced
+  // (a run that finishes while the fetch started by its "running" event is still
+  // in flight leaves the chart empty for good). So a snapshot is applied only if
+  // nothing arrived while it was fetched, and is fetched again if something did.
+  let events = 0;
+
   async function load(): Promise<void> {
     try {
-      apply(await api.diagram(id));
+      let d: DiagramDescription;
+      for (let tries = 0; ; tries++) {
+        const seen = events;
+        d = await api.diagram(id);
+        if (seen === events || tries >= 3) break;
+      }
+      apply(d);
     } catch (ex) {
       if ((ex as { status?: number }).status === 401) onsessionlost();
       else notice = ex instanceof Error ? ex.message : String(ex);
@@ -42,6 +55,7 @@
 
   function onEvent(e: RuntimeEvent): void {
     if (e.data.diagram !== id) return;
+    events++;
     if (e.topic === `diagram/${id}/run`) {
       runState = String(e.data.state);
       runError = e.data.error ? String(e.data.error) : '';
