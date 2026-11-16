@@ -10,8 +10,11 @@ test('an intensity chart draws its grid as colors and keeps the shape of the gri
     { id: 'main', type: 'tab', label: 'Heat', ew_diagram: {} },
     e('g', 'dia-const', 100, 100, { value: '[[0,0,0,0],[0,10,5,0],[10,0,0,10]]' }, [['c']], [['y']]),
     e('c', 'dia-chart', 400, 100, { label: 'Heat map', mode: 'intensity' }),
-    e('flat', 'dia-const', 100, 220, { value: '[1,2,3]' }, [['bad']], [['y']]),
-    e('bad', 'dia-chart', 400, 220, { label: 'Not a grid', mode: 'intensity' }),
+    // The flat array is a different diagram: a node that errors fails its run, and
+    // beside the grid in one diagram it can fail the run before the grid is drawn.
+    { id: 'flatTab', type: 'tab', label: 'Flat', ew_diagram: {} },
+    e('flat', 'dia-const', 100, 100, { z: 'flatTab', value: '[1,2,3]' }, [['bad']], [['y']]),
+    e('bad', 'dia-chart', 400, 100, { z: 'flatTab', label: 'Not a grid', mode: 'intensity' }),
   ]);
   await signIn(page, 'g');
   await page.evaluate(() => { location.hash = '#/panel/main'; location.reload(); });
@@ -34,5 +37,10 @@ test('an intensity chart draws its grid as colors and keeps the shape of the gri
   expect(px.mid).not.toEqual(px.low);
   expect(px.mid).not.toEqual(px.high);
   // A flat array is not a grid, and the run says so instead of drawing something.
+  await page.evaluate(() => { location.hash = '#/panel/flatTab'; location.reload(); });
+  await expect(page.locator('[data-test="panel-title"]')).toHaveText('Flat');
+  await expect(page.locator('.conn')).toContainText('live');
+  await page.locator('[data-test="panel-run"]').click();
+  await expect(page.locator('[data-test="panel-state"]')).toHaveAttribute('data-state', 'failed');
   await expect(page.locator('[data-test="chart"][data-id="bad"] [data-test="chart-count"]')).toHaveText('no data yet');
 });
