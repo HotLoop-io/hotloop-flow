@@ -325,3 +325,16 @@ IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
 CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+twmb/franz-go
+--------------------------------------------------------------------------------
+
+The Kafka out node (internal/nodes/kafka.go) produces to any broker that speaks
+the Kafka API with franz-go v1.22.2, the same client HotLoop core's Kafka output
+uses. It is a Go module dependency, not copied into this repository.
+    https://github.com/twmb/franz-go
+    Copyright 2020, Travis Bischel.
+    Licensed under the BSD 3-Clause License. The full text, and the licenses of
+    the modules franz-go itself pulls in (klauspost/compress, pierrec/lz4), are
+    in THIRD_PARTY_LICENSES in the image.
