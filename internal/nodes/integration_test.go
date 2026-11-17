@@ -81,8 +81,8 @@ func TestIntegrationMQTTRoundTrip(t *testing.T) {
 		t.Fatalf("subscribing: %v", err)
 	}
 
-	// Give the subscription time to reach the broker before publishing.
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the broker's answer to the subscription before publishing.
+	waitConnected(t, broker)
 
 	out := build(t, "mqtt out", `{"broker":"brk","topic":"`+topic+`","qos":"1"}`, svc)
 	if _, err := send(t, out, msg(t, `{"payload":{"temp":21.5,"unit":"C"}}`)); err != nil {

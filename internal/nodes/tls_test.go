@@ -868,7 +868,6 @@ func TestMQTTOverTLSWithATLSConfig(t *testing.T) {
 			if who := recv(t, peers, "client certificate"); who != "line3-flow" {
 				t.Fatalf("the TLS front saw %q", who)
 			}
-			time.Sleep(300 * time.Millisecond)
 
 			out := build(t, "mqtt out", `{"broker":"brk","topic":"`+topic+`","qos":"1"}`, svc)
 			if _, err := send(t, out, msg(t, `{"payload":"over tls"}`)); err != nil {

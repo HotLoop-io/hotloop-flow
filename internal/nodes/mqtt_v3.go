@@ -32,6 +32,26 @@ type mqttV3Broker struct {
 type mqttV3Sub struct {
 	qos      byte
 	handlers map[string]func(mqttMessage)
+	acked    bool // the broker has answered the SUBSCRIBE on this connection
+}
+
+// subscriptionsSettled reports whether the link is up and the broker has
+// answered every subscription recorded here. After a connect the replay runs
+// from a goroutine, so "connected" is true for a moment in which a message
+// published to one of those topics goes nowhere; this is the event that says
+// that moment is over.
+func (b *mqttV3Broker) subscriptionsSettled() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.client == nil || !b.client.IsConnectionOpen() {
+		return false
+	}
+	for _, sub := range b.subs {
+		if !sub.acked {
+			return false
+		}
+	}
+	return true
 }
 
 func newMQTTv3Broker(s mqttBrokerSettings) *mqttV3Broker {
@@ -192,7 +212,15 @@ func (b *mqttV3Broker) Subscribe(owner, topic string, qos byte, _ mqttSubOptions
 	if !tok.WaitTimeout(10 * time.Second) {
 		return fmt.Errorf("timed out subscribing to %q", topic)
 	}
-	return tok.Error()
+	if err := tok.Error(); err != nil {
+		return err
+	}
+	b.mu.Lock()
+	if b.subs[topic] == sub {
+		sub.acked = true
+	}
+	b.mu.Unlock()
+	return nil
 }
 
 func (b *mqttV3Broker) Unsubscribe(owner, topic string) error {
@@ -222,16 +250,43 @@ func (b *mqttV3Broker) replaySubscriptions(client mqtt.Client) {
 	type entry struct {
 		topic string
 		qos   byte
+		sub   *mqttV3Sub
 	}
 	var subs []entry
 	for t, s := range b.subs {
-		subs = append(subs, entry{t, s.qos})
+		s.acked = false
+		subs = append(subs, entry{t, s.qos, s})
 	}
 	b.mu.Unlock()
 
-	for _, s := range subs {
-		client.Subscribe(s.topic, s.qos, b.handlerFor(s.topic))
-	}
+	// Each subscription is sent and waited for, and asked again with a growing
+	// wait until the broker answers, the subscription is gone, or the link
+	// drops (the next connect replays it). One that timed out on a loaded
+	// broker used to be forgotten here: the node stayed connected and deaf.
+	go func() {
+		for _, s := range subs {
+			wait := 200 * time.Millisecond
+			for {
+				b.mu.Lock()
+				wanted := b.subs[s.topic] == s.sub && !s.sub.acked
+				b.mu.Unlock()
+				if !wanted || !client.IsConnectionOpen() {
+					break
+				}
+				tok := client.Subscribe(s.topic, s.qos, b.handlerFor(s.topic))
+				if tok.WaitTimeout(10*time.Second) && tok.Error() == nil {
+					b.mu.Lock()
+					if b.subs[s.topic] == s.sub {
+						s.sub.acked = true
+					}
+					b.mu.Unlock()
+					break
+				}
+				time.Sleep(wait)
+				wait = min(wait*2, 5*time.Second)
+			}
+		}
+	}()
 }
 
 func (b *mqttV3Broker) Close(context.Context, bool) error {

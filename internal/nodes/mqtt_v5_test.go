@@ -159,9 +159,16 @@ func brokerNode(t *testing.T, cfg map[string]any) (*credServices, node.Node) {
 	return svc, b
 }
 
+// waitConnected waits for the link, and then for the broker's answer to every
+// subscription the nodes on it have asked for. Connected turns true a moment
+// before the subscriptions are sent, and a message published in that moment
+// goes nowhere.
 func waitConnected(t *testing.T, b node.Node) {
 	t.Helper()
 	waitFor(t, 15*time.Second, "the broker connection", func() bool { return b.(MQTTBroker).Connected() })
+	if s, ok := b.(interface{ subscriptionsSettled() bool }); ok {
+		waitFor(t, 15*time.Second, "the broker's answer to every subscription", s.subscriptionsSettled)
+	}
 }
 
 func mqttAddr(t *testing.T) (string, string, int) {
@@ -272,7 +279,6 @@ func TestMQTTv5PropertiesBothWays(t *testing.T) {
 	_, cancel := startNode(t, in, ie)
 	defer cancel()
 	waitConnected(t, b)
-	time.Sleep(300 * time.Millisecond)
 
 	// Out: the node's content type wins over the message's, the rest come
 	// from the message.
@@ -355,7 +361,7 @@ func TestMQTTv5SubscriptionOptions(t *testing.T) {
 	noLocal := start(`{"broker":"brk","topic":"` + topic + `/nl","qos":"1","nl":true}`)
 	rapOn := start(`{"broker":"brk","topic":"` + topic + `/rap1","qos":"1","rap":true}`)
 	rapOff := start(`{"broker":"brk","topic":"` + topic + `/rap0","qos":"1","rap":false}`)
-	time.Sleep(500 * time.Millisecond)
+	waitConnected(t, b)
 
 	waitFor(t, 10*time.Second, "the retained message with retain handling 0", func() bool { return rh0.total() == 1 })
 	if rh2.total() != 0 {
@@ -407,16 +413,19 @@ func TestMQTTv5SessionExpiryKeepsMessagesAcrossADrop(t *testing.T) {
 			_, cancel := startNode(t, in, e)
 			defer cancel()
 			waitConnected(t, b)
-			time.Sleep(300 * time.Millisecond)
 
 			proxy.cut()
 			waitFor(t, 10*time.Second, "the drop to be noticed", func() bool { return !b.(MQTTBroker).Connected() })
 			w.publish(t, &paho.Publish{Topic: topic, QoS: 1, Payload: []byte("while you were out")})
 			proxy.resume()
 			waitConnected(t, b)
-			time.Sleep(time.Second)
-			if e.total() != tc.want {
-				t.Fatalf("with a session expiry of %d, %d messages arrived after the reconnect, want %d",
+			// A message sent now on the same topic comes after anything the broker
+			// kept for this session, so when it has arrived, everything that was
+			// going to has: the count is then settled, not guessed at after a pause.
+			w.publish(t, &paho.Publish{Topic: topic, QoS: 1, Payload: []byte("after")})
+			waitFor(t, 10*time.Second, "the message sent after the reconnect", func() bool { return e.total() >= tc.want+1 })
+			if e.total() != tc.want+1 {
+				t.Fatalf("with a session expiry of %d, %d messages arrived after the reconnect, want %d and the one sent after it",
 					tc.expiry, e.total(), tc.want)
 			}
 		})
@@ -446,7 +455,6 @@ func TestMQTTTwoNodesOnOneTopic(t *testing.T) {
 			first, e1 := mk("in-1")
 			_, e2 := mk("in-2")
 			waitConnected(t, b)
-			time.Sleep(300 * time.Millisecond)
 
 			w.publish(t, &paho.Publish{Topic: topic, QoS: 1, Payload: []byte("one")})
 			waitFor(t, 10*time.Second, "both nodes", func() bool { return e1.total() == 1 && e2.total() == 1 })
@@ -484,7 +492,6 @@ func TestMQTTv5OverlappingSubscriptionsDeliverOnce(t *testing.T) {
 	wide := mk("wide", base+"/#")
 	exact := mk("exact", base+"/a")
 	waitConnected(t, b)
-	time.Sleep(300 * time.Millisecond)
 
 	w.publish(t, &paho.Publish{Topic: base + "/a", QoS: 1, Payload: []byte("x")})
 	waitFor(t, 10*time.Second, "both subscriptions", func() bool { return wide.total() >= 1 && exact.total() >= 1 })
@@ -510,7 +517,6 @@ func TestMQTTv311StillRoundTrips(t *testing.T) {
 	_, cancel := startNode(t, in, e)
 	defer cancel()
 	waitConnected(t, b)
-	time.Sleep(300 * time.Millisecond)
 	ext.Publish(topic, 1, false, `{"a":1}`).WaitTimeout(5 * time.Second)
 	waitFor(t, 10*time.Second, "the message", func() bool { return e.total() == 1 })
 	got := e.on(0)[0]
