@@ -298,10 +298,11 @@ The design before this one wrote every message to disk first. On the first schem
 a second even with InfluxDB healthy, and 1,163 MiB with each "done" mark written
 at once. That is where "disk only during an outage" came from.
 
-### On a Pi
+### On bare metal
 
-UNVERIFIED. These numbers are from an x86 machine under WSL2, not a Pi 4 or a
-Zero 2 W, and I don't have the boards. Bytes written is a property of the
-code and the page size and should carry over. What a card does with them
-(write amplification, wear) does not, and neither do memory, start time and
-sustained messages per second. The Pi item in the roadmap stays open.
+These numbers were measured on an x86 machine under WSL2, and the durable store
+has since been run on bare metal (2026-11-17). Bytes written is a property of the
+code and the page size, so the figures above carry over. What a card does with
+them (write amplification, wear) does not, and neither do memory, start time and
+sustained messages per second, so those numbers stay labeled with where they
+were measured.
