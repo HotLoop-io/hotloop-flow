@@ -267,8 +267,9 @@ in [docs/durable](docs/durable/README.md).
 Mark a wire durable and, while the node on the other end keeps up, it is an
 ordinary wire and writes nothing to disk. The moment that node stops taking
 messages, the wire spills to the same SQLite file before the sender moves on, and
-a pump delivers them oldest first, one at a time, until the target takes each
-one. So the historian goes down, the readings pile up on disk instead of blocking
+a pump delivers them oldest first until the target takes each one, in batches of
+up to 256 for a target that writes to a database in one go (InfluxDB does), and one at a
+time for the rest. So the historian goes down, the readings pile up on disk instead of blocking
 the flow or getting dropped, and they go in, in order, when it comes back. The
 price of writing nothing while it's healthy is that a `kill -9` then loses what
 was in memory, about one poll's worth, and I'd rather say that here than have you

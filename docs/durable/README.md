@@ -66,9 +66,17 @@ What a durable wire does:
   messages already on their way to the target are diverted to disk behind the one
   that failed, in order. In the example above `reply` comes second in the wiring,
   so while the wire is spilling an HTTP 200 means the reading is on disk.
-- **Drains in order, one at a time.** A pump hands the oldest message on disk to
-  the target and waits until its handler returns. Nothing behind it overtakes it.
-  When the queue is empty the wire goes back to memory and stops writing.
+- **Drains in order, in batches where the target takes them.** A pump hands the
+  oldest messages on disk to the target and waits until they are taken. Nothing
+  behind a message overtakes it. A target that writes to a database can take a
+  run of up to 256 messages as one write, and `influxdb out` does: with the
+  historian answering a write in 8 ms, a backlog drained at about 110 readings a
+  second one at a time, which a plant sending 100 a second hardly gained on, and
+  drains at the speed the writes allow when each carries a few hundred. Any other
+  target is still handed one message at a time. If a batch is not taken, the
+  messages before the first one that failed are marked done, that one is retried
+  on its own with the retry below, and the rest are sent again as a batch. When
+  the queue is empty the wire goes back to memory and stops writing.
 - **Retries what the target fails.** The same message goes again after 250 ms,
   then 500 ms, doubling to 5 seconds, for as long as it takes. The flow's Catch
   nodes hear about the first failure and not every retry. A target that is
@@ -117,7 +125,8 @@ returns without an error, and the wire marks it done on disk after that. A `kill
 depends on `store.durable.ackFlush`: marks are written together, so with the
 default `100ms` that's the messages finished in the last 100 ms, and with `0s`
 each mark is written before the next message is sent, so it's at most the one in
-flight.
+flight, or the batch in flight, up to 256 messages, for a target that takes
+batches.
 
 That sounds like a hole, so here is what closes it for the target this was built
 for. A message that crosses a durable wire is stamped `msg._queuedAt` with the

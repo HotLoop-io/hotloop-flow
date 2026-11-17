@@ -541,6 +541,23 @@ type Node interface {
 	Receive(ctx context.Context, msg *engine.Msg, out Emitter) error
 }
 
+// BatchReceiver is implemented by a node that can take several messages in one
+// go, and gains from it: a node that writes to a database makes one round trip
+// for a hundred messages instead of a hundred. Only a durable wire's drain uses
+// it, to deliver a backlog after an outage; a live message still goes through
+// Receive one at a time.
+//
+// msgs are in order, and outs[i] is the Emitter for msgs[i]. The node returns
+// one error per message: nil when it has taken that message, and everything it
+// sent on for it has been sent. The contract is about order. Once a message is
+// not taken, no message after it may be, because the wire retries from the first
+// one that failed and anything taken after it would then arrive out of order. A
+// node that writes all the messages as one request returns that request's error
+// for every message.
+type BatchReceiver interface {
+	ReceiveBatch(ctx context.Context, msgs []*engine.Msg, outs []Emitter) []error
+}
+
 // Starter is implemented by nodes that produce messages on their own — Inject,
 // MQTT In, HTTP In — rather than only reacting to input.
 //

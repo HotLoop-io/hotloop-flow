@@ -3,6 +3,7 @@ package nodes
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -274,27 +275,29 @@ func readMappings(raw map[string]any, key string) []columnMapping {
 	return out
 }
 
-func (n *influxOutNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
-	if n.target == nil {
-		cfg, ok := n.svc.ConfigNode(n.cfgID)
-		if !ok {
-			return fmt.Errorf("server config node %s is not running", n.cfgID)
-		}
-		t, ok := cfg.(InfluxTarget)
-		if !ok {
-			return fmt.Errorf("config node %s is not an InfluxDB server", n.cfgID)
-		}
-		n.target = t
-		if p, ok := cfg.(interface{ Precision() string }); ok {
-			n.precision = p.Precision()
-		}
+// bind finds the server config node the first time a message needs it.
+func (n *influxOutNode) bind() error {
+	if n.target != nil {
+		return nil
 	}
-
-	line, err := n.buildLine(m)
-	if err != nil {
-		return err
+	cfg, ok := n.svc.ConfigNode(n.cfgID)
+	if !ok {
+		return fmt.Errorf("server config node %s is not running", n.cfgID)
 	}
+	t, ok := cfg.(InfluxTarget)
+	if !ok {
+		return fmt.Errorf("config node %s is not an InfluxDB server", n.cfgID)
+	}
+	n.target = t
+	if p, ok := cfg.(interface{ Precision() string }); ok {
+		n.precision = p.Precision()
+	}
+	return nil
+}
 
+// writer is how a body of line protocol reaches InfluxDB, or what stands in for
+// it under a flow test.
+func (n *influxOutNode) writer() func(context.Context, []byte) error {
 	write := n.target.Write
 	if si := node.StandInOf(n.svc); si != nil {
 		// The line protocol is the node's whole job, so that's what a test
@@ -307,7 +310,20 @@ func (n *influxOutNode) Receive(ctx context.Context, m *engine.Msg, out node.Emi
 			return nil
 		}
 	}
-	if err := write(ctx, []byte(line)); err != nil {
+	return write
+}
+
+func (n *influxOutNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
+	if err := n.bind(); err != nil {
+		return err
+	}
+
+	line, err := n.buildLine(m)
+	if err != nil {
+		return err
+	}
+
+	if err := n.writer()(ctx, []byte(line)); err != nil {
 		out.Status(node.Status{Fill: "red", Shape: "dot", Text: truncate(err.Error(), 32)})
 		return err
 	}
@@ -315,6 +331,60 @@ func (n *influxOutNode) Receive(ctx context.Context, m *engine.Msg, out node.Emi
 	out.Status(node.Status{Fill: "green", Shape: "dot", Text: "written"})
 	out.Send(0, m)
 	return nil
+}
+
+// errHeldBehind is what a message gets when an earlier one in its batch could
+// not be written, so it was not.
+var errHeldBehind = errors.New("not written, because an earlier message in its batch could not be")
+
+// ReceiveBatch writes a run of messages as one request: a backlog after an outage
+// is a few requests and not one per reading. The lines are in the order given, a
+// message whose line can't be built stops the batch there so nothing after it is
+// written ahead of it, and a failed write fails every message in it, which the
+// durable wire answers by sending the first one alone. A repeat is harmless for
+// the reason a repeat always is: each line carries the time the message entered
+// the wire.
+func (n *influxOutNode) ReceiveBatch(ctx context.Context, msgs []*engine.Msg, outs []node.Emitter) []error {
+	errs := make([]error, len(msgs))
+	fail := func(from int, err error) {
+		for i := from; i < len(errs); i++ {
+			errs[i] = err
+		}
+	}
+	if err := n.bind(); err != nil {
+		fail(0, err)
+		return errs
+	}
+	var body bytes.Buffer
+	built := len(msgs)
+	for i, m := range msgs {
+		line, err := n.buildLine(m)
+		if err != nil {
+			errs[i] = err
+			fail(i+1, errHeldBehind)
+			built = i
+			break
+		}
+		if i > 0 {
+			body.WriteByte('\n')
+		}
+		body.WriteString(line)
+	}
+	if built == 0 {
+		return errs
+	}
+	if err := n.writer()(ctx, body.Bytes()); err != nil {
+		outs[0].Status(node.Status{Fill: "red", Shape: "dot", Text: truncate(err.Error(), 32)})
+		for i := 0; i < built; i++ {
+			errs[i] = err
+		}
+		return errs
+	}
+	outs[0].Status(node.Status{Fill: "green", Shape: "dot", Text: "written"})
+	for i := 0; i < built; i++ {
+		outs[i].Send(0, msgs[i])
+	}
+	return errs
 }
 
 func (n *influxOutNode) buildLine(m *engine.Msg) (string, error) {

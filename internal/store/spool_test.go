@@ -501,3 +501,49 @@ func TestSpoolClaimAndEvictOldestNeverCountAMessageTwice(t *testing.T) {
 		t.Fatalf("%d delivered and %d evicted is %d, not the %d queued", delivered, q.Dropped(), got, n)
 	}
 }
+
+// A batch the pump has claimed is out of reach of an eviction, all of it: the
+// oldest message an eviction may take is the first one after the batch.
+func TestSpoolClaimNKeepsTheWholeBatchOutOfReachOfAnEviction(t *testing.T) {
+	db, sp := openSpool(t, filepath.Join(t.TempDir(), "state.db"), 0)
+	defer db.Close()
+	defer sp.Close()
+	q := sp.Wire("w")
+	for i := 0; i < 6; i++ {
+		_, _ = q.Append(body(i))
+	}
+	batch, err := q.ClaimN(0, 3)
+	if err != nil || len(batch) != 3 {
+		t.Fatalf("claimed %d: %v", len(batch), err)
+	}
+	for i := 0; i < 3; i++ {
+		if string(batch[i].Body) != string(body(i)) {
+			t.Fatalf("message %d of the batch is %q, want %q", i, batch[i].Body, body(i))
+		}
+	}
+	if ok, err := q.EvictOldest(); !ok || err != nil {
+		t.Fatalf("evict: %v %v", ok, err)
+	}
+	var kept [][]byte
+	var cursor uint64
+	for {
+		e, ok, _ := q.Next(cursor)
+		if !ok {
+			break
+		}
+		kept = append(kept, e.Body)
+		cursor = e.Seq
+	}
+	want := [][]byte{body(0), body(1), body(2), body(4), body(5)}
+	if len(kept) != len(want) {
+		t.Fatalf("kept %d messages, want %d", len(kept), len(want))
+	}
+	for i := range want {
+		if string(kept[i]) != string(want[i]) {
+			t.Fatalf("kept[%d] = %q, want %q: the eviction took a message from the claimed batch", i, kept[i], want[i])
+		}
+	}
+	if rest, _ := q.ClaimN(batch[2].Seq, 10); len(rest) != 2 {
+		t.Fatalf("after the batch there are %d messages, want 2", len(rest))
+	}
+}

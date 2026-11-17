@@ -170,7 +170,26 @@ type delivery struct {
 	// then goes back to the wire to be tried again and is not raised to the
 	// Catch nodes a second time.
 	retry bool
+
+	// batchable marks a delivery the wire's drain sent as part of a batch to a
+	// node that takes batches. The runner groups the batchable deliveries that
+	// are waiting in its inbox, in order, into one ReceiveBatch call.
+	batchable bool
+
+	// run is the drain run a batchable delivery belongs to. The runner may split
+	// a run across several ReceiveBatch calls, because the pump is still pushing
+	// while the node is already taking, so a failure in one call has to stop the
+	// calls after it: the wire retries from the first failure, and a later message
+	// taken meanwhile would arrive ahead of it.
+	run *batchRun
 }
+
+// batchRun is shared by the deliveries of one drain run.
+type batchRun struct{ failed atomic.Bool }
+
+// durableBatchMax is the most messages one ReceiveBatch call takes, and the most
+// the pump claims from the disk queue at once.
+const durableBatchMax = 256
 
 // errDropped is what a durable message's ack gets when it never reached the
 // node.
@@ -430,12 +449,12 @@ func (r *runner) loop() {
 	for {
 		select {
 		case d := <-r.inbox:
-			r.handle(ctx, d)
+			r.dispatch(ctx, d)
 		case <-r.quit:
 			for {
 				select {
 				case d := <-r.inbox:
-					r.handle(ctx, d)
+					r.dispatch(ctx, d)
 				default:
 					return
 				}
@@ -443,6 +462,151 @@ func (r *runner) loop() {
 		}
 	}
 }
+
+// batcher is the node's batch interface, or nil when it takes one message at a
+// time, which is nearly every node.
+func (r *runner) batcher() node.BatchReceiver {
+	b, _ := r.node.(node.BatchReceiver)
+	return b
+}
+
+// dispatch handles a delivery. A batchable one is grouped with the batchable
+// deliveries queued right behind it, so a backlog is one call and not one per
+// message. The first delivery that is not batchable ends the group and is handled
+// after it, so nothing overtakes anything.
+func (r *runner) dispatch(ctx context.Context, d delivery) {
+	b := r.batcher()
+	if !d.batchable || b == nil {
+		r.handle(ctx, d)
+		return
+	}
+	batch := []delivery{d}
+	var rest *delivery
+group:
+	for len(batch) < durableBatchMax {
+		select {
+		case n := <-r.inbox:
+			if !n.batchable {
+				rest = &n
+				break group
+			}
+			batch = append(batch, n)
+		default:
+			break group
+		}
+	}
+	r.handleBatch(ctx, b, batch)
+	if rest != nil {
+		r.dispatch(ctx, *rest)
+	}
+}
+
+// handleBatch is handle for a group of durable deliveries: the same counting,
+// tracing and schema check for each message, then one ReceiveBatch for the lot.
+// Each delivery is acknowledged with its own result once the node has returned.
+func (r *runner) handleBatch(ctx context.Context, b node.BatchReceiver, ds []delivery) {
+	results := make([]error, len(ds))
+	defer r.rt.outstanding.Add(-int64(len(ds)))
+	defer func() {
+		for i, d := range ds {
+			if d.ack != nil {
+				d.ack(results[i])
+			}
+		}
+	}()
+
+	// An earlier call in this run failed: none of these may be taken before the
+	// message that did not go.
+	if run := ds[0].run; run != nil && run.failed.Load() {
+		for i := range results {
+			results[i] = errNotAttempted
+		}
+		return
+	}
+	defer func() {
+		if run := ds[0].run; run != nil {
+			for _, err := range results {
+				if err != nil {
+					run.failed.Store(true)
+					break
+				}
+			}
+		}
+	}()
+
+	start := r.rt.opts.Now()
+	r.stats.Received.Add(int64(len(ds)))
+	r.inFlight.Add(int64(len(ds)))
+	defer r.inFlight.Add(-int64(len(ds)))
+
+	// A message the schema refuses is not handed to the node, and nothing after
+	// it is either: the wire retries from the first failure, and a later message
+	// taken now would arrive before it.
+	n := len(ds)
+	msgs := make([]*engine.Msg, 0, len(ds))
+	outs := make([]node.Emitter, 0, len(ds))
+	trs := make([]*engine.Trace, 0, len(ds))
+	hops := make([]int, 0, len(ds))
+	for i, d := range ds {
+		if o := r.rt.observer; o != nil {
+			o.Received(r.id, d.msg.Clone())
+		}
+		tr, hop := r.rt.tracer.Receive(d.msg, r.id, r.typ, r.rt.opts.Now())
+		r.rt.observeQueueLatency(r, r.rt.opts.Now().Sub(d.enqueued))
+		if err := r.ports.CheckIn(d.msg); err != nil {
+			results[i] = err
+			tr.Finish(hop, 0, err)
+			r.stats.Errors.Add(1)
+			n = i
+			break
+		}
+		msgs = append(msgs, d.msg)
+		trs = append(trs, tr)
+		hops = append(hops, hop)
+		outs = append(outs, r.emitterIn(tr, hop))
+	}
+	for i := n + 1; i < len(ds); i++ {
+		results[i] = errNotAttempted
+	}
+
+	var errs []error
+	func() {
+		defer func() {
+			if p := recover(); p != nil {
+				r.stats.Errors.Add(1)
+				err := fmt.Errorf("node %s (%s) panicked: %v", r.id, r.typ, p)
+				errs = make([]error, len(msgs))
+				for i := range errs {
+					errs[i] = err
+				}
+			}
+		}()
+		if len(msgs) > 0 {
+			errs = b.ReceiveBatch(ctx, msgs, outs)
+		}
+	}()
+	took := r.rt.opts.Now().Sub(start)
+	r.rt.observeExecTime(r, took)
+	for i := range msgs {
+		var err error
+		if i < len(errs) {
+			err = errs[i]
+		}
+		// A node that returned too few results has not said it took the rest.
+		if i >= len(errs) {
+			err = errNotAttempted
+		}
+		trs[i].Finish(hops[i], took, err)
+		results[i] = err
+		if err != nil {
+			r.stats.Errors.Add(1)
+		}
+	}
+}
+
+// errNotAttempted is what a message in a batch gets when an earlier message in
+// it failed, so the wire knows it was never taken.
+var errNotAttempted = errors.New("the message was not attempted because an earlier one in its batch failed")
 
 // handle runs one message through the node, converting a panic into an error
 // rather than taking the process down.
