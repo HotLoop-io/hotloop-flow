@@ -43,6 +43,32 @@ type mqttV5Sub struct {
 	qos      byte
 	opts     mqttSubOptions
 	handlers map[string]func(mqttMessage)
+	acked    bool // the broker has answered the SUBSCRIBE on this connection
+}
+
+// subscribeRefused is the broker saying no to a subscription. Unlike a
+// timeout, asking again will not change the answer.
+type subscribeRefused struct{ msg string }
+
+func (e subscribeRefused) Error() string { return e.msg }
+
+// subscriptionsSettled reports whether the link is up and the broker has
+// answered every subscription recorded here. After a connect the nodes'
+// subscriptions are sent from a goroutine, so "connected" is true for a moment
+// in which a message published to one of those topics goes nowhere; this is
+// the event that says that moment is over.
+func (b *mqttV5Broker) subscriptionsSettled() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.connected {
+		return false
+	}
+	for _, sub := range b.subs {
+		if !sub.acked {
+			return false
+		}
+	}
+	return true
 }
 
 func newMQTTv5Broker(s mqttBrokerSettings) *mqttV5Broker {
@@ -94,6 +120,7 @@ func (b *mqttV5Broker) startLocked() {
 			b.connected = true
 			subs := make([]*mqttV5Sub, 0, len(b.subs))
 			for _, sub := range b.subs {
+				sub.acked = false
 				subs = append(subs, sub)
 			}
 			b.mu.Unlock()
@@ -103,13 +130,16 @@ func (b *mqttV5Broker) startLocked() {
 					_, _ = cm.Publish(context.Background(), lwtPublish(birth))
 				}
 				for _, sub := range subs {
-					_ = b.sendSubscribe(context.Background(), cm, sub)
+					b.subscribeUntilAnswered(cm, sub)
 				}
 			}()
 		},
 		OnConnectionDown: func() bool {
 			b.mu.Lock()
 			b.connected = false
+			for _, sub := range b.subs {
+				sub.acked = false
+			}
 			b.mu.Unlock()
 			return true
 		},
@@ -258,9 +288,38 @@ func (b *mqttV5Broker) sendSubscribe(ctx context.Context, cm *autopaho.Connectio
 		return err
 	}
 	if ack != nil && len(ack.Reasons) > 0 && ack.Reasons[0] >= 0x80 {
-		return fmt.Errorf("the broker refused the subscription to %q (reason code 0x%02x)", sub.topic, ack.Reasons[0])
+		return subscribeRefused{fmt.Sprintf("the broker refused the subscription to %q (reason code 0x%02x)", sub.topic, ack.Reasons[0])}
 	}
+	b.mu.Lock()
+	if b.subs[sub.topic] == sub && b.connected {
+		sub.acked = true
+	}
+	b.mu.Unlock()
 	return nil
+}
+
+// subscribeUntilAnswered sends a subscription after a connect and asks again,
+// with a growing wait, until the broker answers, the broker refuses it, the
+// subscription is gone, or the link drops (the next connect sends it again). A
+// SUBSCRIBE that timed out on a loaded broker used to be forgotten here, and
+// the node sat connected and deaf until the next reconnect.
+func (b *mqttV5Broker) subscribeUntilAnswered(cm *autopaho.ConnectionManager, sub *mqttV5Sub) {
+	wait := 200 * time.Millisecond
+	for {
+		b.mu.Lock()
+		wanted := b.subs[sub.topic] == sub && b.connected && !sub.acked
+		b.mu.Unlock()
+		if !wanted {
+			return
+		}
+		err := b.sendSubscribe(context.Background(), cm, sub)
+		var refused subscribeRefused
+		if err == nil || errors.As(err, &refused) {
+			return
+		}
+		time.Sleep(wait)
+		wait = min(wait*2, 5*time.Second)
+	}
 }
 
 func (b *mqttV5Broker) Subscribe(owner, topic string, qos byte, opts mqttSubOptions, h func(mqttMessage)) error {

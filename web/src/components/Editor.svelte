@@ -1019,11 +1019,13 @@
   }
 
   let statsTimer: number | undefined;
+  let statsStopped = false;
   let historyTimer: number | undefined;
   let disconnect: (() => void) | null = null;
 
   function teardown(): void {
-    window.clearInterval(statsTimer);
+    statsStopped = true;
+    window.clearTimeout(statsTimer);
     window.clearInterval(historyTimer);
     window.clearTimeout(typeTimer);
     window.clearTimeout(noticeTimer);
@@ -1070,8 +1072,15 @@
         }
       }
     };
-    void refresh();
-    statsTimer = window.setInterval(refresh, 2000);
+    // The next read is asked for when the last has answered: on a slow edge
+    // link a read that takes longer than two seconds is waited for, never
+    // stacked under the next one.
+    const pollStats = async () => {
+      await refresh();
+      if (!statsStopped) statsTimer = window.setTimeout(pollStats, 2000);
+    };
+    statsStopped = false;
+    void pollStats();
 
     // Somebody else's deploy shows up in the history without anybody pressing
     // refresh. Every fifteen seconds is often enough to notice and rare enough
