@@ -954,3 +954,14 @@ jobs:
         # types from GET /nodes on the binary it is testing, so it cannot go stale.
         working-directory: web/e2e
         run: npx playwright test
+
+      - name: Keep the traces of a failed browser test
+        # A test that fails once in a few hundred runs is only worth chasing with
+        # its trace and its screenshot, and the runner is gone when the job ends.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-test-results
+          path: web/e2e/test-results
+          retention-days: 14
+          if-no-files-found: ignore

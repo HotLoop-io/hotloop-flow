@@ -6,7 +6,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { canvasNode, deployed, drag, centre, nodeBody, seed, select, signIn, topDeploy, type Entry } from './helpers';
+import { box, canvasNode, deployed, drag, centre, nodeBody, seed, select, signIn, topDeploy, type Entry } from './helpers';
 
 const shots = process.env.FLOWLAB_SHOTS;
 async function shot(page: Page, name: string): Promise<void> {
@@ -39,12 +39,6 @@ test.use({ viewport: { width: 1600, height: 900 } });
 const canvas = (page: Page): Locator => page.locator('.canvas-host > .canvas');
 const frameOf = (page: Page, id: string): Locator => canvas(page).locator(`[data-frame="${id}"]`);
 const openButton = (page: Page): Locator => page.locator('[data-test="subdiagram-expand"]');
-
-async function box(loc: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
-  const b = await loc.boundingBox();
-  if (!b) throw new Error('not on screen');
-  return b;
-}
 
 async function openSub(page: Page): Promise<void> {
   await select(page, 'sub');
