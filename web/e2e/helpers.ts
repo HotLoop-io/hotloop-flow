@@ -56,10 +56,25 @@ export const tabState = (page: Page): Locator => page.locator('[data-test="tab-s
 
 export const topDeploy = (page: Page): Locator => page.locator('.topbar button', { hasText: 'Deploy' });
 
+/**
+ * An element's box on the page, once it is on screen. Playwright's boundingBox
+ * answers null at once for an element that is not visible, and it does not wait,
+ * and the editor redraws a moment after an edit or an open: a port read in that
+ * moment was null and the test failed with "not on screen" about one run in a few
+ * hundred on the CI runner (Editor, main at 889526a). The box is read until there
+ * is one.
+ */
+export async function box(loc: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+  let b: { x: number; y: number; width: number; height: number } | null = null;
+  await expect
+    .poll(async () => ((b = await loc.boundingBox()), b !== null), { message: 'the element to be on screen', intervals: [0, 25, 50, 100, 250] })
+    .toBe(true);
+  return b!;
+}
+
 /** Where the middle of an element is on the page. */
 export async function centre(loc: Locator): Promise<{ x: number; y: number }> {
-  const b = await loc.boundingBox();
-  if (!b) throw new Error('not on screen');
+  const b = await box(loc);
   return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
 }
 
