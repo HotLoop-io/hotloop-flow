@@ -66,7 +66,7 @@ func TestAnAgentDeploysAFlowThroughMCPAndItRuns(t *testing.T) {
 	app, rec := newApp(t)
 	reg := mcphost.New("test")
 	e := serveAppWith(t, app, map[string][]string{
-		"agent":  {"mcp.call", "flows.read", "flows.write", "inject.write"},
+		"agent":  {"mcp.call", "flows.read", "flows.write", "inject.write", "settings.read", "nodes.read", "audit.read", "status.read", "auth.admin"},
 		"viewer": {"mcp.call", "flows.read"},
 		"nomcp":  {"flows.read", "flows.write"},
 	}, func(d *api.Deps) { d.MCP = reg })
