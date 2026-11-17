@@ -591,6 +591,28 @@ func (w *durableWire) pump(ctx context.Context) {
 			}
 			continue
 		}
+		if t := w.target(); t != nil && t.batcher() != nil {
+			// The target takes batches, so a backlog is delivered a batch at a
+			// time and not a message at a time.
+			es, err := w.q.ClaimN(cursor, durableBatchMax)
+			if err != nil {
+				w.logf("reading the queue for durable wire %s: %v", w.key, err)
+				if !sleepCtx(ctx, time.Second) {
+					return
+				}
+				continue
+			}
+			if len(es) > 0 {
+				last, ok := w.deliverBatch(ctx, t, es)
+				if !ok {
+					return
+				}
+				cursor = last
+				continue
+			}
+			// Nothing after the cursor: fall through to the same empty-queue
+			// handling the single path has.
+		}
 		e, ok, err := w.q.Claim(cursor)
 		if err != nil {
 			w.logf("reading the queue for durable wire %s: %v", w.key, err)
@@ -659,6 +681,105 @@ func (w *durableWire) checkStranded(ctx context.Context, cursor uint64) {
 		w.logf("durable wire %s is stuck (%s): the pump has delivered through seq %d and finds nothing after it, the wire's depth is %d (%d bytes), and the table holds %d rows (%d bytes) from seq %d to %d; in flight %d, appended %d, delivered %d, dropped %d",
 			w.key, kind, cursor, p.Depth, p.Bytes, p.Rows, p.RowBytes, p.MinSeq, p.MaxSeq, p.Inflight, p.Appended, p.Acked, p.Dropped)
 	}
+}
+
+// deliverBatch hands a run of queued messages, oldest first, to a target that
+// takes batches, and does not return until each has been taken, or the runtime is
+// stopping. It acknowledges the ones the target took, in order, and returns the
+// seq of the last message that is finished with, and whether to carry on.
+//
+// The messages go into the target's inbox one after another and the node takes
+// them as one call, so the order is the queue's. If one is not taken, nothing
+// after it was either (the node's contract), so the ones before it are
+// acknowledged and the first failure goes through deliver, one message with the
+// retry, the backoff and the give-up the wire has always had. The rest of the
+// run is claimed again afterwards. That is how a message the target can never take
+// is found and dealt with the way it always was, instead of a whole batch being
+// retried forever behind it.
+func (w *durableWire) deliverBatch(ctx context.Context, t *runner, es []store.Entry) (uint64, bool) {
+	defer w.q.SetInflight(0)
+
+	type pending struct {
+		e      store.Entry
+		result chan error
+	}
+	var run []pending
+	br := &batchRun{}
+	var last uint64
+	for _, e := range es {
+		msg, err := store.DecodeMsg(e.Body)
+		if err != nil {
+			// Not something a retry will fix, and deliver counts it and moves
+			// on. It has to go in its turn: acknowledging it would mark everything
+			// before it delivered too. So it ends this run, and is the first of
+			// the next.
+			if len(run) == 0 {
+				if !w.deliver(ctx, e) {
+					return last, false
+				}
+				return e.Seq, true
+			}
+			break
+		}
+		result := make(chan error, 1)
+		var once sync.Once
+		d := delivery{
+			msg:       msg,
+			retry:     true,
+			batchable: true,
+			run:       br,
+			ack:       func(err error) { once.Do(func() { result <- err }) },
+		}
+		if !t.pushDurable(ctx, d) {
+			if ctx.Err() != nil {
+				return last, false
+			}
+			// The node was replaced between the lookup and the push. What was
+			// pushed to the old one is settled below, and the rest is claimed
+			// again by the next pass.
+			break
+		}
+		run = append(run, pending{e, result})
+	}
+	if len(run) == 0 {
+		return last, true
+	}
+
+	// Wait for every result before deciding anything: the messages are in the
+	// node's hands, and acknowledging by what came back, in order, is what keeps
+	// the queue and the target agreeing.
+	errs := make([]error, len(run))
+	for i, p := range run {
+		select {
+		case errs[i] = <-p.result:
+		case <-ctx.Done():
+			wait := w.rt.opts.CloseTimeout
+			if w.abandoned.Load() {
+				wait = abandonGrace
+			}
+			select {
+			case errs[i] = <-p.result:
+			case <-time.After(wait):
+				return last, false
+			}
+		}
+	}
+	for i, p := range run {
+		if errs[i] != nil {
+			if ctx.Err() != nil {
+				return last, false
+			}
+			// The first failure is delivered alone, with the retry the wire
+			// has always had.
+			if !w.deliver(ctx, p.e) {
+				return last, false
+			}
+			return p.e.Seq, true
+		}
+		w.q.Ack(p.e)
+		last = p.e.Seq
+	}
+	return last, true
 }
 
 // deliver hands one queued message to the target and does not return until it

@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -443,5 +444,65 @@ func TestInfluxQueueTimeFollowsTheServerPrecision(t *testing.T) {
 	}
 	if !strings.HasSuffix(fake.writes[0], " 1700000000123") {
 		t.Errorf("line = %q, want it to end with the queue time in milliseconds", fake.writes[0])
+	}
+}
+
+// A batch is one write with the lines in the order the messages came, every
+// message is sent on once it is written, and a message whose line can't be built
+// stops the batch there, so nothing after it is written ahead of it.
+func TestInfluxOutTakesABatchAsOneWriteInOrder(t *testing.T) {
+	n, fake, _ := influxHarness(t, `{
+        "server":"srv",
+        "measurement":"readings","measurementType":"str",
+        "tags":[{"column":"line","value":"topic","valueType":"msg"}],
+        "fields":[{"column":"value","value":"payload","valueType":"msg"}]
+    }`)
+	b, ok := n.(node.BatchReceiver)
+	if !ok {
+		t.Fatal("influxdb out does not take batches")
+	}
+	msgs := []*engine.Msg{
+		msg(t, `{"payload":1,"topic":"a"}`), msg(t, `{"payload":2,"topic":"b"}`), msg(t, `{"payload":3,"topic":"c"}`),
+	}
+	outs := []node.Emitter{newTestEmitter(), newTestEmitter(), newTestEmitter()}
+	for i, err := range b.ReceiveBatch(context.Background(), msgs, outs) {
+		if err != nil {
+			t.Fatalf("message %d: %v", i, err)
+		}
+	}
+	if len(fake.writes) != 1 || fake.writes[0] != "readings,line=a value=1\nreadings,line=b value=2\nreadings,line=c value=3" {
+		t.Fatalf("a batch of three was written as %q", fake.writes)
+	}
+	for i, o := range outs {
+		if got := len(o.(*testEmitter).sent[0]); got != 1 {
+			t.Errorf("message %d was sent on %d times", i, got)
+		}
+	}
+
+	// A message with no field to write is the second: the first is written, the
+	// second says why, the third is held behind it.
+	fake.writes = nil
+	bad := []*engine.Msg{msg(t, `{"payload":1,"topic":"a"}`), msg(t, `{"topic":"b"}`), msg(t, `{"payload":3,"topic":"c"}`)}
+	outs = []node.Emitter{newTestEmitter(), newTestEmitter(), newTestEmitter()}
+	errs := b.ReceiveBatch(context.Background(), bad, outs)
+	if errs[0] != nil || errs[1] == nil || errs[2] == nil {
+		t.Fatalf("errors %v: want the first taken, the second refused, the third held", errs)
+	}
+	if len(fake.writes) != 1 || strings.Contains(fake.writes[0], "line=c") {
+		t.Fatalf("wrote %q: the message behind the bad one was written ahead of it", fake.writes)
+	}
+
+	// A failed write fails every message in it, and sends none on.
+	fake.err = errors.New("InfluxDB is down")
+	outs = []node.Emitter{newTestEmitter(), newTestEmitter(), newTestEmitter()}
+	for i, err := range b.ReceiveBatch(context.Background(), msgs, outs) {
+		if err == nil {
+			t.Errorf("message %d was taken by a write that failed", i)
+		}
+	}
+	for i, o := range outs {
+		if len(o.(*testEmitter).sent[0]) != 0 {
+			t.Errorf("message %d was sent on after a failed write", i)
+		}
 	}
 }

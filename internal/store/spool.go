@@ -623,6 +623,40 @@ func (q *WireQueue) Claim(after uint64) (Entry, bool, error) {
 	return e, ok, err
 }
 
+// ClaimN is Claim for a reader that delivers up to n messages at once: it returns
+// the oldest n messages after seq, in order, and marks the last of them in flight.
+// EvictOldest takes the oldest message after the one in flight, so marking the
+// last of the batch keeps every message in it out of reach. The reader clears the
+// mark with SetInflight(0) when it is done.
+func (q *WireQueue) ClaimN(after uint64, n int) ([]Entry, error) {
+	if n < 1 {
+		n = 1
+	}
+	q.claimMu.Lock()
+	defer q.claimMu.Unlock()
+	rows, err := q.s.db.db.Query(`SELECT seq, body FROM wire_queue WHERE wire = ? AND seq > ? ORDER BY seq LIMIT ?`, q.id, after, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Entry
+	for rows.Next() {
+		var e Entry
+		if err := rows.Scan(&e.Seq, &e.Body); err != nil {
+			return nil, err
+		}
+		e.Size = int64(len(e.Body)) + RowOverhead
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) > 0 {
+		q.inflight.Store(out[len(out)-1].Seq)
+	}
+	return out, nil
+}
+
 // Ack marks a message, and so everything before it, delivered. The space is
 // free at once; the rows are deleted with the next write, or before Ack returns
 // when the spool was opened with SyncAcks.
