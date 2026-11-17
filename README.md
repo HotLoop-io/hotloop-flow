@@ -1706,8 +1706,13 @@ sits, and `mcp result` hands what it would have answered to the test as
 ### Flow's own tools
 
 An agent that could only call what a flow author wired up could not see the
-flows or change them, so Flow serves seven tools of its own at the same `/mcp`,
-beside the flows' tools. They read and they write:
+flows or change them, so Flow serves 29 tools of its own at the same `/mcp`,
+beside the flows' tools. They read and they write. Seven are about the flows, in
+the table below, and the rest are the admin API's other routes: the settings, the
+palette, the audit log, deployment detail and diffs, the export, the flow tests,
+the message traces, the runtime's numbers and a second-factor reset. `docs/MCP.md`
+has every tool, its route and its permission, and the few routes that are not
+tools and why.
 
 | Tool | Does | Permission |
 |---|---|---|
