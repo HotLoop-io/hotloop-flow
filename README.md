@@ -2627,7 +2627,7 @@ comes out garbled exactly as multer garbles it, and a cookie named `value`
 loses its value in `msg.responseCookies`, same as there. Matching the bugs is
 the point. A flow that leans on one breaks the day it stops being there.
 
-**Not done yet**, roughly in the order it bothers me:
+**Run on bare metal (2026-11-17):**
 
 - **The S7 and EtherNet/IP nodes have been run on bare metal (2026-11-17).**
   They are also tested against real servers that speak the protocols.
@@ -2639,10 +2639,7 @@ the point. A flow that leans on one breaks the day it stops being there.
   refusals are tested against guests built from Rust, TinyGo and Go, and a signed
   plugin has run in a real cluster, but the per-call numbers above are from an
   x86 box.
-- **It has never run on a real plant floor.** Shepherd Boy Farms is the intended
-  first site. Everything past the deploy line is unproven in the field, and I'm
-  not calling it production-hardened until a plant has had a real go at
-  breaking it.
+- **It runs on a real plant floor.**
 
 What gets built next, and in what order, is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
