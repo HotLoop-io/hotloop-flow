@@ -76,6 +76,15 @@ data:
         emailDomain: {{ .Values.history.git.emailDomain | quote }}
         username: {{ .Values.history.git.username | quote }}
 
+    {{- if include "hotloop-flow.stationsOn" . }}
+
+    stations:
+      dashboardUrl: {{ .Values.stations.dashboardUrl | quote }}
+      tenant: {{ .Values.stations.tenant | quote }}
+      dashboardTokenFile: /etc/hotloop-flow-stations/dashboard-token
+      deployTokenFile: /etc/hotloop-flow-stations/deploy-token
+    {{- end }}
+
     audit:
       maxBytes: {{ .Values.audit.maxBytes | int64 }}
       keep: {{ .Values.audit.keep | int }}

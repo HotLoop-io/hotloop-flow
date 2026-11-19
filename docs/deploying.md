@@ -171,6 +171,7 @@ On a pod you run yourself, mount the PEM and set `HOTLOOP_FLOW_ASSERTION_PUBLIC_
 | `history.retain` | `100` | How many deployment records are kept under `/data/deployments`. `0` keeps every one, which is a decision about disk, since each record is a copy of the flow file. |
 | `history.git.url` | empty | Mirror every deploy to a git repository as a commit from whoever deployed. Empty is off. `history.git.branch`, `.path`, `.emailDomain` and `.username` go with it, and left empty they get the binary's own defaults. |
 | `history.git.passwordSecret.name`, `.key` | empty, `password` | A Secret holding the access token for that repository. It reaches the pod as `HOTLOOP_FLOW_GIT_PASSWORD` and never touches the ConfigMap. |
+| `stations.dashboardUrl`, `stations.tenant`, `stations.dashboardTokenSecret.name`, `.key`, `stations.deployTokenSecret.name`, `.key` | empty, empty, empty, `token`, empty, `token` | Push one flow file to every Flow install the tenant runs in EmberNet, with a check after each ([stations.md](stations.md)). All four of the dashboard, the tenant and the two Secret names are set or none is; a render with some of them is refused. Each Secret holds one token and is mounted as a file, never put in the ConfigMap. The deploy token is the one the stations accept and needs `flows.read`, `flows.write` and `status.read`. |
 | `audit.maxBytes`, `audit.keep` | 16 MiB, `4` | When `/data/audit.log` rotates, and how many rotated files stay beside it. |
 | `tests.gate`, `tests.timeout` | off, `2m` | `true` refuses a deploy whose flows fail `/data/flows.test.yaml`. Off by default, because a gate nobody asked for fails a deploy at 3 AM for a reason nobody on shift has heard of. |
 | `discovery.enabled`, `discovery.allowedCIDRs` | off, empty | The scan nodes. Enabled with an empty list refuses to start. |
@@ -269,6 +270,23 @@ Rootless works the same way with the file in `~/.config/containers/systemd/`,
 they log out, and Flow goes with them. That's
 [Podman's](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
 and systemd's documented behavior. The rootful unit above is the one we ran.
+
+**Pushing to the tenant's other stations** from this unit is four settings and two Podman secrets
+mounted as files (see [stations.md](stations.md)). Make the secrets with
+`podman secret create`, then add to `[Container]`:
+
+```ini
+Environment=HOTLOOP_FLOW_STATIONS_DASHBOARD_URL=https://dashboard.example
+Environment=HOTLOOP_FLOW_STATIONS_TENANT=acme
+Environment=HOTLOOP_FLOW_STATIONS_DASHBOARD_TOKEN_FILE=/run/secrets/stations-dashboard-token
+Environment=HOTLOOP_FLOW_STATIONS_DEPLOY_TOKEN_FILE=/run/secrets/stations-deploy-token
+Secret=hotloop-flow-dashboard-token,type=mount,target=stations-dashboard-token
+Secret=hotloop-flow-station-token,type=mount,target=stations-deploy-token
+```
+
+All four settings or none: Flow refuses to start with some of them. The deploy token is
+made with `hotloop-flow token` and given to each station as an API token with
+`flows.read`, `flows.write` and `status.read`.
 
 **Upgrading** is changing the tag in `Image=`, then `daemon-reload` and
 `restart`. Flows, credentials and the secret stay where they were. Pin the tag.

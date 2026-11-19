@@ -341,6 +341,31 @@ history:
       name: ""
       key: password
 
+# ── Pushing to the tenant's other Flow installs ──────────────────────────────
+# One flow file, and so one set of diagrams, put on every Flow install the tenant
+# runs in EmberNet, each one checked and a failed one put back (docs/stations.md).
+# Off until all four are set; setting some and not the others fails the render.
+# The stations themselves are never listed here: the EmberNet dashboard says
+# which ones the tenant runs.
+stations:
+  # The EmberNet dashboard that knows the tenant's installs.
+  dashboardUrl: ""
+  # The one tenant this install pushes for. A request cannot name another.
+  tenant: ""
+  # Two Secrets, each with a key that holds a token. They are mounted as files
+  # and never touch the ConfigMap. The dashboard token is asked of the dashboard,
+  # which holds it to the tenants it may see. The deploy token is the one the
+  # stations accept, made with `hotloop-flow token` and given to each station
+  # as an API token with three permissions: flows.read, flows.write and
+  # status.read. A token with only the two deploy permissions is refused,
+  # because the check after each deploy reads the station's diagrams.
+  dashboardTokenSecret:
+    name: ""
+    key: token
+  deployTokenSecret:
+    name: ""
+    key: token
+
 # ── Audit trail ──────────────────────────────────────────────────────────────
 # /data/audit.log: who did what in the editor. Rotates, so it cannot fill the
 # volume.

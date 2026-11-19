@@ -305,3 +305,19 @@ assertion. Only when sign-in is on.
 embernet.ai/signin: assertion
 {{- end -}}
 {{- end }}
+
+{{/*
+The stations settings are all or nothing: a push needs the dashboard, the
+tenant and both tokens. Fails the render when some are set, so a half-set
+install is a refused install and not one that quietly cannot push.
+*/}}
+{{- define "hotloop-flow.stationsOn" -}}
+{{- $s := .Values.stations -}}
+{{- $set := list $s.dashboardUrl $s.tenant $s.dashboardTokenSecret.name $s.deployTokenSecret.name -}}
+{{- $n := 0 -}}
+{{- range $set }}{{ if . }}{{ $n = add $n 1 }}{{ end }}{{ end -}}
+{{- if and (gt $n 0) (lt $n 4) -}}
+{{- fail "stations needs dashboardUrl, tenant, dashboardTokenSecret.name and deployTokenSecret.name together; a push to stations needs all four" -}}
+{{- end -}}
+{{- if eq $n 4 -}}true{{- end -}}
+{{- end }}
