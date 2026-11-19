@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/api"
 	"github.com/HotLoop-io/hotloop-flow/internal/audit"
+	"github.com/HotLoop-io/hotloop-flow/internal/diagram"
+	"github.com/HotLoop-io/hotloop-flow/internal/instruments"
 	"github.com/HotLoop-io/hotloop-flow/internal/mcphost"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -65,11 +68,17 @@ const agentFlow = `[
 func TestAnAgentDeploysAFlowThroughMCPAndItRuns(t *testing.T) {
 	app, rec := newApp(t)
 	reg := mcphost.New("test")
+	app.diagrams = diagram.NewManager(nil)
+	t.Cleanup(app.diagrams.Close)
+	switches, err := instruments.Open(filepath.Join(t.TempDir(), "instruments.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	e := serveAppWith(t, app, map[string][]string{
-		"agent":  {"mcp.call", "flows.read", "flows.write", "inject.write", "settings.read", "nodes.read", "audit.read", "status.read", "auth.admin"},
+		"agent":  {"mcp.call", "flows.read", "flows.write", "inject.write", "settings.read", "nodes.read", "audit.read", "status.read", "auth.admin", "diagram.run", "instrument.write"},
 		"viewer": {"mcp.call", "flows.read"},
 		"nomcp":  {"flows.read", "flows.write"},
-	}, func(d *api.Deps) { d.MCP = reg })
+	}, func(d *api.Deps) { d.MCP = reg; d.Diagrams = app.diagrams; d.Instruments = switches })
 	agent := mcpSession(t, e, e.login(t, "agent"))
 
 	// The tools are offered to the agent, and the deploying ones are not offered to a

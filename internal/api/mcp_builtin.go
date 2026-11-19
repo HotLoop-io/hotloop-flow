@@ -64,6 +64,9 @@ func BuiltinToolNames() []string {
 func (s *Server) registerMCPTools(reg *mcphost.Registry) {
 	for _, t := range builtinTools {
 		t := t
+		if need := toolNeeds[t.name]; need != nil && !need(s) {
+			continue
+		}
 		err := reg.RegisterBuiltin(mcphost.ToolSpec{
 			Name: t.name, Description: t.desc, InputSchema: json.RawMessage(t.schema), Permission: t.perm,
 		}, func(ctx context.Context, c mcphost.Call) (mcphost.Outcome, error) {
