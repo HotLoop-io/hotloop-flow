@@ -139,7 +139,7 @@ func registerMQTTBroker() {
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
 			{Name: "broker", Kind: node.PropString, Label: "Server", Required: true,
-				Placeholder: "monster-mq.tenant-fireball.svc.cluster.local"},
+				Placeholder: "monster-mq.tenant-plant.svc.cluster.local"},
 			{Name: "port", Kind: node.PropNumber, Label: "Port", Default: 1883},
 			{Name: "protocolVersion", Kind: node.PropSelect, Label: "Protocol", Default: "4",
 				Options: []node.Option{

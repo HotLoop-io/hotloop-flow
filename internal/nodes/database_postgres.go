@@ -64,7 +64,7 @@ func registerPostgresConfig() {
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
 			{Name: "host", Kind: node.PropString, Label: "Host", Required: true,
-				Placeholder: "postgresql-app.tenant-fireball.svc.cluster.local"},
+				Placeholder: "postgresql-app.tenant-plant.svc.cluster.local"},
 			{Name: "port", Kind: node.PropNumber, Label: "Port", Default: 5432},
 			{Name: "database", Kind: node.PropString, Label: "Database", Required: true},
 			{Name: "user", Kind: node.PropString, Label: "User", Required: true},

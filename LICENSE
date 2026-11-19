@@ -2,9 +2,9 @@
 
 Every HotLoop product is under the HotLoop Source License Agreement 1.0 below: HotLoop IoT, HotLoop Edge, HotLoop Gateway, HotLoop Edge Relay, HotLoop Flow, HotLoop Cascade, HotLoop for CODESYS, HotLoop Transmitter, Spark SDK and Spark Manager. A version that was released under an earlier license stays under that license.
 
-**Licensor:** Fireball Industries LLC
+**Licensor:** HotLoop LLC
 
-**Licensed Work:** HotLoop IoT, HotLoop Edge, HotLoop Gateway, HotLoop Edge Relay, HotLoop Flow, HotLoop Cascade, HotLoop for CODESYS, HotLoop Transmitter, Spark SDK and Spark Manager, in the version of each that you received. The Licensed Work is (c) 2026 Fireball Industries LLC.
+**Licensed Work:** HotLoop IoT, HotLoop Edge, HotLoop Gateway, HotLoop Edge Relay, HotLoop Flow, HotLoop Cascade, HotLoop for CODESYS, HotLoop Transmitter, Spark SDK and Spark Manager, in the version of each that you received. The Licensed Work is (c) 2026 HotLoop LLC.
 
 ## 1. What you may always do
 
@@ -44,7 +44,7 @@ Spark SDK and HotLoop Transmitter exist to be built into things you make. You ma
 
 ## 6. Any other use
 
-Any use not allowed by sections 1, 2 and 5 needs a separate commercial license from the Licensor. To ask for one, email sales@fireballz.ai.
+Any use not allowed by sections 1, 2 and 5 needs a separate commercial license from the Licensor. To ask for one, email helpdesk@fireballz.ai.
 
 ## 7. Copies and derivative works
 
