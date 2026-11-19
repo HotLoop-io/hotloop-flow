@@ -44,7 +44,7 @@ Spark SDK and HotLoop Transmitter exist to be built into things you make. You ma
 
 ## 6. Any other use
 
-Any use not allowed by sections 1, 2 and 5 needs a separate commercial license from the Licensor. To ask for one, email support@hotloop.io.
+Any use not allowed by sections 1, 2 and 5 needs a separate commercial license from the Licensor. To ask for one, email helpdesk@fireballz.ai.
 
 ## 7. Copies and derivative works
 

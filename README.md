@@ -2770,7 +2770,7 @@ Flow is under the same license as those four: the HotLoop Source License Agreeme
 1.0. Home and lab use is free, and so is use by accredited schools and educational institutions, nonprofit organizations and government bodies. Any use that runs through
 [EmberNet](https://embernet.ai), a partner platform, business use included, is unrestricted. Outside
 EmberNet, hosting Flow as a service for other people, reselling it and embedding
-it in a product you sell are not granted, and other use needs a commercial license. Ask for one at support@hotloop.io. Unlike the others, Flow's source is public, so you can
+it in a product you sell are not granted, and other use needs a commercial license. Ask for one at helpdesk@fireballz.ai. Unlike the others, Flow's source is public, so you can
 read every line you run.
 
 ## License
