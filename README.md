@@ -481,6 +481,10 @@ stays open. A node type this runtime doesn't have comes in grey and dashed, and
 the import tells you which ones, because a silently dropped node is worse than a
 loud one.
 
+A screen is part of that file. The dashboard a flow draws (`ui_tab`, `ui_group`
+and the widgets) is nodes in the flow, so a customer's screens travel with their
+flows through Export and Import, and none of them lives in HotLoop Flow itself.
+
 **Subflows are edited on a canvas of their own.** Press *+ subflow*, and it opens
 with its input and output ports on it. Wire them to the nodes inside like
 anything else. *Subflow properties* sets the name, the colour, how many outputs
