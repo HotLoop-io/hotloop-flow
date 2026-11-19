@@ -370,18 +370,22 @@ func TestModbusReadWaitsOutItsStartDelay(t *testing.T) {
 	nrClient(t, svc, port, "")
 	n := build(t, "modbus-read", `{"server":"cl","dataType":"HoldingRegister","adr":"0","quantity":"1","rate":"10","rateUnit":"ms","delayOnStart":true,"startDelayTime":"0.3"}`, svc)
 	e := newTestEmitter()
+	began := time.Now()
 	_ = n.(node.Starter).Start(context.Background(), e)
 	defer n.(node.Closer).Close(context.Background(), false)
-	time.Sleep(150 * time.Millisecond)
-	if len(e.on(0)) != 0 {
-		t.Fatal("polled before the start delay was up")
-	}
-	deadline := time.Now().Add(3 * time.Second)
+	// The delay is 0.3 s and the node polls every 10 ms, so a node that ignored it
+	// would have its first poll in well under that. The test does not pause and then
+	// look at the count: a pause stretched past the delay by a loaded box looks like
+	// a node that polled early. It waits for the first poll and reads the clock.
+	deadline := time.Now().Add(5 * time.Second)
 	for len(e.on(0)) == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if len(e.on(0)) == 0 {
 		t.Fatal("never polled after the start delay")
+	}
+	if took := time.Since(began); took < 300*time.Millisecond {
+		t.Fatalf("polled %s after the start, before the 0.3 s start delay was up", took)
 	}
 }
 

@@ -439,28 +439,54 @@ func TestTriggerIgnoresRetriggerUnlessExtending(t *testing.T) {
 }
 
 func TestTriggerExtendRestartsTheTimer(t *testing.T) {
-	n := build(t, "trigger",
-		`{"op1type":"nul","op2":"quiet","op2type":"str","duration":80,"units":"ms","extend":true}`,
-		newTestServices())
-	e := newTestEmitter()
-	_, cancel := startNode(t, n, e)
-	defer cancel()
+	const duration = 80 * time.Millisecond
+	// The claim is "fed faster than its timeout, the watchdog never goes off". On a
+	// box that stalls this test between two pushes for longer than the timeout the
+	// watchdog is right to go off, so the claim is only judged on a run in which
+	// every push could have been at most one timeout after the one before (measured
+	// from the start of one push to the end of the next, the widest the gap between
+	// the two timer restarts can have been). A run the box spoiled is run again; a
+	// node that fires on a run that was never stalled fails.
+	for attempt := 1; ; attempt++ {
+		n := build(t, "trigger",
+			`{"op1type":"nul","op2":"quiet","op2type":"str","duration":80,"units":"ms","extend":true}`,
+			newTestServices())
+		e := newTestEmitter()
+		_, cancel := startNode(t, n, e)
 
-	// Retrigger faster than the timeout for a while; nothing must fire.
-	deadline := time.Now().Add(240 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if err := pushTo(t, n, e, msg(t, `{}`)); err != nil {
-			t.Fatalf("receive: %v", err)
+		// Retrigger faster than the timeout for a while; nothing must fire.
+		var widest time.Duration
+		var prevStart time.Time
+		deadline := time.Now().Add(240 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			start := time.Now()
+			if err := pushTo(t, n, e, msg(t, `{}`)); err != nil {
+				cancel()
+				t.Fatalf("receive: %v", err)
+			}
+			if !prevStart.IsZero() {
+				widest = max(widest, time.Since(prevStart))
+			}
+			prevStart = start
+			time.Sleep(20 * time.Millisecond)
 		}
-		time.Sleep(20 * time.Millisecond)
+		fired := e.total()
+		widest = max(widest, time.Since(prevStart)) // the last push to this look
+		if fired == 0 {
+			// Stop feeding it and the watchdog goes off.
+			waitFor(t, 3*time.Second, "the watchdog to fire once fed nothing",
+				func() bool { return e.total() == 1 })
+			cancel()
+			return
+		}
+		cancel()
+		if widest < duration {
+			t.Fatalf("the timer fired %d time(s) while being extended, with no push more than %s after the one before it", fired, widest)
+		}
+		if attempt == 5 {
+			t.Fatalf("the box stalled this test past the %s timeout on five runs in a row (widest gap %s), so the claim could not be judged", duration, widest)
+		}
 	}
-	if e.total() != 0 {
-		t.Fatalf("the timer fired %d time(s) while being extended", e.total())
-	}
-
-	// Stop feeding it and the watchdog goes off.
-	waitFor(t, 3*time.Second, "the watchdog to fire once fed nothing",
-		func() bool { return e.total() == 1 })
 }
 
 func TestTriggerReset(t *testing.T) {
