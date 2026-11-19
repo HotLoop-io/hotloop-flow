@@ -45,6 +45,29 @@ type Config struct {
 	Tests     Tests     `yaml:"tests"`
 	Trace     Trace     `yaml:"trace"`
 	Plugins   Plugins   `yaml:"plugins"`
+	Stations  Stations  `yaml:"stations"`
+}
+
+// Stations is how this instance reaches the other Flow installs of its tenant in
+// EmberNet, to push one flow file to all of them. Off unless every part is set.
+// The stations themselves are never listed here: the dashboard says which ones
+// the tenant runs.
+type Stations struct {
+	// DashboardURL is the EmberNet dashboard that knows the tenant's installs.
+	DashboardURL string `yaml:"dashboardUrl"`
+	// Tenant is the one tenant this instance pushes for. A request cannot name
+	// another.
+	Tenant string `yaml:"tenant"`
+	// DashboardTokenFile holds the dashboard token the dashboard list is asked
+	// with; DeployTokenFile holds the deploy token the stations accept. Both are
+	// read each time they are used and never printed.
+	DashboardTokenFile string `yaml:"dashboardTokenFile"`
+	DeployTokenFile    string `yaml:"deployTokenFile"`
+}
+
+// Enabled says all four parts are set.
+func (s Stations) Enabled() bool {
+	return s.DashboardURL != "" && s.Tenant != "" && s.DashboardTokenFile != "" && s.DeployTokenFile != ""
 }
 
 // Plugins is where WebAssembly plugins are loaded from and what they may do.
@@ -671,6 +694,10 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("HOTLOOP_FLOW_DISCOVERY_CIDRS"); v != "" {
 		cfg.Discovery.AllowedCIDRs = splitList(v)
 	}
+	envStr("HOTLOOP_FLOW_STATIONS_DASHBOARD_URL", &cfg.Stations.DashboardURL)
+	envStr("HOTLOOP_FLOW_STATIONS_TENANT", &cfg.Stations.Tenant)
+	envStr("HOTLOOP_FLOW_STATIONS_DASHBOARD_TOKEN_FILE", &cfg.Stations.DashboardTokenFile)
+	envStr("HOTLOOP_FLOW_STATIONS_DEPLOY_TOKEN_FILE", &cfg.Stations.DeployTokenFile)
 	envStr("HOTLOOP_FLOW_PLUGINS_DIR", &cfg.Plugins.Dir)
 	if v := os.Getenv("HOTLOOP_FLOW_PLUGIN_TRUSTED_KEYS"); v != "" {
 		cfg.Plugins.TrustedKeys = splitList(v)
@@ -777,6 +804,9 @@ func (c *Config) Validate() error {
 	}
 	if c.History.Retain < 0 {
 		return fmt.Errorf("history.retain must not be negative; 0 keeps every deployment")
+	}
+	if st := c.Stations; !st.Enabled() && (st.DashboardURL != "" || st.Tenant != "" || st.DashboardTokenFile != "" || st.DeployTokenFile != "") {
+		return fmt.Errorf("stations needs dashboardUrl, tenant, dashboardTokenFile and deployTokenFile together; a push to stations needs all four")
 	}
 	if c.Plugins.MaxMemoryMiB < 1 || c.Plugins.MaxMemoryMiB > 4095 {
 		return fmt.Errorf("plugins.maxMemoryMiB must be between 1 and 4095; a WebAssembly memory can't be larger than 4 GiB")

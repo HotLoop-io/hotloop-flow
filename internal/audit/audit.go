@@ -41,6 +41,8 @@ const (
 	DiagramStop    = "diagram.stop"
 	DiagramControl = "diagram.control"
 	DiagramDebug   = "diagram.debug"
+	// StationsPush is a flow file pushed to the tenant's other Flow installs.
+	StationsPush = "stations.push"
 	// InstrumentSwitch is somebody turning an instrument's writes on or off, and
 	// InstrumentWrite and InstrumentRefused are a diagram's write to one that went
 	// through and one that was refused.

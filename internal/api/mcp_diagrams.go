@@ -43,6 +43,16 @@ var diagramTools = []routeTool{
 		handler: func(s *Server) http.HandlerFunc { return s.handleDiagramSub }},
 }
 
+// The tools for pushing a flow file to the tenant's stations. Served only where
+// the stations settings are set.
+var stationTools = []routeTool{
+	{name: "list_stations", desc: "The HotLoop Flow installs EmberNet shows as running for this instance's tenant, which are the stations a push goes to. The list comes from the dashboard and cannot be edited here.",
+		perm: PermFlowsRead, method: "GET", path: "/stations", handler: func(s *Server) http.HandlerFunc { return s.handleStations }},
+	{name: "push_to_stations", desc: "PUSH a flow file, and so its FlowLab diagrams, to every station of the tenant, one at a time, each checked afterwards; a station that fails its check is put back on what it had and the push stops, naming which stations were done, which failed and which were never started. A push that would restart a running logger stops and changes nothing unless confirmRestart is true or a window (HH:MM-HH:MM) that holds now is given. Leave flows out to push what this instance runs. dryRun plans and changes nothing.",
+		perm: PermFlowsWrite, method: "POST", path: "/stations/push", body: "optional: {flows: the flow file, note, confirmRestart, window, windowZone, dryRun}",
+		handler: func(s *Server) http.HandlerFunc { return s.handleStationsPush }},
+}
+
 var instrumentTools = []routeTool{
 	{name: "list_instruments", desc: "The instruments the deployed diagrams would write to, and whether each one's writes are on. Every instrument starts with writes off.",
 		perm: PermStatusRead, method: "GET", path: "/instruments", handler: func(s *Server) http.HandlerFunc { return s.handleInstruments }},
@@ -60,6 +70,9 @@ var toolNeeds = func() map[string]func(*Server) bool {
 	}
 	for _, t := range instrumentTools {
 		m[t.name] = func(s *Server) bool { return s.deps.Instruments != nil }
+	}
+	for _, t := range stationTools {
+		m[t.name] = func(s *Server) bool { return s.deps.Stations != nil }
 	}
 	return m
 }()

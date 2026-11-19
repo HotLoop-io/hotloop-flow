@@ -84,6 +84,8 @@ func run() error {
 			return cmdDeploy(os.Args[2:], os.Stdout)
 		case "export":
 			return cmdExport(os.Args[2:], os.Stdout)
+		case "stations":
+			return cmdStations(os.Args[2:], os.Stdout)
 		case "token":
 			return cmdToken(os.Args[2:], os.Stdout)
 		case "plugin":
@@ -94,7 +96,7 @@ func run() error {
 			fmt.Println(version)
 			return nil
 		default:
-			return fmt.Errorf("unknown command %q (try: serve, hash-password, token, plugin, import, diff, test, deploy, export, bench, version)", os.Args[1])
+			return fmt.Errorf("unknown command %q (try: serve, hash-password, token, plugin, import, diff, test, deploy, export, stations, bench, version)", os.Args[1])
 		}
 	}
 	return cmdServe(os.Args[1:])
@@ -372,6 +374,7 @@ func cmdServe(args []string) error {
 		MCP:          nodes.MCPTools,
 		Version:      version,
 		Diagrams:     app.diagrams,
+		Stations:     app.stationsService(),
 	})
 	app.hub = srv.Hub()
 	// A diagram reaches the same brokers the flows do, and the same durable store.
