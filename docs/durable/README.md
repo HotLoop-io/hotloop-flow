@@ -56,7 +56,7 @@ What a durable wire does:
 
 - **Writes nothing while the target keeps up.** Messages go from memory straight
   into the target's inbox, the same as an ordinary wire, and the state database
-  is not touched. I set that rule after a write-everything-first design measured
+  is not touched. We set that rule after a write-everything-first design measured
   in the hundreds of gigabytes a day on a flash card for a failure that happens a
   few hours a year.
 - **Spills when it doesn't.** The wire starts spilling the moment the target's
@@ -112,11 +112,11 @@ fill the quota with a queue nobody can see.
 
 **While the wire is healthy there is a loss window.** What is in memory is the
 target's inbox and the call it is making, and a `kill -9` or a power cut takes
-it. That is the price of writing nothing, and I accepted it on purpose: with an
+it. That is the price of writing nothing, and we accepted it on purpose: with an
 inbox of 1024 and a fast target it is the messages from about one poll. Once the
 wire is spilling, which is when the target is down and the data is at risk, there
 is no window. The kill -9 test below is done mid-outage for that reason, with the
-queue on disk. I did not kill the runtime while the wire was healthy and count,
+queue on disk. We did not kill the runtime while the wire was healthy and count,
 because the answer is "a few are gone" and that is the design.
 
 **Delivery is at-least-once.** The target has taken a message when its handler
@@ -242,7 +242,7 @@ overwrote the first and the row count never moved. That's what
 It is also what a sink that stamps on arrival would have stored twice.
 
 What this does not cover: a `kill -9` while the wire is healthy. The readings in
-memory at that moment are gone, by design, and I did not count them.
+memory at that moment are gone, by design, and we did not count them.
 
 ## What it writes to disk
 
@@ -287,7 +287,7 @@ concurrent senders, but one sender makes one commit.
 
 One more number, because it caught me out. At 100 messages a second this harness
 didn't keep the wire healthy: the target stopped keeping up, the wire spilled and
-stayed spilling for the whole run, 3,548 MiB an hour. I didn't chase down whether
+stayed spilling for the whole run, 3,548 MiB an hour. We didn't chase down whether
 the pass-through or InfluxDB was the slow part. It is the design working as
 written, because "backed up" counts as not keeping up, and it means a target that
 is slower than its input puts a durable wire on the disk. At 50 messages a second
