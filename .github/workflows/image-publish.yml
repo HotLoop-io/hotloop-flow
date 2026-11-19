@@ -34,7 +34,7 @@ env:
   # in it adds arm64 here. A run that builds fewer platforms than the tags it
   # moves never takes an image away from a box on another architecture:
   # build/publish-tags.sh keeps what X.Y and X already hold for the rest.
-  PLATFORMS: "amd64 arm64"
+  PLATFORMS: "amd64"
 
 jobs:
   build:
