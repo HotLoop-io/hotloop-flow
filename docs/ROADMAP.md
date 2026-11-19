@@ -3,10 +3,10 @@
 What HotLoop Flow is going to be, in the order it gets built. If it isn't on this
 list it isn't getting done, so put it on the list.
 
-**None of this starts until HotLoop's own roadmap is done.** Flow waits its turn.
-The one exception is Phase 9, FlowLab and its diagrams. We're building it now because it is a separate
-pack that sits beside the message runtime and doesn't take anything from HotLoop's
-own roadmap.
+Flow is built in parallel with HotLoop's own roadmap, since 2026-10-02, and is
+never combined into HotLoop. Phase 9, FlowLab and its diagrams, is a separate pack
+that sits beside the message runtime and doesn't take anything from HotLoop's own
+roadmap.
 
 ## What Flow is for
 
@@ -210,7 +210,7 @@ biggest hole in a product built for plants.
       `instrument.write`). Until now the diagram routes had no tool, so an agent
       could deploy a diagram and not run it. Every admin route is now a tool or
       is named in a test as one a person has to make, and the test fails when a
-      new route is added without one. 40 tools
+      new route is added without one. 44 tools now, with the stations, failover and trace ones
 
 ### Phase 8: the editor, rewritten in Astro
 
@@ -264,16 +264,30 @@ node it leaves. [diagrams.md](diagrams.md) has the rest.
       error wire, and a port that is opened again after a pulled cable and counted
 - [x] A reading parser, stable-value detection, and a text log with a time column
 - [x] A panel served by Flow: controls, indicators and a chart or graph, open on a
-      phone while a run is live
+      phone while a run is live, with a second watcher on a desktop, each following
+      the run within a second (`web/e2e/panel-phone.spec.ts`)
 - [x] Run, stop, highlight execution, probes on any wire, breakpoints on nodes,
       wires and passes, and step into, over and out
 - [x] The editor draws named ports and wires to the one you drop on, and the same
       page runs and debugs
 - [x] Case structure, records and shared types, waveforms
 - [x] TDMS and binary logging, and a database and MQTT out
-- [x] Instrument sessions and a data acquisition client
+- [x] Instrument sessions, over a raw socket and serial, proven against a
+      simulator and a pty
+- [ ] A data acquisition client proven against NI's own server. It is built and
+      shipped, and tested against a stand-in server only, so it stays open until
+      it has run against NI's server and a device
 - [x] Analysis: statistics and filters
 - [x] Sub-diagrams, an error list in CI, and the editor's zoom and layout work
+- [x] Replay of a finished run: every node start and finish and every wire value
+      is recorded, and the diagram bar plays the last run back on the canvas.
+      `GET /diagrams/{id}/trace`, the `get_diagram_trace` tool
+- [x] A database sink that keeps what a database misses: `postgres out`, durable,
+      written in order and in batches when the database is back, proven on a
+      real TimescaleDB
+- [x] Push one flow file, and so one set of diagrams, to every Flow install a
+      tenant runs in EmberNet, with a check after each and a failed one put
+      back ([stations.md](stations.md)), proven on three real Flow processes
 - [ ] Proven on a Pi for a day, which needs the board and a long run
 
 ---
@@ -342,6 +356,15 @@ but plenty of people drop one that doesn't.
       The queue counted a message as waiting before it was on disk, so a copy
       taken the moment the count hit 100 could be one short. It counts after the
       commit now
+- [x] The editor, the node text and the dashboard page in 13 languages besides
+      English, with one shared glossary
+- [x] Kafka out, and ntfy, gotify and discord out, with the notification settings
+      core already has
+- [x] A durable wire to InfluxDB catches up in batches of up to 256, so an hour's
+      backlog drains in seconds and not minutes
+- [x] The Node-RED connector nodes a plant migration needs (Modbus server on a
+      network interface, email, postgres and the dashboard nodes), run natively
+- [x] Chart values and a render check for pushing to stations
 - [x] Secrets by reference: a node reads a password from a mounted Kubernetes
       Secret or file, so it never lives in the flow file at all
 - [x] Bring your flows: `hotloop-flow import` keeps reporting exactly what will
