@@ -663,6 +663,27 @@ jobs:
           grep -A4 'name: HOTLOOP_FLOW_TRACE_OTLP_HEADERS' otel.yaml | grep -q 'name: otel-key' || { echo "::error::the headers do not come from the named Secret"; exit 1; }
           awk '/^---/{c=0} /config.yaml: \|/{c=1} c&&/headers/{f=1} END{exit f}' otel.yaml || { echo "::error::headers leaked into the ConfigMap"; exit 1; }
 
+      - name: The stations settings are all or nothing and the tokens stay in Secrets
+        # A push to the tenant's stations needs the dashboard, the tenant and both
+        # tokens. A default render has none of it, a partial one is refused, and a
+        # full one mounts the two Secrets as files and never puts a token in the
+        # ConfigMap.
+        run: |
+          N=$(helm template t charts/hotloop-flow | grep -c -E 'hotloop-flow-stations|^    stations:' || true)
+          [ "$N" = 0 ] || { echo "::error::a default render sets up stations"; exit 1; }
+          if helm template t charts/hotloop-flow --set stations.tenant=acme --set stations.dashboardUrl=https://dash.example > partial.yaml 2> partial.err; then
+            echo "::error::a render with some of the stations settings was accepted"; exit 1
+          fi
+          grep -q 'needs dashboardUrl, tenant' partial.err || { echo "::error::the refusal does not say what is missing"; exit 1; }
+          helm template t charts/hotloop-flow --set stations.dashboardUrl=https://dash.example --set stations.tenant=acme \
+            --set stations.dashboardTokenSecret.name=dash-tok --set stations.deployTokenSecret.name=station-tok --set stations.deployTokenSecret.key=deploy > stations.yaml
+          grep -q 'dashboardUrl: "https://dash.example"' stations.yaml || { echo "::error::the dashboard is not in the config"; exit 1; }
+          grep -q 'tenant: "acme"' stations.yaml || { echo "::error::the tenant is not in the config"; exit 1; }
+          grep -q 'deployTokenFile: /etc/hotloop-flow-stations/deploy-token' stations.yaml || { echo "::error::the deploy token is not read from a file"; exit 1; }
+          grep -A12 'name: stations$' stations.yaml | grep -q 'name: station-tok' || { echo "::error::the deploy token does not come from the named Secret"; exit 1; }
+          grep -A14 'name: stations$' stations.yaml | grep -q 'key: deploy' || { echo "::error::the named key is not used"; exit 1; }
+          awk '/^---/{c=0} /config.yaml: \|/{c=1} c&&/(dash-tok|station-tok)/{f=1} END{exit f}' stations.yaml || { echo "::error::a token Secret leaked into the ConfigMap"; exit 1; }
+
       - name: The generated admin password matches its hash
         # The chart generates an admin password and prints how to read it, so the
         # hash the app checks against has to be a hash of that password. It was

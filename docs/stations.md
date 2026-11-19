@@ -17,7 +17,7 @@ hotloop-flow stations list -tenant acme
 hotloop-flow stations push -tenant acme -file flows.json -note "new line 3 logger"
 ```
 
-The dashboard address comes from `-dashboard` or `HOTLOOP_FLOW_DASHBOARD_URL`, and its token from `-dashboard-token-file` or `HOTLOOP_FLOW_DASHBOARD_TOKEN`. The token the stations accept comes from `-token-file` or `HOTLOOP_FLOW_TOKEN`, as for `hotloop-flow deploy`. Make it with `hotloop-flow token`, and give it `flows.read`, `flows.write` and `status.read`: the check needs to read each station's diagrams, and a plain deploy token cannot. The stations of one tenant take the same token.
+The dashboard address comes from `-dashboard` or `HOTLOOP_FLOW_DASHBOARD_URL`, and its token from `-dashboard-token-file` or `HOTLOOP_FLOW_DASHBOARD_TOKEN`. The token the stations accept comes from `-token-file` or `HOTLOOP_FLOW_TOKEN`, as for `hotloop-flow deploy`. Make it with `hotloop-flow token`, and give each station that token as an API token with `flows.read`, `flows.write` and `status.read` (a plain deploy token has only the first two): the check needs to read each station's diagrams, and a plain deploy token cannot. The stations of one tenant take the same token.
 
 | Flag | What it does |
 |---|---|
@@ -73,8 +73,10 @@ An instance can push to its own tenant's stations over its admin API, which is w
 | `stations.dashboardTokenFile` | `HOTLOOP_FLOW_STATIONS_DASHBOARD_TOKEN_FILE` | A file holding the dashboard token. |
 | `stations.deployTokenFile` | `HOTLOOP_FLOW_STATIONS_DEPLOY_TOKEN_FILE` | A file holding the deploy token the stations accept. |
 
+In the chart these are `stations.dashboardUrl`, `stations.tenant`, `stations.dashboardTokenSecret` and `stations.deployTokenSecret`, each Secret holding one token and mounted as a file; with Podman and Quadlet they are the four environment variables and two mounted secrets in [deploying.md](deploying.md). Set all four or none: a chart render with some is refused, and so is a start with some.
+
 `POST /stations/push` needs `flows.write` and takes `{flows, note, confirmRestart, window, windowZone, dryRun}`. Leave `flows` out and it pushes what this instance runs. It answers with the same report, plus `ok`, and a push is in the audit log as `stations.push`. `GET /stations` needs `flows.read`. A push that is waiting for a yes answers with `needsConfirm` true and has changed nothing: send it again with `confirmRestart` or a window.
 
 ## What is not proven
 
-This was run against three real Flow instances in tests and on The Beast, with the dashboard's answer served by a stand-in, because the dashboard needs a signed-in person and a cluster. The shape of the dashboard's list was read from the live dashboard for a real tenant. It has not been pushed to a tenant's stations through Flux, so whether the address the dashboard gives is reachable from where you run the push is yours to check with `stations list` and a `-dry-run`. The chart does not have values for the four settings yet; use the config file or the environment.
+This was run against three real Flow instances in tests and on The Beast, with the dashboard's answer served by a stand-in, because the dashboard needs a signed-in person and a cluster. The shape of the dashboard's list was read from the live dashboard for a real tenant. It has not been pushed to a tenant's stations through Flux, so whether the address the dashboard gives is reachable from where you run the push is yours to check with `stations list` and a `-dry-run`. The chart values and the Quadlet lines below were rendered and the chart check passes in CI, but they were not run on a cluster or a box.

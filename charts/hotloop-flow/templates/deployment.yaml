@@ -187,6 +187,11 @@ spec:
               mountPath: /etc/embernet-signin
               readOnly: true
             {{- end }}
+            {{- if include "hotloop-flow.stationsOn" . }}
+            - name: stations
+              mountPath: /etc/hotloop-flow-stations
+              readOnly: true
+            {{- end }}
             {{- range $i, $m := .Values.secrets.mounts }}
             - name: secret-{{ $i }}
               mountPath: {{ required "secrets.mounts[].mountPath is required" $m.mountPath }}
@@ -208,6 +213,23 @@ spec:
         - name: embernet-signin
           configMap:
             name: {{ include "hotloop-flow.signinName" . }}
+        {{- end }}
+        {{- if include "hotloop-flow.stationsOn" . }}
+        # The two tokens a push uses, as files only this app's group can read.
+        - name: stations
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ .Values.stations.dashboardTokenSecret.name }}
+                  items:
+                    - key: {{ .Values.stations.dashboardTokenSecret.key }}
+                      path: dashboard-token
+              - secret:
+                  name: {{ .Values.stations.deployTokenSecret.name }}
+                  items:
+                    - key: {{ .Values.stations.deployTokenSecret.key }}
+                      path: deploy-token
         {{- end }}
         {{- range $i, $m := .Values.secrets.mounts }}
         # Group-readable only: fsGroup gives the app the group, and nobody

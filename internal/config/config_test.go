@@ -556,3 +556,33 @@ func TestATokensRateLimit(t *testing.T) {
 		}
 	}
 }
+
+// The stations settings are all or nothing: a push needs the dashboard, the
+// tenant and both tokens, and a start with some of them is refused, from the
+// environment as from the file.
+func TestStationsSettingsAreAllOrNothing(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("HOTLOOP_FLOW_INSECURE", "true")
+
+	t.Setenv("HOTLOOP_FLOW_STATIONS_TENANT", "acme")
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "stations needs dashboardUrl, tenant") {
+		t.Fatalf("one of the four was accepted: %v", err)
+	}
+
+	t.Setenv("HOTLOOP_FLOW_STATIONS_DASHBOARD_URL", "https://dashboard.example")
+	t.Setenv("HOTLOOP_FLOW_STATIONS_DASHBOARD_TOKEN_FILE", "/run/secrets/dash")
+	t.Setenv("HOTLOOP_FLOW_STATIONS_DEPLOY_TOKEN_FILE", "/run/secrets/deploy")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("all four: %v", err)
+	}
+	if !cfg.Stations.Enabled() || cfg.Stations.Tenant != "acme" || cfg.Stations.DeployTokenFile != "/run/secrets/deploy" {
+		t.Fatalf("%+v", cfg.Stations)
+	}
+
+	clearEnv(t)
+	t.Setenv("HOTLOOP_FLOW_INSECURE", "true")
+	if cfg, err := Load(""); err != nil || cfg.Stations.Enabled() {
+		t.Fatalf("none: %v enabled=%v", err, cfg.Stations.Enabled())
+	}
+}

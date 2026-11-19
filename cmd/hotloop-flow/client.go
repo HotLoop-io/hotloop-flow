@@ -155,6 +155,11 @@ or in the config file, under auth:
     - name: %s
       hash: "%s"
       permissions: ["flows.read", "flows.write"]
+
+A deploy token that is also used to push to a tenant's stations (hotloop-flow stations push)
+needs a third permission, because the check after each deploy reads the station's diagrams:
+
+      permissions: ["flows.read", "flows.write", "status.read"]
 `, token, hash, *name, hash)
 	return nil
 }
