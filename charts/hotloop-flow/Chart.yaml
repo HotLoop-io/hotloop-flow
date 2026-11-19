@@ -25,8 +25,8 @@ keywords:
   - iot
 
 maintainers:
-  - name: Patrick Ryan
-    email: patrick@fireballz.ai
+  - name: HotLoop LLC
+    email: support@hotloop.io
 
 annotations:
   catalog.cattle.io/display-name: "HotLoop Flow"

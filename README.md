@@ -8,7 +8,7 @@ wires in one static binary small enough for a Pi, with a scheduler that doesn't
 fall over when a sensor starts talking faster than the thing reading it.
 
 [![CI](https://github.com/HotLoop-io/hotloop-flow/actions/workflows/ci.yml/badge.svg)](https://github.com/HotLoop-io/hotloop-flow/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-EmberNet%20Source%201.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-HotLoop%20Source%201.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/go-1.26-00ADD8)](go.mod)
 
 What that means on a bad night:
@@ -44,7 +44,7 @@ for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
 104,000 lines of Go, a little under 40 percent of it tests, 117 node types for messages and 37 for FlowLab diagrams, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
-use through EmberNET, business use included, is unrestricted, under the HotLoop Source License Agreement.
+use through EmberNet, a partner platform, business use included, is unrestricted, under the HotLoop Source License Agreement.
 
 ---
 
@@ -2768,9 +2768,9 @@ with them but a broker, if you give them one.
 
 Flow is under the same license as those four: the HotLoop Source License Agreement
 1.0. Home and lab use is free, and so is use by accredited schools and educational institutions, nonprofit organizations and government bodies. Any use that runs through
-[EmberNET](https://embernet.ai), business use included, is unrestricted. Outside
+[EmberNet](https://embernet.ai), a partner platform, business use included, is unrestricted. Outside
 EmberNet, hosting Flow as a service for other people, reselling it and embedding
-it in a product you sell are not granted, and other use needs a commercial license. Unlike the others, Flow's source is public, so you can
+it in a product you sell are not granted, and other use needs a commercial license. Ask for one at support@hotloop.io. Unlike the others, Flow's source is public, so you can
 read every line you run.
 
 ## License

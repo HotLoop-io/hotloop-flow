@@ -59,7 +59,7 @@ func registerInfluxConfig() {
 		Props: []node.Prop{
 			{Name: "name", Kind: node.PropString, Label: "Name"},
 			{Name: "url", Kind: node.PropString, Label: "URL", Required: true,
-				Placeholder: "http://influxdb-app.tenant-fireball.svc.cluster.local:8086"},
+				Placeholder: "http://influxdb-app.tenant-plant.svc.cluster.local:8086"},
 			{Name: "apiVersion", Kind: node.PropSelect, Label: "API version", Default: "2",
 				Options: []node.Option{
 					{Value: "2", Label: "2.x — org, bucket and token"},

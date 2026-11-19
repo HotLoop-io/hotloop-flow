@@ -21,9 +21,9 @@ import (
 //
 // Run at site1 with, for example:
 //
-//	HOTLOOP_FLOW_TEST_MQTT=monster-mq.tenant-fireball.svc.cluster.local:1883 \
-//	HOTLOOP_FLOW_TEST_INFLUX_URL=http://influxdb-app.tenant-fireball.svc.cluster.local:8086 \
-//	HOTLOOP_FLOW_TEST_INFLUX_ORG=fireball \
+//	HOTLOOP_FLOW_TEST_MQTT=monster-mq.tenant-plant.svc.cluster.local:1883 \
+//	HOTLOOP_FLOW_TEST_INFLUX_URL=http://influxdb-app.tenant-plant.svc.cluster.local:8086 \
+//	HOTLOOP_FLOW_TEST_INFLUX_ORG=plant \
 //	HOTLOOP_FLOW_TEST_INFLUX_BUCKET=hotloop-flow-test \
 //	HOTLOOP_FLOW_TEST_INFLUX_TOKEN=... \
 //	go test ./internal/nodes/ -run Integration -v
