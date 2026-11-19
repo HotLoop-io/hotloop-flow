@@ -37,7 +37,6 @@
   import Tests, { type TestsView } from './panels/Tests.svelte';
   import Trace, { type TraceState } from './panels/Trace.svelte';
   import DiagramBar from './DiagramBar.svelte';
-  import ReplayBar from './ReplayBar.svelte';
   import WireProbe from './dialogs/WireProbe.svelte';
   import Palette from './Palette.svelte';
   import TabBar from './TabBar.svelte';
@@ -404,16 +403,16 @@
     stopReplay();
     const id = runId;
     try {
-      const tr = await api.diagramTrace(id);
-      if (!tr.events.length) { notice('That run recorded nothing to replay.'); return; }
-      replayEvents = tr.events;
+      const rec = await api.diagramTrace(id);
+      if (!rec.events.length) { notice(tr('editor.replay_nothing')); return; }
+      replayEvents = rec.events;
       nodeStates.clear(); litWires.clear(); wireValues.clear();
-      replay = { playing: true, i: 0, total: tr.events.length };
-      if (tr.truncated) notice(`That run was longer than what is kept. This replays its first ${tr.events.length} events.`);
+      replay = { playing: true, i: 0, total: rec.events.length };
+      if (rec.truncated) notice(tr('editor.replay_truncated', { n: rec.events.length }));
       paintLive();
       stepReplay(id);
     } catch (ex) {
-      notice(ex instanceof ApiError && ex.status === 404 ? 'Run the diagram once, then replay it.' : ex instanceof Error ? ex.message : String(ex));
+      notice(ex instanceof ApiError && ex.status === 404 ? tr('editor.replay_not_run') : ex instanceof Error ? ex.message : String(ex));
     }
   }
 
@@ -1230,10 +1229,10 @@
         onsub={() => void selectionToSubDiagram()}
         onexpand={toggleOpenInPlace}
         onproblem={(id) => selectNode(id)}
+        replaying={replay.playing} replayIndex={replay.i} replayTotal={replay.total} replaySpeed={replaySpeed}
+        canReplay={!(diagState === 'running' || diagState === 'paused' || diagMissing)}
+        onreplay={() => void startReplay()} onreplaystop={stopReplay} onreplayspeed={(ms) => (replaySpeed = ms)}
       />
-      <ReplayBar playing={replay.playing} index={replay.i} total={replay.total} speed={replaySpeed}
-        disabled={diagState === 'running' || diagState === 'paused' || diagMissing}
-        onreplay={() => void startReplay()} onstop={stopReplay} onspeed={(ms) => (replaySpeed = ms)} />
     {/if}
     {#if noticeText}
       <div class="toast" role="status" data-test="notice">{noticeText}</div>

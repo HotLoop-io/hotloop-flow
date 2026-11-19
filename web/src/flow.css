@@ -476,9 +476,6 @@ details[open] > summary::before { transform: rotate(90deg); }
 
 /* ── Diagrams ───────────────────────────────────────────────────────────── */
 .diagram-bar { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; background: var(--hl-card); border: 1px solid var(--hl-border); border-radius: 10px; font-size: var(--hl-fs-xs); }
-.replay-bar { position: absolute; left: 12px; bottom: 12px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 8px; background: var(--hl-card); border: 1px solid var(--hl-border); border-radius: 10px; max-width: calc(100% - 24px); }
-.replay-bar .check { display: inline-flex; gap: 6px; align-items: center; color: var(--hl-ink); }
-.replay-bar .replay-progress { color: var(--hl-ink-soft); }
 .diagram-bar .sep { width: 1px; align-self: stretch; background: var(--hl-border); }
 .diagram-bar .check { display: inline-flex; gap: 6px; align-items: center; color: var(--hl-ink); }
 .diagram-bar .link { text-decoration: none; display: inline-flex; align-items: center; }

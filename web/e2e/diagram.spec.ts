@@ -79,8 +79,8 @@ test('the last run is replayed on the canvas from what it recorded', async ({ pa
   const progress = page.locator('[data-test="diagram-replay-progress"]');
   await expect(progress).toBeVisible();
   expect(Number(await progress.getAttribute('data-total'))).toBeGreaterThan(40);
-  // Values move on the wires while it plays, as they did in the run.
-  await expect(page.locator('.canvas-host > .canvas path.wire.live').first()).toBeAttached();
+  // The loop is marked running on the canvas while its replay goes, as it was in the run.
+  await expect(canvasNode(page, 'loop')).toHaveClass(/run-start/);
   await expect.poll(async () => Number(await progress.getAttribute('data-index'))).toBeGreaterThan(5);
 
   // It ends by itself and leaves what the run left.
