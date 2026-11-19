@@ -42,7 +42,7 @@ because it's a feature, not the point.
 Current release is `2.14.1`. The image is `ghcr.io/hotloop-io/hotloop-flow:2.14.1`
 for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
-104,000 lines of Go, a little under 40 percent of it tests, 117 node types for messages and 37 for FlowLab diagrams, and the race
+104,000 lines of Go, a little under 40 percent of it tests, 117 node types for messages and 39 for FlowLab diagrams, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
 use through EmberNet, a partner platform, business use included, is unrestricted, under the HotLoop Source License Agreement.
 
@@ -1279,7 +1279,7 @@ constructor-chain escape to prove it reaches nothing.
 
 ## The palette
 
-**117 node types for messages, and 37 more for FlowLab diagrams.**
+**117 node types for messages, and 39 more for FlowLab diagrams.**
 
 | Category | Nodes |
 |---|---|
@@ -1292,7 +1292,7 @@ constructor-chain escape to prove it reaches nothing.
 | Dashboard | ui_text, ui_numeric, ui_button, ui_switch, ui_text_input, ui_led, ui_gauge, ui_chart, ui_template, and the ui_base, ui_tab, ui_group, ui_link and ui_spacer that lay the page out |
 | Discover | scan, netinfo, for inventorying an OT segment |
 | Config | hotloop-flow-ntfy, hotloop-flow-gotify, hotloop-flow-discord-bot, hotloop-flow-kafka, mqtt-broker, websocket-listener, websocket-client, influxdb, postgres, modbus, s7, ethernetip, opcua, sparkplug, hotloop, mcp-server, modbus-client, postgreSQLConfig |
-| FlowLab | constant, math, compare, logic, wait, bundle, field, build array, while loop, for loop, body in, body out, serial port, serial read, serial write, parse reading, stable value, log to text file, log to TDMS file, statistics, integral, derivative, filter, read DAQ task, mqtt out, control, indicator, chart |
+| FlowLab | constant, math, compare, logic, wait, bundle, field, build array, while loop, for loop, body in, body out, serial port, serial read, serial write, parse reading, stable value, log to text file, log to TDMS file, statistics, integral, derivative, filter, read DAQ task, mqtt out, postgres out, control, indicator, chart |
 
 The FlowLab row is a different kind of node. It runs on a tab that is a diagram, where
 a node runs once when every input has a value, and never takes a message. What

@@ -40,7 +40,7 @@ type DiagramTest struct {
 var diagramReaches = map[string]bool{
 	"dia-serial-open": true, "dia-serial-read": true, "dia-serial-write": true,
 	"dia-instr-open": true, "dia-instr-query": true, "dia-daq-read": true,
-	"dia-mqtt-out": true, "dia-hotloop-write": true, "dia-log-text": true, "dia-log-tdms": true,
+	"dia-mqtt-out": true, "dia-postgres-out": true, "dia-hotloop-write": true, "dia-log-text": true, "dia-log-tdms": true,
 }
 
 func runDiagramCase(ctx context.Context, doc []byte, c *Case) (res Result) {

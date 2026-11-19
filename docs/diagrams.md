@@ -80,6 +80,7 @@ Events for a run go out on the same socket as the editor's, as `diagram/<id>/nod
 | `dia-log-text` | Appends a record as a row of a text file, with a time column. |
 | `dia-daq-read` | Reads samples from a data acquisition task on NI hardware, through NI's gRPC Device Server. See Data acquisition below. |
 | `dia-mqtt-out` | Publishes its value through an MQTT server the flow file configures, the same connection the MQTT nodes use. Mark it durable and a message the broker misses is written to disk and sent, in order, when the broker is back, even across a restart. |
+| `dia-postgres-out` | Writes a record as one row of a table in PostgreSQL or TimescaleDB, through the server the flow file configures, the same connection the postgres node uses. Mark it durable and a row the database misses is kept on disk and written, in order, when it is back. See A database that goes down below. |
 | `dia-log-tdms` | Appends a record to a TDMS file, one channel per field. See below. |
 | `dia-control`, `dia-indicator`, `dia-chart` | The panel. |
 | `dia-stats` | The mean, RMS, smallest, largest and standard deviation of an array. The standard deviation divides by n minus one, so it needs two readings. |
@@ -156,6 +157,18 @@ value arrives with none.
 ### A target that goes down
 
 A durable `dia-mqtt-out` sends straight to the broker while it answers. When it doesn't, the message is committed to Flow's durable store before the node finishes, and a pump delivers the queue, oldest first, when the link is back. Anything put in while others wait goes behind them, so nothing overtakes. Delivery from the queue is at least once: a message whose send timed out because the client had not noticed the link was gone can still be delivered when the client reconnects, so it can arrive twice, once for each send that timed out. The queue lives in the same store and under the same disk quota as a durable wire, and it drains after a restart with no run and no browser. Without durable, a message the broker misses is an error on the error wire.
+
+### A database that goes down
+
+`dia-postgres-out` writes each record it is given as one row, into the table you name through a `hotloop-flow-postgres` server. A record's fields go into the columns of the same name, so a record with `n` and `sensor` fills the `n` and `sensor` columns. List the columns, comma separated, to write only some of them or to fix their order; leave the list empty and the node uses the record's fields. The node runs once for each pass of a loop, so a loop writes one row per pass. A table or a column that is not a plain name is a problem at deploy, never a statement in the middle of a run. A whole number goes into an integer, float or numeric column alike, and a record or an array goes in as it is, which is what a json or jsonb column takes.
+
+Name a **time column** and every row gets the time it arrived at the node. That is the time the reading was made, not the time it was written: a row that waited on disk for five minutes still carries the minute it was made.
+
+Without **Keep what the database misses**, a row the database does not take is an error on the node's error wire and is gone. With it, the row goes straight in while the database answers. When the database does not answer, the row is committed to Flow's durable store before the node finishes, and the node's `sent` output says `false`. The rows wait on disk, survive a restart, and are written in order once the database is back, with nothing put in after them overtaking them. A backlog is written many rows to a statement, up to 256, so one that built up while the database was away is caught up in seconds and not at the speed of one round trip per row. The test leaves 30,000 rows waiting on disk, the size of five minutes at 100 a second, and all of them are written in order within seconds of the database coming back.
+
+Delivery from disk is at least once. A row whose insert was sent when the link died may have been committed with the answer lost, and it is sent again, so it can be written twice, a batch at most. If that matters, give the table a unique key and choose **Skip** for On conflict: the second one is then dropped by the database.
+
+A row the database refuses for what is in it, such as a value too big for its column or a key already there with On conflict left at Error, would be refused every time. It is let go with an audit event, `diagram.row_rejected`, that carries the row, and the rows behind it are written. Without that, one bad row would stop the log. A database that is down, a table that is not there yet and a wrong password are not that: those rows wait.
 
 ### Instruments
 

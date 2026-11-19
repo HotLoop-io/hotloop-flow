@@ -51,6 +51,11 @@ type Kind struct {
 	// the manager's pump. A node with both writes to a target that can be down.
 	Durable func(raw map[string]any) bool
 	Deliver func(m *Manager, raw map[string]any) func(ctx context.Context, body []byte) error
+	// DeliverBatch, when set, is how the pump sends a backlog: the leading
+	// messages in one go, and how many were taken. A target that can write many
+	// rows for the price of one keeps up with a plant that went on sending while it
+	// was down.
+	DeliverBatch func(m *Manager, raw map[string]any) func(ctx context.Context, bodies [][]byte) (int, error)
 	// TakesErrors is true for a node that runs even when an error comes in,
 	// because looking at the error is its job.
 	TakesErrors bool
