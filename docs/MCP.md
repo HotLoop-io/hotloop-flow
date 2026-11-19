@@ -6,7 +6,7 @@ looks at and change what the editor changes, with the token's own permissions an
 nothing past them. There is no read only mode: a server an agent can look at and
 not touch is a status page.
 
-There are 29 tools of Flow's own, beside the tools each flow serves through its
+There are 40 tools of Flow's own, beside the tools each flow serves through its
 `mcp tool` nodes. Every one is a route of the admin API. A call goes through the
 route's own handler, as the caller the endpoint signed in, so the validation, the
 change, the deployment history and the audit row are the route's, and a refusal
@@ -55,7 +55,31 @@ changed, with the `rev` it gave you.
 | `get_trace` | `GET /traces/{id}` | `flows.read` | One trace with every hop. The id comes from list_traces. |
 | `trace_to_test` | `POST /traces/{id}/test` | `flows.read` | Draft a flow test from a trace. It saves nothing: use add_test_cases to keep the draft. |
 | `replay_trace` | `POST /traces/{id}/replay` | `flows.read` | Put the message that started a trace into the flows (the deployed ones, or a draft if flows is in the body) and compare where it ends up with where it ended up the first time. It runs in a sandbox the way the editor's replay does, and the route says in its own words when this instance cannot replay. |
+| `reset_mfa` | `POST /auth/mfa/reset` | `auth.admin` | **Turn off** a user's two-factor sign-in so they can enrol again, for someone who lost their device. The body is `{username}`. |
 | `get_runtime_stats` | `GET /runtime/stats` | `status.read` | The running flows' numbers: per-node received, sent, errors, dropped and queue depth. |
+
+## Diagrams and instruments
+
+What the editor's panel view and the instruments page do, for an agent. A server
+without diagrams or instruments has neither the routes nor the tools. A control is
+how a person commands what a diagram drives, so setting one, running a diagram and
+switching an instrument's writes are in the audit log under the caller's name as
+they are for a person, and a diagram's write to equipment still goes through
+HotLoop's write gate and an instrument's own switch.
+
+| Tool | Route | Permission | Does |
+|---|---|---|---|
+| `list_diagrams` | `GET /diagrams` | `status.read` | The diagrams in the flow file: each tab that runs as a diagram, with its id, whether it is running, its problems and its panel. |
+| `get_diagram` | `GET /diagrams/{id}` | `status.read` | One diagram: its nodes, wires, panel controls and indicators, and any problems that stop it from running. |
+| `run_diagram` | `POST /diagrams/{id}/run` | `diagram.run` | **Run** a diagram, as the editor's Run button does. Optional body: highlightMs, pause, breakpoints. |
+| `stop_diagram` | `POST /diagrams/{id}/stop` | `diagram.run` | **Stop** a running diagram. Nothing it already wrote to equipment is undone. |
+| `debug_diagram` | `POST /diagrams/{id}/debug` | `diagram.run` | Drive a running diagram's debugger: pause, resume, step-into, step-over, step-out or highlight. |
+| `set_diagram_control` | `PUT /diagrams/{id}/controls/{node}` | `diagram.run` | **Set** a control on the diagram's panel, checked against the control's kind, range and options. The body is `{value}`. |
+| `set_diagram_breakpoints` | `PUT /diagrams/{id}/breakpoints` | `diagram.run` | Set the wires a diagram stops at, kept for the next run too. |
+| `set_diagram_probes` | `PUT /diagrams/{id}/probes` | `diagram.run` | Choose the wires a diagram records values on, and how many it keeps. |
+| `extract_sub_diagram` | `POST /diagrams/{id}/sub` | `status.read` | Make a sub-diagram out of some nodes and answer the new flow file. Nothing is saved or deployed. |
+| `list_instruments` | `GET /instruments` | `status.read` | The instruments the deployed diagrams would write to, and whether each one's writes are on. |
+| `set_instrument_writes` | `PUT /instruments/writes` | `instrument.write` | **Turn** one instrument's writes on or off. Until they are on, a diagram's write to it is refused. |
 
 Tools that take a document (`diff_pending`, `check_flow_types`, `put_tests`,
 `add_test_cases`, `run_tests`, `test_from_debug`, `replay_trace`) take it as
@@ -73,6 +97,6 @@ second factor. `reset_mfa` is the administrator's side of that and is a tool,
 with the `auth.admin` permission the route asks for.
 
 `/auth/mode`, `/health`, `/ready` and `/metrics` are the probes and need no token.
-`/comms` is the editor's live socket, a stream and not a call; what it carries
+`/panel/{id}` is a redirect to the editor's panel page. `/comms` is the editor's live socket, a stream and not a call; what it carries
 (the Debug messages and the node status) is in the traces, `get_trace` and
 `list_traces`. `/mcp` is this server.

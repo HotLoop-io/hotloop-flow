@@ -158,8 +158,13 @@ func (t routeTool) run(s *Server, ctx context.Context, caller string, args map[s
 	return outcome(s.runHandler(ctx, caller, t.method, target, hdr, body, values, t.handler(s))), nil
 }
 
+// allRouteTools is every tool that is one row over one admin route.
+func allRouteTools() []routeTool {
+	return append(append(append([]routeTool(nil), routeTools...), diagramTools...), instrumentTools...)
+}
+
 func init() {
-	for _, t := range routeTools {
+	for _, t := range allRouteTools() {
 		t := t
 		builtinTools = append(builtinTools, builtinTool{
 			name: t.name, desc: t.desc, perm: t.perm, schema: t.schema(),

@@ -202,6 +202,15 @@ biggest hole in a product built for plants.
       with the same permissions, deploy checks and audit trail, because an MCP
       that could only call what a flow author wired up could not read or write
       Flow itself
+- [x] Flow's own MCP tools for diagrams and instruments: list and read the
+      diagrams, run and stop one, drive its debugger, set a control on its
+      panel, set breakpoints and probes, make a sub-diagram, and read and switch
+      an instrument's writes, each one admin route run through its own handler
+      with the permission that route asks for (`status.read`, `diagram.run`,
+      `instrument.write`). Until now the diagram routes had no tool, so an agent
+      could deploy a diagram and not run it. Every admin route is now a tool or
+      is named in a test as one a person has to make, and the test fails when a
+      new route is added without one. 40 tools
 
 ### Phase 8: the editor, rewritten in Astro
 
