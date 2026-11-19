@@ -1749,7 +1749,7 @@ sends it back changed, with the `rev` it was given.
 
 ### Calling tools on other servers
 
-An `mcp client` node calls a tool when a message arrives, on an
+An `mcp client` node calls a tool when a message arrives, on a
 `hotloop-flow-mcp-server` connection: the server's MCP address, a bearer token
 if it takes one, and a timeout. The tool and its arguments are typed inputs, so
 either can come from the message. `msg.payload` is the tool's structured answer
