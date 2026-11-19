@@ -7,6 +7,7 @@
 // which is how people actually search.
 
 import type { FlowEntry, Graph } from './graph';
+import { tr } from './i18n.svelte';
 
 export interface Hit {
   id: string;
@@ -37,7 +38,7 @@ export function search(graph: Graph, query: string): Hit[] {
     if (!id) return 'all flows';
     const s = graph.byId(id);
     if (!s) return id;
-    return String((s.type === 'subflow' ? s.name : s.label) || (s.type === 'subflow' ? 'subflow' : 'Flow'));
+    return String((s.type === 'subflow' ? s.name : s.label) || (s.type === 'subflow' ? tr('editor.default_subflow') : tr('editor.default_flow')));
   };
 
   for (const e of graph.all()) {

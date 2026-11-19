@@ -1,0 +1,16 @@
+{
+  "title": "Dashboard",
+  "menu": "Menü",
+  "connection": "Verbindung zum Server",
+  "tabs": "Registerkarten",
+  "empty_1": "In diesem Dashboard ist noch nichts.",
+  "empty_2": "Fügen Sie einem Flow ui_tab-, ui_group- und Widget-Knoten hinzu und stellen Sie ihn bereit.",
+  "decrease": "Verringern",
+  "increase": "Erhöhen",
+  "value": "Wert",
+  "switch": "Schalter",
+  "text": "Text",
+  "no_value": "kein Wert",
+  "no_data": "Keine Daten",
+  "language": "Sprache"
+}

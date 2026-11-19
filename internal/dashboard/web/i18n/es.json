@@ -1,0 +1,16 @@
+{
+  "title": "Panel",
+  "menu": "Menú",
+  "connection": "Conexión con el servidor",
+  "tabs": "Pestañas",
+  "empty_1": "Todavía no hay nada en este panel.",
+  "empty_2": "Añade nodos ui_tab, ui_group y de widget a un flujo y despliégalo.",
+  "decrease": "Disminuir",
+  "increase": "Aumentar",
+  "value": "valor",
+  "switch": "interruptor",
+  "text": "texto",
+  "no_value": "sin valor",
+  "no_data": "Sin datos",
+  "language": "Idioma"
+}

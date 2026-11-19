@@ -14,6 +14,7 @@ import { SYMBOLS } from './symbols';
 import { type WireProblem, clashesByWire, wireTypeLabel } from './wiretypes';
 import type { TestMark } from './tests';
 import { type TraceOverlay, fmtNanos, tipFor } from './trace';
+import { tr } from './i18n.svelte';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -406,7 +407,7 @@ export class Canvas {
         // its body is drawn beside the nodes of the diagram it is in, and a wire
         // between them would be a wire between two tabs, which the file cannot say.
         const a = this.graph.byId(this.mode.fromId), b = this.graph.byId(toId);
-        if (a && b && a.z !== b.z) this.cb.onNotice?.('A wire joins two nodes of the same diagram. Wire into the sub-diagram at its connector, on the frame.');
+        if (a && b && a.z !== b.z) this.cb.onNotice?.(tr('canvas.wire_same_diagram'));
         else this.graph.connect(this.mode.fromId, this.mode.port, toId, inEl?.getAttribute('data-in-port') ?? undefined);
       }
     } else if (this.mode.kind === 'drag') {
@@ -624,7 +625,7 @@ export class Canvas {
   place(type: string, at: Point): FlowEntry | undefined {
     if (type.startsWith(SUBFLOW_PREFIX)) {
       const placed = this.graph.addInstance(type.slice(SUBFLOW_PREFIX.length), at);
-      if (!placed) this.cb.onNotice?.('A subflow cannot be placed inside itself, or inside one that holds it.');
+      if (!placed) this.cb.onNotice?.(tr('canvas.subflow_inside_itself'));
       return placed;
     }
     return this.graph.addNode(type, at);
@@ -689,7 +690,7 @@ export class Canvas {
       const body = this.graph.bodyOf(n)!.id;
       const other = [...this.expanded].find((e) => this.graph.bodyOf(this.graph.byId(e) ?? n)?.id === body);
       if (other) {
-        this.cb.onNotice?.(`That body is already open in place on ${this.graph.label(this.graph.byId(other)!)}. Close that one first.`);
+        this.cb.onNotice?.(tr('canvas.body_already_open', { name: this.graph.label(this.graph.byId(other)!) }));
         return false;
       }
       this.expanded.add(id);
@@ -1100,13 +1101,13 @@ export class Canvas {
       close.setAttribute('class', 'frame-toggle');
       close.setAttribute('data-collapse', f.id);
       close.setAttribute('role', 'button');
-      close.setAttribute('aria-label', `Close ${this.graph.label(n)}`);
+      close.setAttribute('aria-label', tr('canvas.close_node', { name: this.graph.label(n) }));
       const hit = rect('frame-toggle-box', f.x + f.w - FRAME_HEAD + 3, f.y + 3, FRAME_HEAD - 6, FRAME_HEAD - 6, 4);
       const bar = document.createElementNS(SVG_NS, 'path');
       bar.setAttribute('d', `M${f.x + f.w - FRAME_HEAD + 8} ${f.y + FRAME_HEAD / 2}h${FRAME_HEAD - 16}`);
       bar.setAttribute('class', 'frame-toggle-glyph');
       const tip = document.createElementNS(SVG_NS, 'title');
-      tip.textContent = 'Close this sub-diagram';
+      tip.textContent = tr('canvas.close_subdiagram');
       close.append(hit, bar, tip);
       g.append(close);
 
@@ -1209,7 +1210,7 @@ export class Canvas {
 
     if (!d) {
       const warn = document.createElementNS(SVG_NS, 'title');
-      warn.textContent = `${n.type} is not installed in this runtime`;
+      warn.textContent = tr('canvas.not_installed', { type: n.type });
       g.append(warn);
       g.classList.add('unknown');
     }
@@ -1278,7 +1279,7 @@ export class Canvas {
       open.setAttribute('class', 'node-expand');
       open.setAttribute('data-expand', n.id);
       open.setAttribute('role', 'button');
-      open.setAttribute('aria-label', `Open ${this.graph.label(n)} in place`);
+      open.setAttribute('aria-label', tr('canvas.open_node', { name: this.graph.label(n) }));
       const box = document.createElementNS(SVG_NS, 'rect');
       box.setAttribute('x', String(x + NODE_WIDTH / 2 - 17));
       box.setAttribute('y', String(y - H / 2 + 3));
@@ -1288,7 +1289,7 @@ export class Canvas {
       const plus = document.createElementNS(SVG_NS, 'path');
       plus.setAttribute('d', `M${x + NODE_WIDTH / 2 - 13} ${y - H / 2 + 10}h6M${x + NODE_WIDTH / 2 - 10} ${y - H / 2 + 7}v6`);
       const tip = document.createElementNS(SVG_NS, 'title');
-      tip.textContent = 'Open this sub-diagram in place';
+      tip.textContent = tr('canvas.open_subdiagram');
       open.append(box, plus, tip);
       g.append(open);
     }

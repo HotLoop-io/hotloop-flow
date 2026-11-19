@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fmtNumber, fmtTime, tr } from '../../lib/i18n.svelte';
   // What the runtime says as it runs: debug output, errors, and messages a full
   // queue dropped, with the filters that keep a busy flow readable. A debug line
   // can be traced through the canvas or made into a test.
@@ -42,23 +43,23 @@
 
 <section class="debug">
   <div class="section-head">
-    <h3>Debug</h3>
+    <h3>{tr('panels.debug.debug')}</h3>
     <div class="spacer"></div>
-    <button class="ghost sm" onclick={onclear}>Clear</button>
+    <button class="ghost sm" onclick={onclear}>{tr('panels.debug.clear')}</button>
   </div>
   <div class="debug-filter">
-    <select data-test="debug-scope" title="Which nodes to show messages from" bind:value={scope}>
-      <option value="all">All nodes</option>
-      <option value="flow">This flow</option>
-      <option value="selected">Selected nodes</option>
+    <select data-test="debug-scope" title={tr('panels.debug.which_nodes_to_show_messages')} bind:value={scope}>
+      <option value="all">{tr('panels.debug.all_nodes')}</option>
+      <option value="flow">{tr('panels.debug.this_flow')}</option>
+      <option value="selected">{tr('panels.debug.selected_nodes')}</option>
     </select>
-    <input type="search" placeholder="Filter messages…" data-test="debug-filter" bind:value={text} />
+    <input type="search" placeholder={tr('panels.debug.filter_messages')} data-test="debug-filter" bind:value={text} />
     <div class="topic-filter">
-      <label><input type="checkbox" data-test="debug-topic-debug" bind:checked={debug} />debug</label>
-      <label><input type="checkbox" data-test="debug-topic-error" bind:checked={error} />error</label>
-      <label><input type="checkbox" data-test="debug-topic-dropped" bind:checked={dropped} />dropped</label>
+      <label><input type="checkbox" data-test="debug-topic-debug" bind:checked={debug} />{tr('panels.debug.debug_2')}</label>
+      <label><input type="checkbox" data-test="debug-topic-error" bind:checked={error} />{tr('panels.debug.error')}</label>
+      <label><input type="checkbox" data-test="debug-topic-dropped" bind:checked={dropped} />{tr('panels.debug.dropped')}</label>
     </div>
-    <span class="mono filter-count" data-test="debug-count">{lines.length === total ? `${lines.length}` : `${lines.length} of ${total}`}</span>
+    <span class="mono filter-count" data-test="debug-count">{lines.length === total ? fmtNumber(lines.length) : tr('panels.debug.count_of', { n: lines.length, total })}</span>
   </div>
   <div class="log" data-test="debug-log" bind:this={log}>
     {#if lines.length === 0}
@@ -66,14 +67,14 @@
     {/if}
     {#each lines as l (l.seq)}
       <div class="log-line" data-topic={l.e.topic} data-node={l.nodeId}>
-        <span class="log-time">{new Date(l.e.at).toLocaleTimeString()}</span>
+        <span class="log-time">{fmtTime(l.e.at)}</span>
         <span class="log-topic {l.e.topic}">{l.e.topic}</span>
         <span class="log-node" title={l.node}>{l.node}</span>
         <span class="log-body">{l.body}</span>
         {#if canAct(l)}
           <span class="acts">
-            <button class="ghost log-trace" data-test="debug-trace" title="Light the path this message took" onclick={() => ontrace(l)}>Trace</button>
-            <button class="ghost log-make-test" data-test="debug-make-test" title="Make a flow test from this message" onclick={() => ontest(l)}>Test</button>
+            <button class="ghost log-trace" data-test="debug-trace" title={tr('panels.debug.light_the_path_this_message')} onclick={() => ontrace(l)}>{tr('panels.debug.trace')}</button>
+            <button class="ghost log-make-test" data-test="debug-make-test" title={tr('panels.debug.make_a_flow_test_from')} onclick={() => ontest(l)}>{tr('panels.debug.test')}</button>
           </span>
         {/if}
       </div>

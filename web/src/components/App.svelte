@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { initLanguage, lang, serverText, tr } from '../lib/i18n.svelte';
   // The whole editor is this one island: it asks the runtime who is signed in,
   // then shows the sign-in, the dashboard-only notice, or the editor.
   import '../tokens.css';
@@ -10,6 +11,7 @@
   import Editor from './Editor.svelte';
   import Panel from './Panel.svelte';
   import SignIn from './SignIn.svelte';
+  import LanguagePicker from './LanguagePicker.svelte';
 
   const api = new Api('');
 
@@ -31,7 +33,7 @@
     // means "session expired", no token at all means "sign in".
     const hadToken = api.authenticated;
     try {
-      const [settings, descriptors] = await Promise.all([api.settings(), api.nodes()]);
+      const [settings, descriptors] = await Promise.all([api.settings(), api.nodes(lang())]);
       view = { kind: 'editor', settings, descriptors };
     } catch (ex) {
       if (ex instanceof ApiError && ex.status === 401) {
@@ -39,10 +41,10 @@
           view = { kind: 'dashboard' };
           return;
         }
-        view = { kind: 'login', message: hadToken ? 'Session expired. Sign in again.' : '' };
+        view = { kind: 'login', message: hadToken ? tr('app.session_expired') : '' };
         return;
       }
-      view = { kind: 'login', message: ex instanceof Error ? ex.message : 'could not reach the runtime' };
+      view = { kind: 'login', message: ex instanceof Error ? serverText(ex.message) : tr('app.could_not_reach_runtime') };
     }
   }
 
@@ -58,7 +60,7 @@
     // Ask the runtime rather than assume. It answers 401 when authentication is
     // on and there is no valid token, which lands on the sign-in, and answers
     // when HOTLOOP_FLOW_INSECURE turned authentication off.
-    void start();
+    void initLanguage().then(start);
   });
 </script>
 
@@ -69,12 +71,13 @@
 {:else if view.kind === 'dashboard'}
   <div class="login-wrap">
     <div class="login">
-      <div class="brand"><img src="brand/logo-mark.svg" alt="" width="30" height="30" />HotLoop Flow</div>
-      <p>Open this from the EmberCORE dashboard. If you were signed in there and still see this, your role does not include Flow.</p>
+      <div class="brand"><img src="brand/logo-mark.svg" alt="" width="30" height="30" />{tr('app.hotloop_flow')}</div>
+      <p>{tr('app.open_this_from_the_embercore')}</p>
+      <div class="login-lang"><LanguagePicker /></div>
     </div>
   </div>
 {:else if view.kind === 'editor' && panelId()}
-  <Panel {api} id={panelId()!} onsessionlost={() => (view = { kind: 'login', message: 'Session expired. Sign in again.' })} />
+  <Panel {api} id={panelId()!} onsessionlost={() => (view = { kind: 'login', message: tr('app.session_expired') })} />
 {:else if view.kind === 'editor'}
   <!-- With authentication off there is nobody to sign out and no screen to sign
        back in on, so the editor gets no Sign out button at all. Nor when the
@@ -86,6 +89,6 @@
     version={view.settings.version}
     canSignOut={view.settings.auth.enabled && !view.settings.auth.sso}
     onsignout={signOut}
-    onsessionlost={() => (view = { kind: 'login', message: 'Session expired. Sign in again.' })}
+    onsessionlost={() => (view = { kind: 'login', message: tr('app.session_expired') })}
   />
 {/if}

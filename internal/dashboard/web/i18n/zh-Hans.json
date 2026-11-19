@@ -1,0 +1,16 @@
+{
+  "title": "仪表板",
+  "menu": "菜单",
+  "connection": "与服务器的连接",
+  "tabs": "标签页",
+  "empty_1": "此仪表板上还没有任何内容。",
+  "empty_2": "向流程添加 ui_tab、ui_group 和控件节点，然后部署。",
+  "decrease": "减少",
+  "increase": "增加",
+  "value": "值",
+  "switch": "开关",
+  "text": "文本",
+  "no_value": "无值",
+  "no_data": "无数据",
+  "language": "语言"
+}

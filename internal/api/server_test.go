@@ -333,3 +333,34 @@ func TestHealthAndReadyNeedNoToken(t *testing.T) {
 		t.Fatalf("/ready with no runtime: %d, want 503", res.StatusCode)
 	}
 }
+
+// ?lang= changes the words of GET /nodes and nothing else: the same node types,
+// in the same order, with the same names, shapes and defaults. Without it the
+// answer is English, as before.
+func TestNodesLanguageChangesTheWordsOnly(t *testing.T) {
+	ts := newTestServer(t, map[string][]string{"admin": {"*"}})
+	tok := ts.mustLogin(t, "admin")
+	read := func(path string) []node.Descriptor {
+		res, out := ts.do(t, "GET", path, tok, nil)
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s: %d %s", path, res.StatusCode, out)
+		}
+		var ds []node.Descriptor
+		if err := json.Unmarshal(out, &ds); err != nil {
+			t.Fatal(err)
+		}
+		return ds
+	}
+	en, de, junk := read("/nodes"), read("/nodes?lang=de"), read("/nodes?lang=xx")
+	if len(en) != len(de) || len(en) != len(junk) {
+		t.Fatalf("%d node types in English, %d in German, %d in an unknown language", len(en), len(de), len(junk))
+	}
+	for i := range en {
+		if en[i].Type != de[i].Type || en[i].Category != de[i].Category || en[i].PaletteLabel != de[i].PaletteLabel || len(en[i].Props) != len(de[i].Props) {
+			t.Fatalf("%s: German changed more than words", en[i].Type)
+		}
+		if en[i].Help != junk[i].Help {
+			t.Fatalf("%s: an unknown language is not English", en[i].Type)
+		}
+	}
+}

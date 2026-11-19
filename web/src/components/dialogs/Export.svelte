@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr, trn } from '../../lib/i18n.svelte';
   // Shows a scope's flows as JSON to copy or save. The rules for what goes out
   // are in lib/flowio.ts; this is the form around them.
   import { copyText } from '../../lib/clipboard';
@@ -20,7 +21,7 @@
   const text = $derived(toText(entries));
 
   const choices: [ExportScope, string, boolean][] = [
-    ['selection', `Selected nodes (${selected})`, selected === 0],
+    ['selection', tr('dialogs.export.selected_nodes', { n: selected }), selected === 0],
     ['flow', 'This flow', false],
     ['all', 'Every flow', false],
   ];
@@ -42,9 +43,9 @@
   }
 </script>
 
-<Dialog title="Export" backdropClose onclose={() => done(null)}>
+<Dialog title={tr('dialogs.export.export')} backdropClose onclose={() => done(null)}>
   <div class="field">
-    <label>What to export</label>
+    <label>{tr('dialogs.export.what_to_export')}</label>
     {#each choices as [value, label, disabled] (value)}
       <div class="field-inline">
         <label><input type="radio" name="export-scope" {value} data-test="export-{value}" {disabled} checked={scope === value} onchange={() => (scope = value)} /> {label}</label>
@@ -53,13 +54,13 @@
   </div>
   <div class="field">
     <textarea class="code lang-json" readonly spellcheck="false" rows="14" data-test="export-text" bind:this={area} value={text}></textarea>
-    <div class="field-help" data-test="export-info">{entries.length} entr{entries.length === 1 ? 'y' : 'ies'}. Passwords and other credentials are never exported.</div>
+    <div class="field-help" data-test="export-info">{trn('dialogs.export.entries', entries.length)}</div>
     <div class="field-help" data-test="export-status">{status}</div>
   </div>
   {#snippet foot()}
     <div class="spacer"></div>
-    <button class="primary" type="button" data-test="export-copy" bind:this={copyButton} onclick={copy}>Copy</button>
-    <button type="button" data-test="export-download" onclick={download}>Download</button>
-    <button class="ghost" type="button" data-test="export-close" onclick={() => done(null)}>Close</button>
+    <button class="primary" type="button" data-test="export-copy" bind:this={copyButton} onclick={copy}>{tr('dialogs.export.copy')}</button>
+    <button type="button" data-test="export-download" onclick={download}>{tr('dialogs.export.download')}</button>
+    <button class="ghost" type="button" data-test="export-close" onclick={() => done(null)}>{tr('dialogs.export.close')}</button>
   {/snippet}
 </Dialog>

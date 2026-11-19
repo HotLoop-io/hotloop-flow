@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr, trOr } from '../lib/i18n.svelte';
   // Every node type, grouped by what it is for, to drag onto the canvas or
   // double-click to place. Subflow templates are palette entries too, and so are
   // the configuration nodes this flow set already has.
@@ -32,7 +33,7 @@
       icon: 'subflow',
       inputs: Array.isArray(t.in) ? (t.in as unknown[]).length : 0,
       outputs: Array.isArray(t.out) ? (t.out as unknown[]).length : 0,
-      paletteLabel: String(t.name || 'subflow'),
+      paletteLabel: String(t.name || tr('editor.default_subflow')),
       help: typeof t.info === 'string' && t.info ? t.info : 'A subflow',
       compatibility: { level: 'full' },
     };
@@ -67,11 +68,11 @@
 </script>
 
 <aside class="palette">
-  <h3>Palette</h3>
-  <input type="search" placeholder="Filter…" aria-label="Filter the palette" bind:value={filter} />
+  <h3>{tr('palette.palette')}</h3>
+  <input type="search" placeholder={tr('palette.filter')} aria-label={tr('palette.filter_the_palette')} bind:value={filter} />
   <div class="palette-list">
     {#each groups as [cat, list] (cat)}
-      <div class="palette-cat">{cat === 'diagram' ? 'FlowLab' : cat}</div>
+      <div class="palette-cat">{trOr('palette.cat.' + cat, cat)}</div>
       {#each list as d (d.type)}
         <div
           class="palette-item"
@@ -79,7 +80,7 @@
           role="button"
           tabindex="-1"
           draggable={d.isConfig ? undefined : 'true'}
-          title={d.isConfig ? `${d.help ?? d.type} Double-click to add one.` : (d.help ?? d.type)}
+          title={d.isConfig ? tr('palette.config_hint', { help: d.help ?? d.type }) : (d.help ?? d.type)}
           data-palette-type={d.type}
           ondragstart={(e) => e.dataTransfer?.setData('text/hotloop-flow-node', d.type)}
           ondblclick={() => {
@@ -94,18 +95,18 @@
       {/each}
     {/each}
     {#if inUse.length > 0}
-      <div class="palette-cat">configuration in use</div>
+      <div class="palette-cat">{tr('palette.configuration_in_use')}</div>
       {#each inUse as c (c.id)}
-        <div class="palette-item palette-config" role="button" tabindex="-1" title="Double-click to edit" data-test="config-node" data-config-id={c.id} ondblclick={() => oneditconfig(c.entry)}>
+        <div class="palette-item palette-config" role="button" tabindex="-1" title={tr('palette.doubleclick_to_edit')} data-test="config-node" data-config-id={c.id} ondblclick={() => oneditconfig(c.entry)}>
           <span class="swatch" style:background={byType.get(c.type)?.color ?? 'var(--hl-ink-soft)'}></span>
           <span class="palette-config-name">{c.name}</span>
           <span class="palette-config-type-name">{c.type}</span>
-          <button class="ghost icon" type="button" title="Delete" aria-label="Delete" data-test="config-delete" onclick={(ev) => { ev.stopPropagation(); ondeleteconfig(c.entry); }}><Icon name="x" size={12} /></button>
+          <button class="ghost icon" type="button" title={tr('palette.delete')} aria-label={tr('palette.delete')} data-test="config-delete" onclick={(ev) => { ev.stopPropagation(); ondeleteconfig(c.entry); }}><Icon name="x" size={12} /></button>
         </div>
       {/each}
     {/if}
     {#if groups.length === 0 && inUse.length === 0}
-      <div class="empty">Nothing matches.</div>
+      <div class="empty">{tr('palette.nothing_matches')}</div>
     {/if}
   </div>
 </aside>

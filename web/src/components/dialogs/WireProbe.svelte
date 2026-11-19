@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fmtDate, tr } from '../../lib/i18n.svelte';
   // A wire of a diagram: the last values it carried, with when, and the two things
   // to do to it while debugging: probe it, which keeps more of what goes by, and
   // break on it, which pauses the run when a value is put on it. A probe never
@@ -20,20 +21,20 @@
   const show = (v: unknown) => (typeof v === 'string' ? JSON.stringify(v) : JSON.stringify(v));
 </script>
 
-<Dialog title="Wire" sub={title} backdropClose onclose={() => done(null)}>
-  <div class="field field-inline"><label><input type="checkbox" data-test="probe-on" bind:checked={probe} /> Probe: keep the last 100 values</label></div>
-  <div class="field field-inline"><label><input type="checkbox" data-test="break-on" bind:checked={brk} /> Break: pause when a value is put on this wire</label></div>
-  <div class="field-help">Values this wire carried, newest last.</div>
+<Dialog title={tr('dialogs.wireprobe.wire')} sub={title} backdropClose onclose={() => done(null)}>
+  <div class="field field-inline"><label><input type="checkbox" data-test="probe-on" bind:checked={probe} /> {tr('dialogs.wireprobe.probe_keep_the_last_100')}</label></div>
+  <div class="field field-inline"><label><input type="checkbox" data-test="break-on" bind:checked={brk} /> {tr('dialogs.wireprobe.break_pause_when_a_value')}</label></div>
+  <div class="field-help">{tr('dialogs.wireprobe.values_this_wire_carried_newest')}</div>
   <ol class="probe-history" data-test="probe-history">
     {#each history.slice(-20) as h}
-      <li class="mono"><span>{new Date(h.at).toLocaleTimeString([], { hour12: false })}</span> {show(h.value)}</li>
+      <li class="mono"><span>{fmtDate(h.at, { timeStyle: 'medium', hour12: false })}</span> {show(h.value)}</li>
     {:else}
-      <li class="mono">Nothing yet. Run the diagram.</li>
+      <li class="mono">{tr('dialogs.wireprobe.nothing_yet_run_the_diagram')}</li>
     {/each}
   </ol>
   {#snippet foot()}
     <div class="spacer"></div>
-    <button class="ghost" type="button" onclick={() => done(null)}>Cancel</button>
-    <button class="primary" type="button" data-test="probe-done" onclick={() => done({ probe, brk })}>Done</button>
+    <button class="ghost" type="button" onclick={() => done(null)}>{tr('dialogs.wireprobe.cancel')}</button>
+    <button class="primary" type="button" data-test="probe-done" onclick={() => done({ probe, brk })}>{tr('dialogs.wireprobe.done')}</button>
   {/snippet}
 </Dialog>

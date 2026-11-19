@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { tr } from '../../lib/i18n.svelte';
   // One property of a node, drawn from what its descriptor says it is. Lists
   // draw rows of these, so this draws itself.
   import type { PropDef } from '../../lib/api';
   import type { Graph } from '../../lib/graph';
-  import { type Model, TYPE_LABELS, initRow, typeKeyOf, typesOf } from '../../lib/propform';
+  import { type Model, typeLabel, initRow, typeKeyOf, typesOf } from '../../lib/propform';
   import PropField from './PropField.svelte';
 
   interface Props {
@@ -116,7 +117,7 @@
     {@render head()}
     <div class="typed-input">
       <select bind:value={model[typeKeyOf(p)]}>
-        {#each typesOf(p) as t (t)}<option value={t}>{TYPE_LABELS[t] ?? t}</option>{/each}
+        {#each typesOf(p) as t (t)}<option value={t}>{typeLabel(t)}</option>{/each}
       </select>
       <input type="text" placeholder={p.placeholder ?? ''} disabled={model[typeKeyOf(p)] === 'date'} bind:value={model[p.name]} />
     </div>
@@ -126,11 +127,11 @@
   <div class="field">
     {@render head()}
     <select bind:value={model[p.name]}>
-      <option value="">— none —</option>
+      <option value="">{tr('dialogs.propfield.none')}</option>
       {#each candidates as c (c.id)}<option value={c.id}>{(c.name as string) || c.id}</option>{/each}
     </select>
     {#if candidates.length === 0}
-      <div class="field-help">No {p.configType} is configured yet. Add one from the palette first.</div>
+      <div class="field-help">{tr('dialogs.propfield.no_config_yet', { type: p.configType ?? '' })}</div>
     {/if}
     {@render help()}
   </div>
@@ -138,14 +139,14 @@
   <div class="field">
     {@render head()}
     <select data-test="diagram-pick" bind:value={model[p.name]}>
-      <option value="">{p.required ? '— choose a diagram —' : '— none —'}</option>
+      <option value="">{p.required ? tr('dialogs.propfield.choose_a_diagram') : tr('dialogs.propfield.none')}</option>
       {#each diagramTabs as t (t.id)}<option value={t.id}>{tabLabel(t)}</option>{/each}
       {#if model[p.name] && !diagramTabs.some((t) => t.id === model[p.name])}
-        <option value={model[p.name]}>{String(model[p.name])} (no such diagram)</option>
+        <option value={model[p.name]}>{tr('dialogs.propfield.no_such_diagram', { name: String(model[p.name]) })}</option>
       {/if}
     </select>
     {#if diagramTabs.length === 0}
-      <div class="field-help">This flow file has no FlowLab diagram to pick yet. Add one from the tab bar first.</div>
+      <div class="field-help">{tr('dialogs.propfield.this_flow_file_has_no')}</div>
     {/if}
     {@render help()}
   </div>
@@ -156,28 +157,28 @@
       {#each caseRows as row, i (i)}
         <div class="list-row" data-test="case-row">
           <div class="list-row-fields">
-            <input type="text" data-test="case-name" placeholder="case name (true, 2, run)" bind:value={row.name} />
+            <input type="text" data-test="case-name" placeholder={tr('dialogs.propfield.case_name_true_2_run')} bind:value={row.name} />
             <select data-test="case-body" bind:value={row.body}>
-              <option value="">— choose a diagram —</option>
+              <option value="">{tr('dialogs.propfield.choose_a_diagram')}</option>
               {#each diagramTabs as t (t.id)}<option value={t.id}>{tabLabel(t)}</option>{/each}
               {#if row.body && !diagramTabs.some((t) => t.id === row.body)}
-                <option value={row.body}>{row.body} (no such diagram)</option>
+                <option value={row.body}>{tr('dialogs.propfield.no_such_diagram', { name: row.body })}</option>
               {/if}
             </select>
           </div>
-          <button class="icon" type="button" title="Remove" onclick={() => removeCase(i)}>✕</button>
+          <button class="icon" type="button" title={tr('dialogs.propfield.remove')} onclick={() => removeCase(i)}>✕</button>
         </div>
       {/each}
     </div>
-    <button class="ghost" type="button" data-test="case-add" onclick={addCase}>Add a case</button>
+    <button class="ghost" type="button" data-test="case-add" onclick={addCase}>{tr('dialogs.propfield.add_a_case')}</button>
     {@render help()}
   </div>
 {:else if p.kind === 'credential'}
   <div class="field">
     {@render head()}
-    <input type="password" autocomplete="new-password" placeholder={hasExisting ? '•••••••• (unchanged)' : ''} bind:value={model[p.name]} />
+    <input type="password" autocomplete="new-password" placeholder={hasExisting ? tr('dialogs.propfield.unchanged') : ''} bind:value={model[p.name]} />
     <div class="field-help">
-      {hasExisting ? 'A value is stored. Leave blank to keep it, or type to replace it.' : 'Stored encrypted, never written to the flow file.'}
+      {hasExisting ? tr('dialogs.propfield.value_stored') : tr('dialogs.propfield.stored_encrypted')}
     </div>
   </div>
 {:else if p.kind === 'list'}
@@ -191,11 +192,11 @@
               <PropField p={sub} model={row} entry={row} graph={undefined} />
             {/each}
           </div>
-          <button class="icon" type="button" title="Remove" onclick={() => removeRow(i)}>✕</button>
+          <button class="icon" type="button" title={tr('dialogs.propfield.remove')} onclick={() => removeRow(i)}>✕</button>
         </div>
       {/each}
     </div>
-    <button class="ghost" type="button" onclick={addRow}>Add {label}</button>
+    <button class="ghost" type="button" onclick={addRow}>{tr('dialogs.propfield.add_label', { label })}</button>
     {@render help()}
   </div>
 {:else}

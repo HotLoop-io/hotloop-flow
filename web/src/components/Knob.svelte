@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { fmtFixed } from '../lib/i18n.svelte';
   // A rotary control for the panel: a dial that sweeps 270 degrees from the lower
   // left to the lower right, turned by dragging round it with a finger or a mouse,
   // or from the keyboard. It writes when the operator lets go, or on each key.
@@ -107,7 +108,7 @@
     <circle class="knob-cap" cx="50" cy="50" r="30" />
     <line class="knob-hand" x1="50" y1="50" x2={hand[0]} y2={hand[1]} />
   </svg>
-  <div class="knob-read mono" data-test="ctl-knob-value">{shown.toFixed(decimals)}{unit ? ` ${unit}` : ''}</div>
+  <div class="knob-read mono" data-test="ctl-knob-value">{fmtFixed(shown, decimals)}{unit ? ` ${unit}` : ''}</div>
   <div class="knob-ends mono"><span>{min}</span><span>{max}</span></div>
 </div>
 

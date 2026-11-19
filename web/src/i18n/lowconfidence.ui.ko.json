@@ -1,0 +1,20 @@
+[
+ "diagrambar.break_on_selected",
+ "diagrambar.clear_breakpoint",
+ "diagrambar.step_into",
+ "diagrambar.step_out",
+ "diagrambar.step_over",
+ "dialogs.groupprops.show_the_name_on_the",
+ "dialogs.nodedialog.optional_json_schemas_over_the",
+ "dialogs.nodedialog.promises_output",
+ "dialogs.nodedialog.promises_output_n",
+ "dialogs.wireprobe.break_pause_when_a_value",
+ "dialogs.wireprobe.probe_keep_the_last_100",
+ "dialogs.wireprops.durable",
+ "dialogs.wireprops.while_the_target_keeps_up",
+ "lib.promises",
+ "palette.cat.discover",
+ "palette.cat.parser",
+ "panels.trace.make_test",
+ "panels.trace.replay_into_draft"
+]

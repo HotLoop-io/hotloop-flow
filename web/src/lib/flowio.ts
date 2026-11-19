@@ -12,6 +12,7 @@ import {
   type FlowEntry, type Graph, type Point,
   DURABLE_ATTEMPTS_KEY, DURABLE_KEY, NODE_HEIGHT, NODE_WIDTH, SUBFLOW_PREFIX, generateId, parsePortId,
 } from './graph';
+import { tr, trn } from './i18n.svelte';
 
 export type ExportScope = 'selection' | 'flow' | 'all';
 
@@ -134,28 +135,28 @@ export interface Parsed {
 /** Reads pasted or chosen text as flow entries, or says exactly what is wrong. */
 export function parseEntries(text: string): Parsed {
   const trimmed = text.trim();
-  if (trimmed === '') return { error: 'There is nothing to import.' };
+  if (trimmed === '') return { error: tr('lib.import_nothing') };
   let value: unknown;
   try {
     value = JSON.parse(trimmed);
   } catch (ex) {
-    return { error: `That is not JSON: ${(ex as Error).message}` };
+    return { error: tr('lib.import_not_json', { error: (ex as Error).message }) };
   }
   const list = Array.isArray(value) ? value : [value];
-  if (list.length === 0) return { error: 'That is an empty list.' };
+  if (list.length === 0) return { error: tr('lib.import_empty') };
 
   const seen = new Set<string>();
   for (let i = 0; i < list.length; i++) {
     const e = list[i] as Record<string, unknown> | null;
     if (typeof e !== 'object' || e === null || Array.isArray(e)) {
-      return { error: `Entry ${i + 1} is not an object.` };
+      return { error: tr('lib.import_not_object', { n: i + 1 }) };
     }
-    if (typeof e.id !== 'string' || e.id === '') return { error: `Entry ${i + 1} has no id.` };
-    if (typeof e.type !== 'string' || e.type === '') return { error: `Entry ${i + 1} (${e.id}) has no type.` };
-    if (seen.has(e.id)) return { error: `The id ${e.id} appears twice.` };
+    if (typeof e.id !== 'string' || e.id === '') return { error: tr('lib.import_no_id', { n: i + 1 }) };
+    if (typeof e.type !== 'string' || e.type === '') return { error: tr('lib.import_no_type', { n: i + 1, id: e.id }) };
+    if (seen.has(e.id)) return { error: tr('lib.import_twice', { id: e.id }) };
     seen.add(e.id);
     if (e.wires !== undefined && !(Array.isArray(e.wires) && e.wires.every((w) => Array.isArray(w)))) {
-      return { error: `Entry ${i + 1} (${e.id}) has wires that are not a list of lists.` };
+      return { error: tr('lib.import_bad_wires', { n: i + 1, id: e.id }) };
     }
   }
   return { entries: list as FlowEntry[] };
@@ -355,12 +356,12 @@ function boundsOf(entries: FlowEntry[]): { minX: number; minY: number } | null {
 /** One line saying what an import did, for the screen and for the tests. */
 export function describeImport(r: ImportResult): string {
   const parts: string[] = [];
-  if (r.nodes) parts.push(`${r.nodes} node${r.nodes === 1 ? '' : 's'}`);
-  if (r.groups) parts.push(`${r.groups} group${r.groups === 1 ? '' : 's'}`);
-  if (r.flows) parts.push(`${r.flows} flow${r.flows === 1 ? '' : 's'}`);
-  if (r.subflows) parts.push(`${r.subflows} subflow${r.subflows === 1 ? '' : 's'}`);
-  let s = parts.length ? `Added ${parts.join(', ')}.` : 'Nothing to add.';
-  if (r.reused) s += ` ${r.reused} configuration node${r.reused === 1 ? ' was' : 's were'} already here and shared.`;
-  if (r.unknown.length) s += ` Not in this runtime, shown grey: ${r.unknown.join(', ')}.`;
+  if (r.nodes) parts.push(trn('lib.count_nodes', r.nodes));
+  if (r.groups) parts.push(trn('lib.count_groups', r.groups));
+  if (r.flows) parts.push(trn('lib.count_flows', r.flows));
+  if (r.subflows) parts.push(trn('lib.count_subflows', r.subflows));
+  let s = parts.length ? tr('lib.import_added', { what: parts.join(tr('lib.list_separator')) }) : tr('lib.import_nothing_to_add');
+  if (r.reused) s += ' ' + trn('lib.import_reused', r.reused);
+  if (r.unknown.length) s += ' ' + tr('lib.import_unknown', { types: r.unknown.join(', ') });
   return s;
 }

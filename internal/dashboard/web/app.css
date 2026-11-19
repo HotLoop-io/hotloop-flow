@@ -107,3 +107,5 @@ body { padding-top: 48px; }
 .w-template { display: block; overflow: auto; }
 .w-spacer { visibility: hidden; }
 #empty { padding: 48px 24px; text-align: center; color: var(--muted); }
+#lang { font: inherit; font-size: 13px; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 6px; padding: 2px 4px; max-width: 9em; }
+#lang option { color: #1c1c1c; background: #fff; }

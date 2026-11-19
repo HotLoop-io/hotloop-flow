@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from '../../lib/i18n.svelte';
   // One row a node: what came in, what went out, what failed, and how full its
   // queue is. Clicking a row selects the node on the canvas, which is how you get
   // from "this node is erroring" to the node itself.
@@ -13,11 +14,11 @@
 </script>
 
 <section class="runtime">
-  <div class="section-head"><h3>Runtime</h3></div>
+  <div class="section-head"><h3>{tr('panels.runtime.runtime')}</h3></div>
   <div class="stats scroll-x">
     <table>
       <thead>
-        <tr><th>Node</th><th class="num">In</th><th class="num">Out</th><th class="num">Err</th><th class="num">Queue</th></tr>
+        <tr><th>{tr('panels.runtime.node')}</th><th class="num">{tr('panels.runtime.in')}</th><th class="num">{tr('panels.runtime.out')}</th><th class="num">{tr('panels.runtime.err')}</th><th class="num">{tr('panels.runtime.queue')}</th></tr>
       </thead>
       <tbody>
         {#each nodes as n (n.nodeId)}

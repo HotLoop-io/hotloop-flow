@@ -4,6 +4,56 @@
   var base = location.pathname.replace(/[^/]*$/, "");
   var CELL = 48, GAP = 6;
   var $ = function (id) { return document.getElementById(id); };
+
+  // ------------------------------------------------------------------
+  // Language. The dashboard's own few words (the widgets' labels are the
+  // flow's, and stay as written) come from i18n/<code>.json. The choice is
+  // the editor's: they share one origin, so one picker serves both.
+  // ------------------------------------------------------------------
+  var LANGS = [["en", "English"], ["es", "Español"], ["fr", "Français"], ["it", "Italiano"], ["de", "Deutsch"],
+    ["nb", "Norsk bokmål"], ["bg", "Български"], ["el", "Ελληνικά"], ["ko", "한국어"], ["ja", "日本語"],
+    ["vi", "Tiếng Việt"], ["hi", "हिन्दी"], ["zh-Hans", "简体中文"], ["ar", "العربية"]];
+  var EN = { title: "Dashboard", menu: "Menu", connection: "Connection to the server", tabs: "Tabs",
+    empty_1: "Nothing is on this dashboard yet.", empty_2: "Add ui_tab, ui_group and widget nodes to a flow and deploy it.",
+    decrease: "Decrease", increase: "Increase", value: "value", "switch": "switch", text: "text", no_value: "no value",
+    no_data: "No data", language: "Language" };
+  var T = EN, lang = "en";
+  function t(key) { return T[key] || EN[key] || key; }
+  function matchLang(tag) {
+    tag = String(tag || "").toLowerCase();
+    if (!tag || tag === "*") return null;
+    if (tag === "zh" || tag === "zh-cn" || tag === "zh-sg" || tag.indexOf("zh-hans") === 0) return "zh-Hans";
+    if (tag.indexOf("zh-") === 0) return null;
+    if (tag === "no" || tag.indexOf("no-") === 0 || tag === "nn" || tag.indexOf("nn-") === 0) return "nb";
+    var base = tag.split("-")[0];
+    for (var i = 0; i < LANGS.length; i++) if (LANGS[i][0].toLowerCase() === base) return LANGS[i][0];
+    return null;
+  }
+  function detectLang() {
+    try {
+      var s = localStorage.getItem("hotloop-flow.lang");
+      if (s && LANGS.some(function (l) { return l[0] === s; })) return s;
+    } catch (e) { /* storage may be blocked */ }
+    var list = navigator.languages || [navigator.language];
+    for (var i = 0; i < list.length; i++) { var m = matchLang(list[i]); if (m) return m; }
+    return "en";
+  }
+  function applyStatic() {
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === "ar" ? "rtl" : "ltr";
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n]"), function (e) { e.textContent = t(e.getAttribute("data-i18n")); });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n-aria]"), function (e) { e.setAttribute("aria-label", t(e.getAttribute("data-i18n-aria"))); });
+    Array.prototype.forEach.call(document.querySelectorAll("[data-i18n-title]"), function (e) { e.title = t(e.getAttribute("data-i18n-title")); });
+  }
+  // setLang loads a catalog and then runs after. A catalog that cannot be read leaves English.
+  function setLang(code, after) {
+    var done = function (messages) {
+      T = messages || EN; lang = messages ? code : "en"; applyStatic(); if (after) after();
+    };
+    if (code === "en") return done(null);
+    fetch(base + "i18n/" + encodeURIComponent(code) + ".json", { cache: "no-cache" })
+      .then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }).then(done);
+  }
   var state = new Map();       // widget id -> {msg, value, points}
   var live = new Map();        // widget id -> {set(st, update)}
   var layout = null;
@@ -116,7 +166,7 @@
     var lbl = el("span", "lbl"), input = el("input"), unit = el("span", "val");
     var dec = el("button", "step", "−"), inc = el("button", "step", "+");
     dec.type = inc.type = "button";
-    dec.setAttribute("aria-label", "Decrease"); inc.setAttribute("aria-label", "Increase");
+    dec.setAttribute("aria-label", t("decrease")); inc.setAttribute("aria-label", t("increase"));
     setLabel(lbl, p.label);
     input.type = "number";
     var min = p.min === "" || p.min == null ? null : num(p.min, null), max = p.max === "" || p.max == null ? null : num(p.max, null);
@@ -124,7 +174,7 @@
     if (min != null) input.min = min;
     if (max != null) input.max = max;
     input.step = step;
-    input.setAttribute("aria-label", String(p.label || p.name || "value").replace(/<[^>]*>/g, " "));
+    input.setAttribute("aria-label", String(p.label || p.name || t("value")).replace(/<[^>]*>/g, " "));
     root.append(lbl, dec, input, inc, unit);
     var current = null;
     function send(v) {
@@ -167,7 +217,7 @@
     var lbl = el("span", "lbl"), sw = el("button", "sw");
     sw.type = "button"; sw.setAttribute("role", "switch"); sw.setAttribute("aria-checked", "false");
     setLabel(lbl, p.label);
-    sw.setAttribute("aria-label", String(p.label || p.name || "switch").replace(/<[^>]*>/g, " "));
+    sw.setAttribute("aria-label", String(p.label || p.name || t("switch")).replace(/<[^>]*>/g, " "));
     if (p.tooltip) sw.title = p.tooltip;
     root.append(lbl, sw);
     var on = false;
@@ -190,7 +240,7 @@
     setLabel(lbl, p.label);
     var mode = p.mode || "text";
     input.type = ["text", "email", "password", "number", "time", "date", "color"].indexOf(mode) >= 0 ? mode : "text";
-    input.setAttribute("aria-label", String(p.label || p.name || "text").replace(/<[^>]*>/g, " "));
+    input.setAttribute("aria-label", String(p.label || p.name || t("text")).replace(/<[^>]*>/g, " "));
     if (p.tooltip) input.title = p.tooltip;
     root.append(lbl, input);
     var timer = null;
@@ -235,7 +285,7 @@
       var msg = st && st.msg || {}, c = colorFor(msg);
       led.style.background = c || "";
       led.style.setProperty("--led", c || "transparent");
-      led.setAttribute("aria-label", (String(p.label || "").replace(/<[^>]*>/g, " ") + " " + (msg.payload === undefined ? "no value" : String(msg.payload))).trim());
+      led.setAttribute("aria-label", (String(p.label || "").replace(/<[^>]*>/g, " ") + " " + (msg.payload === undefined ? t("no_value") : String(msg.payload))).trim());
     } };
   };
 
@@ -328,7 +378,7 @@
     var p = d.props, root = el("div", "w w-chart");
     var title = el("div", "lbl"), plot = el("div", "plot"), cv = el("canvas"), nodata = el("div", "nodata"), legend = el("div", "legend");
     setLabel(title, p.label);
-    nodata.textContent = p.nodata || "No data";
+    nodata.textContent = p.nodata || t("no_data");
     plot.append(cv, nodata);
     root.append(title, plot);
     if (String(p.legend) === "true") root.append(legend);
@@ -582,8 +632,8 @@
       page.appendChild(sec);
     });
     var cur = tabs.filter(function (t) { return t.id === activeTab; })[0];
-    titleEl.textContent = cur ? cur.label : "Dashboard";
-    document.title = cur ? cur.label : "Dashboard";
+    titleEl.textContent = cur ? cur.label : t("title");
+    document.title = cur ? cur.label : t("title");
     applyTheme(layout.theme || {});
   }
 
@@ -655,8 +705,20 @@
     };
   }
 
-  loadLayout().then(connect).catch(function () {
-    conn.dataset.state = "lost";
-    setTimeout(function () { location.reload(); }, 5000);
+  var picker = $("lang");
+  LANGS.forEach(function (l) {
+    var o = document.createElement("option"); o.value = l[0]; o.textContent = l[1]; o.lang = l[0]; picker.appendChild(o);
+  });
+  picker.addEventListener("change", function () {
+    try { localStorage.setItem("hotloop-flow.lang", picker.value); } catch (e) { /* storage may be blocked */ }
+    // Widgets made their words when they were built, so build again.
+    setLang(picker.value, function () { if (layout) { live.clear(); build(); } });
+  });
+  setLang(detectLang(), function () {
+    picker.value = lang;
+    loadLayout().then(connect).catch(function () {
+      conn.dataset.state = "lost";
+      setTimeout(function () { location.reload(); }, 5000);
+    });
   });
 })();

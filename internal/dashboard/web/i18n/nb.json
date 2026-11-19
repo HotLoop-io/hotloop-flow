@@ -1,0 +1,16 @@
+{
+  "title": "Dashbord",
+  "menu": "Meny",
+  "connection": "Tilkobling til serveren",
+  "tabs": "Faner",
+  "empty_1": "Det er ingenting på dette dashbordet ennå.",
+  "empty_2": "Legg til ui_tab-, ui_group- og widget-noder i en flyt og distribuer den.",
+  "decrease": "Reduser",
+  "increase": "Øk",
+  "value": "verdi",
+  "switch": "bryter",
+  "text": "tekst",
+  "no_value": "ingen verdi",
+  "no_data": "Ingen data",
+  "language": "Språk"
+}

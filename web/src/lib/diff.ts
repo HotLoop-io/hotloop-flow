@@ -8,6 +8,7 @@
 
 import type { DiffResult } from './api';
 import type { FlowEntry } from './graph';
+import { tr } from './i18n.svelte';
 
 export type DiffMark = 'added' | 'changed' | 'moved';
 
@@ -71,9 +72,9 @@ export function overlayFrom(result: DiffResult, older: FlowEntry[], newer: FlowE
 export function summarise(result: DiffResult): string {
   const s = result.summary;
   const parts: string[] = [];
-  if (s.added) parts.push(`${s.added} added`);
-  if (s.removed) parts.push(`${s.removed} removed`);
-  if (s.changed) parts.push(`${s.changed} changed`);
-  if (s.moved) parts.push(`${s.moved} moved`);
-  return parts.length ? parts.join(', ') : 'No changes';
+  if (s.added) parts.push(tr('lib.diff_added', { n: s.added }));
+  if (s.removed) parts.push(tr('lib.diff_removed', { n: s.removed }));
+  if (s.changed) parts.push(tr('lib.diff_changed', { n: s.changed }));
+  if (s.moved) parts.push(tr('lib.diff_moved', { n: s.moved }));
+  return parts.length ? parts.join(tr('lib.list_separator')) : tr('lib.no_changes');
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lang, onLanguageChange, serverText, tr, trn } from '../lib/i18n.svelte';
   // The editor: palette, tabs, canvas, the live dock, and the rail with review,
   // history, tests and trace. The canvas and the graph under it are the engine in
   // src/lib; this is what holds them together and what a person touches.
@@ -86,10 +87,10 @@
 
   // Plain copies, made fresh each time, so a rename shows: the entries
   // themselves are edited in place and a screen can't see that.
-  const flows = $derived.by(() => { void rev; return shown.tabs().map((t) => ({ id: t.id, label: String(t.label ?? 'Flow') })); });
+  const flows = $derived.by(() => { void rev; return shown.tabs().map((t) => ({ id: t.id, label: String(t.label ?? tr('editor.default_flow')) })); });
   const subflows = $derived.by(() => {
     void rev;
-    return shown.subflows().map((t) => ({ id: t.id, label: String(t.name || 'subflow'), color: typeof t.color === 'string' && t.color ? t.color : '#DDAA99' }));
+    return shown.subflows().map((t) => ({ id: t.id, label: String(t.name || tr('editor.default_subflow')), color: typeof t.color === 'string' && t.color ? t.color : '#DDAA99' }));
   });
   const active = $derived.by(() => { void rev; return shown.activeTab; });
   const dirty = $derived.by(() => { void rev; return graph.dirty; });
@@ -102,9 +103,29 @@
   });
   const openableOpen = $derived.by(() => { void rev; return openable.length > 0 && openable.every((id) => canvas?.isExpanded(id)); });
   const changedScopes = $derived((viewing ? viewOverlay : reviewOverlay)?.scopes ?? new Set<string>());
-  const tabState = $derived(viewing ? `viewing deployment ${viewing.seq}, read only` : dirty ? 'unsaved changes' : 'saved');
+  const tabState = $derived(viewing ? tr('editor.viewing_deployment', { n: viewing.seq }) : dirty ? tr('editor.unsaved_changes') : tr('editor.saved'));
   const showFlowProps = $derived.by(() => { void rev; return !viewing && !shown.isSubflowScope(shown.activeTab) && shown.tabs().some((t) => t.id === shown.activeTab); });
   const showSubflowProps = $derived.by(() => { void rev; return !viewing && shown.isSubflowScope(shown.activeTab); });
+
+  // ── The language picker ────────────────────────────────────────────────────
+  // It changes the words, never the flow. The node types are asked for again in
+  // the new language and their text is replaced on the descriptors the graph
+  // already holds, then what is drawn by hand is drawn again. Nothing in the flow
+  // file, and nothing unsaved, is touched.
+  async function relocalize(): Promise<void> {
+    try {
+      for (const d of await api.nodes(lang())) {
+        const cur = byType.get(d.type);
+        if (cur) Object.assign(cur, d);
+      }
+    } catch {
+      /* the screen keeps the words it has */
+    }
+    bump();
+    canvas?.render();
+    viewCanvas?.render();
+  }
+  onMount(() => onLanguageChange(() => void relocalize()));
 
   // ── A line of feedback over the canvas ─────────────────────────────────────
   // What a copy took, what an import added, why a group could not be made. It
@@ -143,7 +164,7 @@
   async function editWire(w: { from: FlowEntry; port: number; to: FlowEntry }): Promise<void> {
     if (viewing) return;
     if (w.from.id.startsWith('@') || w.to.id.startsWith('@')) {
-      notice("A wire on a subflow's own input or output cannot be durable. Mark the wire between the nodes inside, or the one that leaves the instance.");
+      notice(tr('editor.subflow_wire_not_durable'));
       return;
     }
     if (graph.ports(w.from) && graph.ports(w.to)) {
@@ -175,23 +196,23 @@
       NodeDialog, { graph, entry: draft, descriptor: d });
     if (!result) return;
     const made = graph.addConfig(d.type, { ...draft, ...result.props });
-    notice(`Added ${made.name || d.paletteLabel || d.type}. Pick it from the dialog of any node that needs one.`);
+    notice(tr('editor.added_config', { name: made.name || d.paletteLabel || d.type }));
   }
 
   const askName = (title: string, initial: string, test: string) =>
-    openDialog<string | null, { title: string; label: string; initial: string; test: string }>(AskText, { title, label: 'Name', initial, test });
+    openDialog<string | null, { title: string; label: string; initial: string; test: string }>(AskText, { title, label: tr('editor.name'), initial, test });
 
   /** Turns the selection into a subflow and puts an instance where it was. */
   async function selectionToSubflow(): Promise<void> {
     if (viewing || graph.selection.size === 0) return;
-    const name = await askName('Selection to subflow', `Subflow ${graph.subflows().length + 1}`, 'selection-subflow');
+    const name = await askName(tr('editor.selection_to_subflow'), tr('editor.subflow_n', { n: graph.subflows().length + 1 }), 'selection-subflow');
     if (!name) return;
     const made = graph.selectionToSubflow(name);
     if (typeof made === 'string') {
       notice(made);
       return;
     }
-    notice(`Made the subflow ${name}. Its template is in the tab bar.`);
+    notice(tr('editor.made_subflow', { name }));
     bump();
     canvas.render();
   }
@@ -203,13 +224,13 @@
     // in place belongs to that sub-diagram's own tab.
     const ids = [...graph.selection].filter((id) => { const e = graph.byId(id); return !!e && e.type !== 'group' && e.z === graph.activeTab; });
     if (ids.length === 0) return;
-    const name = await askName('Selection to sub-diagram', `Sub-diagram ${graph.tabs().length + 1}`, 'selection-subdiagram');
+    const name = await askName(tr('editor.selection_to_subdiagram'), tr('editor.subdiagram_n', { n: graph.tabs().length + 1 }), 'selection-subdiagram');
     if (!name) return;
     try {
       const out = await api.diagramSub(graph.activeTab, graph.all(), ids, name);
       graph.replaceWith(out.flows, 'selection to sub-diagram');
       graph.selection.clear();
-      notice(`Made the sub-diagram ${name}. It has its own tab, and a sub-diagram node where the selection was.`);
+      notice(tr('editor.made_subdiagram', { name }));
       bump();
       canvas.render();
     } catch (ex) {
@@ -257,7 +278,7 @@
   }
 
   async function newSubflow(): Promise<void> {
-    const name = await askName('New subflow', `Subflow ${graph.subflows().length + 1}`, 'new-subflow');
+    const name = await askName(tr('editor.new_subflow'), tr('editor.subflow_n', { n: graph.subflows().length + 1 }), 'new-subflow');
     if (!name) return;
     graph.addSubflow(name);
     bump();
@@ -277,7 +298,7 @@
   }
 
   function addFlow(): void {
-    const label = prompt('Name for the new flow', `Flow ${graph.tabs().length + 1}`);
+    const label = prompt(tr('editor.name_for_new_flow'), tr('editor.flow_n', { n: graph.tabs().length + 1 }));
     if (label) {
       graph.addTab(label);
       bump();
@@ -300,7 +321,7 @@
   const runId = $derived(diag?.owner ?? graph.activeTab);
   const diagState = $derived(diag?.run?.state ?? (diag ? diag.state : 'idle'));
   const diagProblems = $derived.by(() => {
-    if (diagMissing) return [{ text: 'This diagram is not deployed yet. Deploy, then run it.' }];
+    if (diagMissing) return [{ text: tr('editor.diagram_not_deployed') }];
     return diag?.problems ?? [];
   });
   const breakOnSelection = $derived.by(() => {
@@ -390,7 +411,7 @@
     const probed = (diag?.probes ?? []).includes(full ?? '') || (diag?.probes ?? []).includes(key);
     const broken = (diag?.breakpoints ?? []).some((b) => b === `wire:${full}`);
     const r = await openDialog<{ probe: boolean; brk: boolean } | null, { title: string; history: { value: unknown; at: string }[]; probed: boolean; broken: boolean }>(
-      WireProbe, { title: `${graph.label(w.from)} ${fp} to ${graph.label(w.to)} ${tp}`, history: diag?.wires[full ?? '']?.history ?? [], probed, broken });
+      WireProbe, { title: tr('editor.wire_title', { from: `${graph.label(w.from)} ${fp}`, to: `${graph.label(w.to)} ${tp}` }), history: diag?.wires[full ?? '']?.history ?? [], probed, broken });
     if (!r || !full) return;
     const probes = new Set(diag?.probes ?? []);
     if (r.probe) probes.add(full); else probes.delete(full);
@@ -400,9 +421,9 @@
   }
 
   function addDiagram(): void {
-    const label = prompt('Name for the new FlowLab diagram', `Diagram ${graph.tabs().length + 1}`);
+    const label = prompt(tr('editor.name_for_new_diagram'), tr('editor.diagram_n', { n: graph.tabs().length + 1 }));
     if (!label) return;
-    const body = confirm('Is this the body of a loop? OK for a loop body, Cancel for a FlowLab diagram you run.');
+    const body = confirm(tr('editor.is_loop_body'));
     const tab = graph.addTab(label);
     graph.makeDiagram(tab.id, body ? { role: 'body' } : {});
     bump();
@@ -456,9 +477,9 @@
     return logItems.filter(passes);
   });
   const logEmpty = $derived(
-    cleared ? 'Cleared.'
-      : logItems.length === 0 ? 'Waiting for events…'
-        : `Nothing matches. ${logItems.length} message${logItems.length === 1 ? ' is' : 's are'} hidden by the filter.`,
+    cleared ? tr('editor.cleared')
+      : logItems.length === 0 ? tr('editor.waiting_for_events')
+        : trn('editor.nothing_matches_hidden', logItems.length),
   );
 
   function appendEvent(e: RuntimeEvent): void {
@@ -490,7 +511,7 @@
         break;
       case 'dropped':
         node = String(e.data.nodeId ?? '');
-        body = `dropped a message (${String(e.data.policy)})`;
+        body = tr('editor.dropped_message', { policy: String(e.data.policy) });
         break;
       default:
         body = JSON.stringify(e.data);
@@ -502,7 +523,7 @@
 
   // ── Runtime stats ──────────────────────────────────────────────────────────
   let stats: NodeStat[] = $state.raw([]);
-  const nameOf = (id: string) => { const e = graph.byId(id); return e ? (e.type === 'tab' ? `the start of ${String(e.label ?? 'the diagram')}` : graph.label(e)) : id; };
+  const nameOf = (id: string) => { const e = graph.byId(id); return e ? (e.type === 'tab' ? tr('editor.start_of', { name: String(e.label ?? tr('editor.the_diagram')) }) : graph.label(e)) : id; };
 
   /** Selects a node on the canvas, going to its flow first. */
   function selectNode(id: string): void {
@@ -634,27 +655,27 @@
       onsessionlost();
       return;
     }
-    alert(`${what}: ${ex instanceof Error ? ex.message : ex}`);
+    alert(`${what}: ${ex instanceof Error ? serverText(ex.message) : ex}`);
   }
 
   // ── Tests ──────────────────────────────────────────────────────────────────
-  let testsView: TestsView = $state.raw({ kind: 'info', note: '', text: 'Loading…' });
+  let testsView: TestsView = $state.raw({ kind: 'info', note: '', text: tr('editor.loading') });
 
   async function refreshTests(note = ''): Promise<void> {
     try {
       const t = await api.tests();
       const text = t.count === 0
-        ? 'No tests yet. Make one from a message in the debug dock, or write them with Edit.'
-        : `${t.count} test${t.count === 1 ? '' : 's'} in ${t.file}${t.gate ? '. Deploys have to pass them.' : '.'}`;
+        ? tr('editor.no_tests_yet')
+        : trn(t.gate ? 'editor.tests_in_gated' : 'editor.tests_in', t.count, { file: t.file });
       testsView = { kind: 'info', note, text };
     } catch (ex) {
       if (ex instanceof ApiError && ex.status === 401) {
-        failed(ex, 'Tests');
+        failed(ex, tr('editor.tests'));
         return;
       }
       testsView = {
         kind: 'info', note: '',
-        text: ex instanceof ApiError && ex.status === 403 ? 'This account cannot read the flow tests.' : 'Could not load the flow tests.',
+        text: ex instanceof ApiError && ex.status === 403 ? tr('editor.cannot_read_tests') : tr('editor.could_not_load_tests'),
       };
     }
   }
@@ -678,9 +699,9 @@
   async function makeTest(node: string, msgId: string): Promise<void> {
     try {
       const added = await draftTestDialog(api, node, msgId);
-      if (added) void refreshTests(`Added: ${added.join(', ')}`);
+      if (added) void refreshTests(tr('editor.added_tests', { names: added.join(', ') }));
     } catch (ex) {
-      failed(ex, 'Could not make the test');
+      failed(ex, tr('editor.could_not_make_test'));
     }
   }
 
@@ -734,9 +755,9 @@
   async function makeTraceTest(traceId: string): Promise<void> {
     try {
       const added = await draftTestFromTraceDialog(api, traceId);
-      if (added) void refreshTests(`Added: ${added.join(', ')}`);
+      if (added) void refreshTests(tr('editor.added_tests', { names: added.join(', ') }));
     } catch (ex) {
-      failed(ex, 'Could not make the test');
+      failed(ex, tr('editor.could_not_make_test'));
     }
   }
 
@@ -756,17 +777,17 @@
   // ── History ────────────────────────────────────────────────────────────────
   let history: Deployment[] = $state.raw([]);
   let historyCurrent = $state('');
-  let historyMessage = $state('Loading…');
+  let historyMessage = $state(tr('editor.loading'));
 
   async function refreshHistory(): Promise<void> {
     try {
       const res = await api.deployments(50);
       history = res.deployments;
       historyCurrent = res.current;
-      historyMessage = 'Nothing deployed yet.';
+      historyMessage = tr('editor.nothing_deployed_yet');
     } catch (ex) {
       if (ex instanceof ApiError && ex.status === 401) {
-        failed(ex, 'History');
+        failed(ex, tr('editor.history'));
         return;
       }
       history = [];
@@ -819,7 +840,7 @@
 
       viewing = d;
       viewBanner = {
-        what: `${describe(d)}${d.note ? `: ${d.note}` : ''}. ` + (diff ? `${summarise(diff)} since #${previous?.seq}.` : 'The first deployment in the log.'),
+        what: `${describe(d)}${d.note ? `: ${d.note}` : ''}. ` + (diff ? tr('editor.since_deployment', { summary: summarise(diff), seq: previous?.seq ?? 0 }) : tr('editor.first_deployment')),
         title: diff?.text ?? '',
       };
       await tick();
@@ -827,7 +848,7 @@
       viewCanvas.fit();
       bump();
     } catch (ex) {
-      failed(ex, `Could not open deployment ${d.seq}`);
+      failed(ex, tr('editor.could_not_open_deployment', { n: d.seq }));
     }
   }
 
@@ -913,9 +934,9 @@
     const n = entries.filter((x) => x.type !== 'group' && x.type !== 'subflow' && !graph.isConfig(x)).length;
     if (cut) {
       graph.deleteSelection();
-      notice(`Cut ${n} node${n === 1 ? '' : 's'}.`);
+      notice(trn('editor.cut_nodes', n));
     } else {
-      notice(`Copied ${n} node${n === 1 ? '' : 's'}.`);
+      notice(trn('editor.copied_nodes', n));
     }
   }
 
@@ -939,7 +960,7 @@
 
   function runImport(text: string): void {
     const parsed = parseEntries(text);
-    if (!parsed.entries) { notice(parsed.error ?? 'That could not be read.'); return; }
+    if (!parsed.entries) { notice(parsed.error ?? tr('editor.could_not_be_read')); return; }
     afterImport(importEntries(graph, parsed.entries, { scope: graph.activeTab, at: placeAt() }));
   }
 
@@ -1059,7 +1080,7 @@
     void refreshDiagram();
     void load().catch((ex) => {
       if (ex instanceof ApiError && ex.status === 401) onsessionlost();
-      else alert(`Could not load flows: ${ex}`);
+      else alert(tr('editor.could_not_load_flows', { error: ex instanceof Error ? serverText(ex.message) : String(ex) }));
     });
 
     const refresh = async () => {
@@ -1167,7 +1188,7 @@
     {#if viewing}
       <div class="view-banner" data-test="view-banner">
         <span class="what" title={viewBanner.title}>{viewBanner.what}</span>
-        <button class="ghost" data-test="view-close" onclick={closeView}>Back to editing</button>
+        <button class="ghost" data-test="view-close" onclick={closeView}>{tr('editor.back_to_editing')}</button>
       </div>
     {/if}
     {#if searchOpen}

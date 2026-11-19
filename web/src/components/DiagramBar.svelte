@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr, trn } from '../lib/i18n.svelte';
   // The bar over a diagram: run and stop, highlight execution, pause and step,
   // breakpoints, the panel link, and the list of reasons the diagram cannot run.
   import type { DiagramProblem } from '../lib/api';
@@ -36,29 +37,29 @@
 </script>
 
 <div class="diagram-bar" data-test="diagram-bar">
-  <span class="bar-tag mono" title="This tab is a FlowLab diagram">FlowLab</span>
-  <button class="primary" data-test="diagram-run" disabled={running || problems.length > 0} onclick={onrun}>Run</button>
-  <button class="ghost" data-test="diagram-stop" disabled={!running} onclick={onstop}>Stop</button>
+  <span class="bar-tag mono" title={tr('diagrambar.this_tab_is_a_flowlab')}>{tr('diagrambar.flowlab')}</span>
+  <button class="primary" data-test="diagram-run" disabled={running || problems.length > 0} onclick={onrun}>{tr('diagrambar.run')}</button>
+  <button class="ghost" data-test="diagram-stop" disabled={!running} onclick={onstop}>{tr('diagrambar.stop')}</button>
   <span class="sep"></span>
-  <label class="check"><input type="checkbox" data-test="diagram-highlight" checked={highlight} onchange={(e) => onhighlight((e.currentTarget as HTMLInputElement).checked)} /> Highlight execution</label>
+  <label class="check"><input type="checkbox" data-test="diagram-highlight" checked={highlight} onchange={(e) => onhighlight((e.currentTarget as HTMLInputElement).checked)} /> {tr('diagrambar.highlight_execution')}</label>
   <span class="sep"></span>
-  <button class="ghost" data-test="diagram-pause" disabled={!running || runState === 'paused'} onclick={onpause}>Pause</button>
-  <button class="ghost" data-test="diagram-resume" disabled={runState !== 'paused'} onclick={onresume}>Resume</button>
-  <button class="ghost" data-test="diagram-step-into" disabled={runState !== 'paused'} onclick={() => onstep('into')}>Step into</button>
-  <button class="ghost" data-test="diagram-step-over" disabled={runState !== 'paused'} onclick={() => onstep('over')}>Step over</button>
-  <button class="ghost" data-test="diagram-step-out" disabled={runState !== 'paused'} onclick={() => onstep('out')}>Step out</button>
-  <button class="ghost" data-test="diagram-break" disabled={!hasSelection} onclick={onbreak}>{breakOnSelection ? 'Clear breakpoint' : 'Break on selected'}</button>
-  <button class="ghost" data-test="selection-to-subdiagram" title="Cut the selected nodes out into a sub-diagram, with its inputs and outputs worked out from the wires that cross the selection" disabled={!hasSelection || running} onclick={onsub}>Selection to sub-diagram</button>
-  <button class="ghost" data-test="subdiagram-expand" title="Draw the selected sub-diagram open where it is, with its nodes and wires inside a frame, instead of going to its tab" disabled={!canExpand} onclick={onexpand}>{expandedSelected ? 'Close in place' : 'Open in place'}</button>
+  <button class="ghost" data-test="diagram-pause" disabled={!running || runState === 'paused'} onclick={onpause}>{tr('diagrambar.pause')}</button>
+  <button class="ghost" data-test="diagram-resume" disabled={runState !== 'paused'} onclick={onresume}>{tr('diagrambar.resume')}</button>
+  <button class="ghost" data-test="diagram-step-into" disabled={runState !== 'paused'} onclick={() => onstep('into')}>{tr('diagrambar.step_into')}</button>
+  <button class="ghost" data-test="diagram-step-over" disabled={runState !== 'paused'} onclick={() => onstep('over')}>{tr('diagrambar.step_over')}</button>
+  <button class="ghost" data-test="diagram-step-out" disabled={runState !== 'paused'} onclick={() => onstep('out')}>{tr('diagrambar.step_out')}</button>
+  <button class="ghost" data-test="diagram-break" disabled={!hasSelection} onclick={onbreak}>{breakOnSelection ? tr('diagrambar.clear_breakpoint') : tr('diagrambar.break_on_selected')}</button>
+  <button class="ghost" data-test="selection-to-subdiagram" title={tr('diagrambar.cut_the_selected_nodes_out')} disabled={!hasSelection || running} onclick={onsub}>{tr('diagrambar.selection_to_subdiagram')}</button>
+  <button class="ghost" data-test="subdiagram-expand" title={tr('diagrambar.draw_the_selected_subdiagram_open')} disabled={!canExpand} onclick={onexpand}>{expandedSelected ? tr('diagrambar.close_in_place') : tr('diagrambar.open_in_place')}</button>
   <span class="sep"></span>
-  <a class="ghost link" data-test="diagram-panel" href={panelHref} target="_blank" rel="noopener">Open panel</a>
+  <a class="ghost link" data-test="diagram-panel" href={panelHref} target="_blank" rel="noopener">{tr('diagrambar.open_panel')}</a>
   <div class="spacer"></div>
-  <span class="run-state mono" data-test="diagram-state" data-state={runState}>{runState}{waiting.length ? ` before ${nodeName(waiting[0]!.replace(/^(wire:|diagram:)/, ''))}` : ''}</span>
+  <span class="run-state mono" data-test="diagram-state" data-state={runState}>{tr('diagrambar.state_' + runState)}{waiting.length ? ' ' + tr('diagrambar.before_node', { name: nodeName(waiting[0]!.replace(/^(wire:|diagram:)/, '')) }) : ''}</span>
   {#if warnings.length}
-    <button class="ghost" data-test="diagram-warnings" title="What this diagram does that is worth knowing before you deploy it" onclick={() => (notesOpen = !notesOpen)}>{warnings.length} note{warnings.length === 1 ? '' : 's'}</button>
+    <button class="ghost" data-test="diagram-warnings" title={tr('diagrambar.what_this_diagram_does_that')} onclick={() => (notesOpen = !notesOpen)}>{trn('diagrambar.notes', warnings.length)}</button>
   {/if}
   {#if problems.length}
-    <button class="ghost bad" data-test="diagram-problems" onclick={() => (listOpen = !listOpen)}>{problems.length} problem{problems.length === 1 ? '' : 's'}</button>
+    <button class="ghost bad" data-test="diagram-problems" onclick={() => (listOpen = !listOpen)}>{trn('diagrambar.problems', problems.length)}</button>
   {/if}
 </div>
 {#if error}
@@ -67,14 +68,14 @@
 {#if listOpen && problems.length}
   <ul class="diagram-problems" data-test="diagram-problem-list">
     {#each problems as p}
-      <li><button class="ghost" onclick={() => p.node && onproblem(p.node)}>{p.node ? nodeName(p.node) : 'Diagram'}{p.port ? `, input ${p.port}` : ''}: {p.text}</button></li>
+      <li><button class="ghost" onclick={() => p.node && onproblem(p.node)}>{p.node ? nodeName(p.node) : tr('diagrambar.diagram')}{p.port ? tr('diagrambar.input_n', { n: p.port }) : ''}: {p.text}</button></li>
     {/each}
   </ul>
 {/if}
 {#if notesOpen && warnings.length}
   <ul class="diagram-problems" data-test="diagram-warning-list">
     {#each warnings as p}
-      <li><button class="ghost" onclick={() => p.node && onproblem(p.node)}>{p.node ? nodeName(p.node) : 'Diagram'}: {p.text}</button></li>
+      <li><button class="ghost" onclick={() => p.node && onproblem(p.node)}>{p.node ? nodeName(p.node) : tr('diagrambar.diagram')}: {p.text}</button></li>
     {/each}
   </ul>
 {/if}

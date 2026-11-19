@@ -4,6 +4,7 @@
 // The dialogs and the report panel are Svelte components.
 
 import type { TestReport } from './api';
+import { serverText, tr } from './i18n.svelte';
 
 /** How a node came out of the last run. */
 export interface TestMark {
@@ -22,14 +23,14 @@ export function marksFrom(report: TestReport): Map<string, TestMark> {
   for (const t of tests) {
     if (t.status !== 'pass') continue;
     for (const id of t.nodes ?? []) {
-      marks.set(id, { state: 'pass', title: `passed: ${t.name}` });
+      marks.set(id, { state: 'pass', title: tr('lib.test_passed', { name: t.name }) });
     }
   }
   for (const t of tests) {
     for (const p of t.problems ?? []) {
       if (!p.node) continue;
       const was = marks.get(p.node);
-      const line = `${t.name}: ${p.message.split('\n')[0]}`;
+      const line = `${t.name}: ${serverText(p.message.split('\n')[0] ?? '')}`;
       marks.set(p.node, {
         state: 'fail',
         title: was?.state === 'fail' ? `${was.title}\n${line}` : line,

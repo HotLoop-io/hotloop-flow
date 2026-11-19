@@ -1,0 +1,16 @@
+{
+  "title": "Dashboard",
+  "menu": "Menu",
+  "connection": "Connessione al server",
+  "tabs": "Schede",
+  "empty_1": "Non c'è ancora nulla in questa dashboard.",
+  "empty_2": "Aggiungi nodi ui_tab, ui_group e widget a un flusso e distribuiscilo.",
+  "decrease": "Diminuisci",
+  "increase": "Aumenta",
+  "value": "valore",
+  "switch": "interruttore",
+  "text": "testo",
+  "no_value": "nessun valore",
+  "no_data": "Nessun dato",
+  "language": "Lingua"
+}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from '../../lib/i18n.svelte';
   // Deploy doesn't deploy. It shows what deploying would change, drawn on the
   // canvas and listed in words, from the engine's own diff against what is live,
   // and asks for a note. The second button deploys. Nobody should push to a line
@@ -29,14 +30,14 @@
 </script>
 
 <section class="section review" data-test="review">
-  <div class="section-head"><h3>Review and deploy</h3></div>
+  <div class="section-head"><h3>{tr('panels.review.review_and_deploy')}</h3></div>
   <div class="section-body">
     <div class="mono review-summary" data-test="review-summary">{summarise(diff)}</div>
     <pre class="diff-text" data-test="review-text">{#each lines as ln, i (i)}<span class={ln.kind}>{ln.l}</span>{i < lines.length - 1 ? '\n' : ''}{/each}</pre>
-    <textarea placeholder="What changed and why. This goes in the deployment log." data-test="deploy-note" bind:this={box} bind:value={note}></textarea>
+    <textarea placeholder={tr('panels.review.what_changed_and_why_this')} data-test="deploy-note" bind:this={box} bind:value={note}></textarea>
     <div class="actions">
-      <button class="primary" data-test="deploy-confirm" disabled={deploying} onclick={() => ondeploy(note)}>{deploying ? 'Deploying…' : 'Deploy'}</button>
-      <button class="ghost" data-test="deploy-cancel" onclick={oncancel}>Keep editing</button>
+      <button class="primary" data-test="deploy-confirm" disabled={deploying} onclick={() => ondeploy(note)}>{deploying ? tr('panels.review.deploying') : tr('panels.review.deploy')}</button>
+      <button class="ghost" data-test="deploy-cancel" onclick={oncancel}>{tr('panels.review.keep_editing')}</button>
     </div>
   </div>
 </section>

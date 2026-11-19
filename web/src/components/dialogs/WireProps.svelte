@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from '../../lib/i18n.svelte';
   // A wire's settings: whether it is durable, and when it stops trying a message
   // its target refuses. The file keeps both per pair of nodes, so they hold for
   // every wire between the two.
@@ -21,30 +22,30 @@
     const typed = attempts == null ? '' : String(attempts).trim();
     if (durable && typed !== '') {
       tries = Number(typed);
-      if (!Number.isInteger(tries) || tries < 1) { error = 'Tries has to be a whole number of 1 or more, or blank.'; return; }
+      if (!Number.isInteger(tries) || tries < 1) { error = tr('dialogs.wireprops.tries_error'); return; }
     }
     graph.setWireSettings(from.id, to.id, { durable, attempts: tries });
     done(true);
   }
 </script>
 
-<Dialog title="Wire" backdropClose onclose={() => done(false)}>
-  <div class="field-help" data-test="wire-ends">{graph.label(from)} (output {port + 1}) to {graph.label(to)}</div>
-  <div class="field field-inline"><label><input type="checkbox" data-test="wire-durable" bind:this={box} bind:checked={durable} /> Durable</label></div>
+<Dialog title={tr('dialogs.wireprops.wire')} backdropClose onclose={() => done(false)}>
+  <div class="field-help" data-test="wire-ends">{tr('dialogs.wireprops.ends', { from: graph.label(from), n: port + 1, to: graph.label(to) })}</div>
+  <div class="field field-inline"><label><input type="checkbox" data-test="wire-durable" bind:this={box} bind:checked={durable} /> {tr('dialogs.wireprops.durable')}</label></div>
   <div class="field-help">
-    While the target keeps up, nothing is written. When it stops taking messages, this wire holds them on disk in order, and delivers them when it comes back, even across a restart.
+    {tr('dialogs.wireprops.while_the_target_keeps_up')}
   </div>
   <div class="field" style:opacity={durable ? '1' : '0.5'}>
-    <label>Give up on a message after this many tries</label>
-    <input type="number" min="1" step="1" placeholder="never" data-test="wire-attempts" disabled={!durable} bind:value={attempts} />
+    <label>{tr('dialogs.wireprops.give_up_on_a_message')}</label>
+    <input type="number" min="1" step="1" placeholder={tr('dialogs.wireprops.never')} data-test="wire-attempts" disabled={!durable} bind:value={attempts} />
     <div class="field-help">
-      Blank keeps trying one message for as long as the target refuses it, and nothing behind it is delivered. With a number, a message refused that many times goes to a Catch node as an error with the message attached, and the wire moves on.
+      {tr('dialogs.wireprops.blank_keeps_trying_one_message')}
     </div>
   </div>
   <div class="dialog-error" data-test="wire-error">{error}</div>
   {#snippet foot()}
     <div class="spacer"></div>
-    <button class="ghost" type="button" data-test="wire-cancel" onclick={() => done(false)}>Cancel</button>
-    <button class="primary" type="button" data-test="wire-done" onclick={save}>Done</button>
+    <button class="ghost" type="button" data-test="wire-cancel" onclick={() => done(false)}>{tr('dialogs.wireprops.cancel')}</button>
+    <button class="primary" type="button" data-test="wire-done" onclick={save}>{tr('dialogs.wireprops.done')}</button>
   {/snippet}
 </Dialog>
