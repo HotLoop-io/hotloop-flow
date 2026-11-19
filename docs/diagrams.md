@@ -56,6 +56,7 @@ The same things are an API for scripts and CI:
 | Call | What it does |
 |---|---|
 | `GET /diagrams`, `GET /diagrams/{id}` | What is deployed, the panel, the last value on every wire. |
+| `GET /diagrams/{id}/trace` | What the last run did, in order: every node that started or finished and every value that crossed a wire, with the milliseconds into the run. A diagram that has not run since it was deployed answers 404. |
 | `POST /diagrams/{id}/run`, `/stop`, `/debug` | Needs `diagram.run`. Each is in the audit log with who. |
 | `POST /diagrams/{id}/sub` | Send `{flows, nodes, name}` and get the flow file back with those nodes made into a sub-diagram. Reads and computes only; nothing is saved or deployed. |
 | `PUT /diagrams/{id}/controls/{node}` | Set a control. Checked against its kind, range and choices. |
@@ -391,6 +392,12 @@ place yet.
 ## Making a sub-diagram in the editor
 
 With nodes selected on a diagram, the bar's **Selection to sub-diagram** asks for a name, calls `POST /diagrams/{id}/sub` with the flow file the editor holds, and loads the answer as one undoable edit: the nodes move to a tab of their own and a sub-diagram node takes their place, with its inputs and outputs worked out from the wires that cross the selection. Nothing is saved until it is deployed.
+
+## Replaying a run
+
+Highlight execution slows a run down while it goes. **Replay last run**, at the bottom of the canvas, plays a run that is already over, from what it recorded, so you can follow it after the fact. It lights the wires and marks the nodes the way the live run did, one event at a time, at the speed you pick (Slow, Normal, Fast or Very fast), and when it ends the canvas shows what the run left. **Stop replay** ends it early. It changes nothing in the runtime and starts nothing: the button is off while a run is going, and a replay ends when you go to another tab.
+
+Every run records its node starts and finishes and every value that crossed a wire, up to 20,000 events. A longer run keeps its first 20,000, says so when you replay it, and the replay shows that beginning, because a replay that began in the middle would have nothing to start from. Values are kept as the short previews the wires show, so an array of thousands of samples is its length and its first few values. The recording is the last run's, and a new run replaces it; it is not saved across a restart. `GET /diagrams/{id}/trace` is the same recording for a script.
 
 ## Tidy layout
 

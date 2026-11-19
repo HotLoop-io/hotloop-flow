@@ -24,6 +24,7 @@ func (s *Server) diagramRoutes() {
 	run := func(h http.HandlerFunc) http.Handler { return s.auth(PermDiagramRun, h) }
 	s.mux.Handle("GET "+s.path("/diagrams"), read(s.handleDiagrams))
 	s.mux.Handle("GET "+s.path("/diagrams/{id}"), read(s.handleDiagram))
+	s.mux.Handle("GET "+s.path("/diagrams/{id}/trace"), read(s.handleDiagramTrace))
 	s.mux.Handle("POST "+s.path("/diagrams/{id}/run"), run(s.handleDiagramRun))
 	s.mux.Handle("POST "+s.path("/diagrams/{id}/stop"), run(s.handleDiagramStop))
 	s.mux.Handle("POST "+s.path("/diagrams/{id}/debug"), run(s.handleDiagramDebug))
@@ -136,6 +137,21 @@ func (s *Server) handleDiagram(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, d)
+}
+
+// handleDiagramTrace returns what the last run did, event by event, for the editor
+// to replay slowed down after the run is over.
+func (s *Server) handleDiagramTrace(w http.ResponseWriter, r *http.Request) {
+	t, err := s.deps.Diagrams.Trace(r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, diagram.ErrNoRun) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		s.diagramError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
 }
 
 func (s *Server) handleDiagramRun(w http.ResponseWriter, r *http.Request) {

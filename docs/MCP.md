@@ -6,7 +6,7 @@ looks at and change what the editor changes, with the token's own permissions an
 nothing past them. There is no read only mode: a server an agent can look at and
 not touch is a status page.
 
-There are 40 tools of Flow's own, beside the tools each flow serves through its
+There are 41 tools of Flow's own, beside the tools each flow serves through its
 `mcp tool` nodes. Every one is a route of the admin API. A call goes through the
 route's own handler, as the caller the endpoint signed in, so the validation, the
 change, the deployment history and the audit row are the route's, and a refusal
@@ -71,6 +71,7 @@ HotLoop's write gate and an instrument's own switch.
 |---|---|---|---|
 | `list_diagrams` | `GET /diagrams` | `status.read` | The diagrams in the flow file: each tab that runs as a diagram, with its id, whether it is running, its problems and its panel. |
 | `get_diagram` | `GET /diagrams/{id}` | `status.read` | One diagram: its nodes, wires, panel controls and indicators, and any problems that stop it from running. |
+| `get_diagram_trace` | `GET /diagrams/{id}/trace` | `status.read` | What the last run did, in order: every node start and finish and every value on a wire. Not found for a diagram that has not run since it was deployed. |
 | `run_diagram` | `POST /diagrams/{id}/run` | `diagram.run` | **Run** a diagram, as the editor's Run button does. Optional body: highlightMs, pause, breakpoints. |
 | `stop_diagram` | `POST /diagrams/{id}/stop` | `diagram.run` | **Stop** a running diagram. Nothing it already wrote to equipment is undone. |
 | `debug_diagram` | `POST /diagrams/{id}/debug` | `diagram.run` | Drive a running diagram's debugger: pause, resume, step-into, step-over, step-out or highlight. |

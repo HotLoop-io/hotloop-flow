@@ -19,6 +19,8 @@ var diagramTools = []routeTool{
 		perm: PermStatusRead, method: "GET", path: "/diagrams", handler: func(s *Server) http.HandlerFunc { return s.handleDiagrams }},
 	{name: "get_diagram", desc: "One diagram: its nodes, wires, panel controls and indicators, and any problems that stop it from running. The id comes from list_diagrams.",
 		perm: PermStatusRead, method: "GET", path: "/diagrams/{id}", pathArgs: []string{"id"}, handler: func(s *Server) http.HandlerFunc { return s.handleDiagram }},
+	{name: "get_diagram_trace", desc: "What the last run of a diagram did, in order: every node that started or finished and every value that crossed a wire, with the milliseconds into the run. It answers not found for a diagram that has not run since it was deployed. The editor replays it on the canvas.",
+		perm: PermStatusRead, method: "GET", path: "/diagrams/{id}/trace", pathArgs: []string{"id"}, handler: func(s *Server) http.HandlerFunc { return s.handleDiagramTrace }},
 	{name: "run_diagram", desc: "RUN a diagram: start it, as the editor's Run button does. What its nodes write to equipment goes through HotLoop's write gate, and who started the run is in the audit trail. Optional body: {highlightMs, pause, breakpoints}.",
 		perm: PermDiagramRun, method: "POST", path: "/diagrams/{id}/run", pathArgs: []string{"id"}, body: "optional: {highlightMs: how long a wire stays lit, pause: start paused, breakpoints: wire keys to stop at}",
 		handler: func(s *Server) http.HandlerFunc { return s.handleDiagramRun }},

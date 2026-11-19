@@ -16,6 +16,10 @@ import (
 // ErrNoDiagram is returned for a diagram id that is not deployed.
 var ErrNoDiagram = errors.New("no such diagram")
 
+// ErrNoRun is returned for the trace of a diagram that has not been run since the
+// flow file was deployed.
+var ErrNoRun = errors.New("this diagram has not been run since it was deployed")
+
 // ErrBusy is returned when a diagram already has a run going.
 var ErrBusy = errors.New("this diagram is already running")
 
@@ -275,6 +279,7 @@ func (m *Manager) Start(id string, opt StartOptions) (*Run, error) {
 		ID: fmt.Sprintf("%s-%d", id, m.nextRun), Diagram: id, Started: time.Now(),
 		set: set, mgr: m, cancel: cancel, done: make(chan struct{}), state: StateRunning,
 	}
+	r.rec.started = r.Started
 	r.ctl = newController(func(kind string, data map[string]any) { r.emit(kind, data) })
 	if opt.Breakpoints != nil {
 		m.breaks[id] = append([]string(nil), opt.Breakpoints...)
