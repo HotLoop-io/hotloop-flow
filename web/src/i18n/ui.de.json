@@ -513,5 +513,17 @@
   "dialogs.mfa.title_setup": "Anmeldung mit zwei Faktoren einrichten",
   "dialogs.mfa.title_on": "Die Anmeldung mit zwei Faktoren ist an",
   "dialogs.nodedialog.not_installed": "{type} ist in dieser Runtime nicht installiert. Seine Konfiguration wird als rohes JSON gezeigt und genau so erhalten, wie sie ist.",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "Letzte Ausführung wiedergeben",
+  "diagrambar.replay_title": "Die letzte Ausführung auf der Zeichenfläche noch einmal abspielen, verlangsamt, nach dem, was aufgezeichnet wurde",
+  "diagrambar.stop_replay": "Wiedergabe stoppen",
+  "diagrambar.replaying": "Wiedergabe {i} von {n}",
+  "diagrambar.replay_speed": "Geschwindigkeit",
+  "diagrambar.speed_slow": "Langsam",
+  "diagrambar.speed_normal": "Normal",
+  "diagrambar.speed_fast": "Schnell",
+  "diagrambar.speed_very_fast": "Sehr schnell",
+  "editor.replay_nothing": "Diese Ausführung hat nichts zum Wiedergeben aufgezeichnet.",
+  "editor.replay_truncated": "Diese Ausführung war länger als das, was aufbewahrt wird. Wiedergegeben werden ihre ersten {n} Ereignisse.",
+  "editor.replay_not_run": "Führen Sie das Diagramm einmal aus und geben Sie es dann wieder."
 }

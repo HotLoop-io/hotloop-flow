@@ -513,5 +513,17 @@
   "dialogs.mfa.title_setup": "दो-चरणीय साइन-इन सेट अप करें",
   "dialogs.mfa.title_on": "दो-चरणीय साइन-इन चालू है",
   "dialogs.nodedialog.not_installed": "{type} इस रनटाइम में इंस्टॉल नहीं है। इसका कॉन्फ़िगरेशन कच्चे JSON के रूप में दिखाया गया है और जैसा है वैसा ही सुरक्षित रहेगा।",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "पिछला निष्पादन फिर चलाएं",
+  "diagrambar.replay_title": "पिछले निष्पादन को कैनवास पर धीमी गति से, उसके रिकॉर्ड किए गए ब्योरे के आधार पर, फिर चलाएं",
+  "diagrambar.stop_replay": "फिर चलाना रोकें",
+  "diagrambar.replaying": "{n} में से {i} फिर चल रहा है",
+  "diagrambar.replay_speed": "गति",
+  "diagrambar.speed_slow": "धीमी",
+  "diagrambar.speed_normal": "सामान्य",
+  "diagrambar.speed_fast": "तेज़",
+  "diagrambar.speed_very_fast": "बहुत तेज़",
+  "editor.replay_nothing": "उस निष्पादन में फिर चलाने के लिए कुछ रिकॉर्ड नहीं हुआ।",
+  "editor.replay_truncated": "वह निष्पादन जितना सहेजा जाता है उससे लंबा था। फिर चलाने पर उसकी पहली {n} घटनाएं दिखती हैं।",
+  "editor.replay_not_run": "डायग्राम को एक बार चलाएं, फिर उसे दोबारा चलाकर देखें।"
 }

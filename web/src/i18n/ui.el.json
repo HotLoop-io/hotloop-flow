@@ -513,5 +513,17 @@
   "dialogs.mfa.title_setup": "Ρύθμιση σύνδεσης δύο παραγόντων",
   "dialogs.mfa.title_on": "Η σύνδεση δύο παραγόντων είναι ενεργή",
   "dialogs.nodedialog.not_installed": "Το {type} δεν είναι εγκατεστημένο σε αυτό το runtime. Η διαμόρφωσή του εμφανίζεται ως ακατέργαστο JSON και θα διατηρηθεί ακριβώς όπως είναι.",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "Επανάληψη τελευταίας εκτέλεσης",
+  "diagrambar.replay_title": "Αναπαραγωγή της τελευταίας εκτέλεσης ξανά στον καμβά, πιο αργά, από όσα κατέγραψε",
+  "diagrambar.stop_replay": "Διακοπή αναπαραγωγής",
+  "diagrambar.replaying": "Αναπαραγωγή {i} από {n}",
+  "diagrambar.replay_speed": "Ταχύτητα",
+  "diagrambar.speed_slow": "Αργά",
+  "diagrambar.speed_normal": "Κανονικό",
+  "diagrambar.speed_fast": "Γρήγορα",
+  "diagrambar.speed_very_fast": "Πολύ γρήγορα",
+  "editor.replay_nothing": "Αυτή η εκτέλεση δεν κατέγραψε τίποτα για αναπαραγωγή.",
+  "editor.replay_truncated": "Αυτή η εκτέλεση ήταν μεγαλύτερη από όσα διατηρούνται. Αναπαράγονται τα πρώτα {n} συμβάντα.",
+  "editor.replay_not_run": "Εκτελέστε το διάγραμμα μία φορά και μετά αναπαραγάγετέ το."
 }

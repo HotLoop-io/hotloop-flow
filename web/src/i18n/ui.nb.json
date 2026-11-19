@@ -513,5 +513,17 @@
   "dialogs.mfa.title_setup": "Sett opp innlogging med to faktorer",
   "dialogs.mfa.title_on": "Innlogging med to faktorer er på",
   "dialogs.nodedialog.not_installed": "{type} er ikke installert i denne kjøretiden. Konfigurasjonen vises som rå JSON og blir bevart nøyaktig slik den er.",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "Spill av siste kjøring",
+  "diagrambar.replay_title": "Spill av den siste kjøringen på lerretet igjen, saktere, ut fra det som ble tatt opp",
+  "diagrambar.stop_replay": "Stopp avspilling",
+  "diagrambar.replaying": "Spiller av {i} av {n}",
+  "diagrambar.replay_speed": "Hastighet",
+  "diagrambar.speed_slow": "Sakte",
+  "diagrambar.speed_normal": "Normal",
+  "diagrambar.speed_fast": "Rask",
+  "diagrambar.speed_very_fast": "Veldig rask",
+  "editor.replay_nothing": "Den kjøringen tok ikke opp noe å spille av.",
+  "editor.replay_truncated": "Den kjøringen var lengre enn det som lagres. Avspillingen viser de første {n} hendelsene.",
+  "editor.replay_not_run": "Kjør diagrammet én gang, og spill det så av."
 }

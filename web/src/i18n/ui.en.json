@@ -513,5 +513,17 @@
   "dialogs.mfa.title_setup": "Set up two-factor sign-in",
   "dialogs.mfa.title_on": "Two-factor sign-in is on",
   "dialogs.nodedialog.not_installed": "{type} is not installed in this runtime. Its configuration is shown as raw JSON and will be preserved exactly as it is.",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "Replay last run",
+  "diagrambar.replay_title": "Play the last run again on the canvas, slowed down, from what it recorded",
+  "diagrambar.stop_replay": "Stop replay",
+  "diagrambar.replaying": "Replaying {i} of {n}",
+  "diagrambar.replay_speed": "Speed",
+  "diagrambar.speed_slow": "Slow",
+  "diagrambar.speed_normal": "Normal",
+  "diagrambar.speed_fast": "Fast",
+  "diagrambar.speed_very_fast": "Very fast",
+  "editor.replay_nothing": "That run recorded nothing to replay.",
+  "editor.replay_truncated": "That run was longer than what is kept. This replays its first {n} events.",
+  "editor.replay_not_run": "Run the diagram once, then replay it."
 }

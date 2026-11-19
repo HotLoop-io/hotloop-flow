@@ -132,10 +132,11 @@ func init() {
 			InputPorts: []string{"row", "err?"}, OutputPorts: []string{"sent", "err"},
 			Props: []node.Prop{
 				{Name: "server", Label: "Server", Kind: node.PropConfigRef, ConfigType: "hotloop-flow-postgres", Required: true},
-				{Name: "table", Label: "Table", Kind: node.PropString, Required: true, Help: "A schema-qualified name such as public.readings is fine."},
+				{Name: "table", Label: "Table", Kind: node.PropString, Required: true, Help: "Schema-qualified names are allowed, e.g. public.readings."},
 				prop("columns", "Columns, comma separated (empty for the record's fields in order of name)", node.PropString, ""),
 				prop("timeColumn", "Column for the time the row was made (empty for none)", node.PropString, ""),
-				choice("onConflict", "On conflict", "error", "error", "nothing"),
+				{Name: "onConflict", Label: "On conflict", Kind: node.PropSelect, Default: "error", Options: []node.Option{
+					{Value: "error", Label: "Raise an error"}, {Value: "nothing", Label: "Skip the row"}}},
 				{Name: "durable", Label: "Keep what the database misses", Kind: node.PropBool, Default: false,
 					Help: "When the database is down, rows are written to disk and inserted, in order, when it is back. They survive a restart. Without this, a row the database misses is an error on the error wire and is gone."},
 			},

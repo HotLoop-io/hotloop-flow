@@ -4,6 +4,8 @@
  "node.complete.compat",
  "node.csv.compat",
  "node.delay.compat",
+ "node.dia-postgres-out.help",
+ "node.dia-postgres-out.prop.durable.help",
  "node.e-mail.compat",
  "node.ethernetip read.compat",
  "node.ethernetip write.compat",

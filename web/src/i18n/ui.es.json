@@ -513,5 +513,17 @@
   "dialogs.mfa.title_setup": "Configurar el inicio de sesión en dos pasos",
   "dialogs.mfa.title_on": "El inicio de sesión en dos pasos está activado",
   "dialogs.nodedialog.not_installed": "{type} no está instalado en este runtime. Su configuración se muestra como JSON sin procesar y se conservará exactamente como está.",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "Repetir la última ejecución",
+  "diagrambar.replay_title": "Reproducir de nuevo en el lienzo la última ejecución, más despacio, a partir de lo que registró",
+  "diagrambar.stop_replay": "Detener la repetición",
+  "diagrambar.replaying": "Repitiendo {i} de {n}",
+  "diagrambar.replay_speed": "Velocidad",
+  "diagrambar.speed_slow": "Lenta",
+  "diagrambar.speed_normal": "Normal",
+  "diagrambar.speed_fast": "Rápida",
+  "diagrambar.speed_very_fast": "Muy rápida",
+  "editor.replay_nothing": "Esa ejecución no registró nada que repetir.",
+  "editor.replay_truncated": "Esa ejecución fue más larga de lo que se conserva. Se repiten sus primeros {n} eventos.",
+  "editor.replay_not_run": "Ejecute el diagrama una vez y luego repítalo."
 }

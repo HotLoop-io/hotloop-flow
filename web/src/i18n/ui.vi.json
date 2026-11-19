@@ -493,5 +493,17 @@
   "dialogs.mfa.title_setup": "Thiết lập đăng nhập hai bước",
   "dialogs.mfa.title_on": "Đăng nhập hai bước đang bật",
   "dialogs.nodedialog.not_installed": "{type} chưa được cài trong runtime này. Cấu hình của nó được hiển thị dưới dạng JSON thô và sẽ được giữ nguyên như hiện có.",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "Phát lại lần chạy gần nhất",
+  "diagrambar.replay_title": "Phát lại lần chạy gần nhất trên canvas, chậm hơn, từ những gì nó đã ghi lại",
+  "diagrambar.stop_replay": "Dừng phát lại",
+  "diagrambar.replaying": "Đang phát lại {i} trên {n}",
+  "diagrambar.replay_speed": "Tốc độ",
+  "diagrambar.speed_slow": "Chậm",
+  "diagrambar.speed_normal": "Bình thường",
+  "diagrambar.speed_fast": "Nhanh",
+  "diagrambar.speed_very_fast": "Rất nhanh",
+  "editor.replay_nothing": "Lần chạy đó không ghi lại gì để phát lại.",
+  "editor.replay_truncated": "Lần chạy đó dài hơn phần được lưu. Bản phát lại cho thấy {n} sự kiện đầu tiên.",
+  "editor.replay_not_run": "Chạy sơ đồ một lần, rồi phát lại."
 }

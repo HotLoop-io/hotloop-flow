@@ -513,5 +513,17 @@
   "dialogs.mfa.title_setup": "Configura l'accesso a due fattori",
   "dialogs.mfa.title_on": "L'accesso a due fattori è attivo",
   "dialogs.nodedialog.not_installed": "{type} non è installato in questo runtime. La sua configurazione è mostrata come JSON grezzo e verrà conservata esattamente com'è.",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "Riproduci l'ultima esecuzione",
+  "diagrambar.replay_title": "Riprodurre di nuovo sulla tela l'ultima esecuzione, più lentamente, da ciò che ha registrato",
+  "diagrambar.stop_replay": "Interrompi la riproduzione",
+  "diagrambar.replaying": "Riproduzione {i} di {n}",
+  "diagrambar.replay_speed": "Velocità",
+  "diagrambar.speed_slow": "Lenta",
+  "diagrambar.speed_normal": "Normale",
+  "diagrambar.speed_fast": "Veloce",
+  "diagrambar.speed_very_fast": "Molto veloce",
+  "editor.replay_nothing": "Quell'esecuzione non ha registrato nulla da riprodurre.",
+  "editor.replay_truncated": "Quell'esecuzione è più lunga di quanto viene conservato. Vengono riprodotti i primi {n} eventi.",
+  "editor.replay_not_run": "Eseguire il diagramma una volta, poi riprodurlo."
 }

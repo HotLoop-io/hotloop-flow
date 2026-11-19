@@ -593,5 +593,17 @@
   "graph.subflow_in_use_zero": "لا نسخ قيد الاستخدام.",
   "graph.subflow_in_use_two": "نسختان ما زالتا قيد الاستخدام. احذفهما أولًا.",
   "graph.subflow_in_use_few": "{n} نسخ ما زالت قيد الاستخدام. احذفها أولًا.",
-  "graph.subflow_in_use_many": "{n} نسخة ما زالت قيد الاستخدام. احذفها أولًا."
+  "graph.subflow_in_use_many": "{n} نسخة ما زالت قيد الاستخدام. احذفها أولًا.",
+  "diagrambar.replay_last_run": "إعادة عرض آخر تنفيذ",
+  "diagrambar.replay_title": "إعادة تشغيل آخر تنفيذ على اللوحة بسرعة أبطأ، اعتمادًا على ما سجّله",
+  "diagrambar.stop_replay": "إيقاف إعادة العرض",
+  "diagrambar.replaying": "إعادة العرض {i} من {n}",
+  "diagrambar.replay_speed": "السرعة",
+  "diagrambar.speed_slow": "بطيئة",
+  "diagrambar.speed_normal": "طبيعي",
+  "diagrambar.speed_fast": "سريعة",
+  "diagrambar.speed_very_fast": "سريعة جدًا",
+  "editor.replay_nothing": "لم يسجّل ذلك التنفيذ شيئًا لإعادة عرضه.",
+  "editor.replay_truncated": "كان ذلك التنفيذ أطول مما يُحتفظ به. تعرض إعادة العرض أول {n} حدثًا.",
+  "editor.replay_not_run": "شغّل المخطط مرة واحدة ثم أعد عرضه."
 }

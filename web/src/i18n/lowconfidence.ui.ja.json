@@ -1,6 +1,7 @@
 [
  "diagrambar.break_on_selected",
  "diagrambar.clear_breakpoint",
+ "diagrambar.speed_normal",
  "diagrambar.step_into",
  "diagrambar.step_out",
  "diagrambar.step_over",
