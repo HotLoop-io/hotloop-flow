@@ -100,7 +100,7 @@ LABEL org.opencontainers.image.title="HotLoop Flow" \
       org.opencontainers.image.description="A visual flow engine for the plant floor. One static Go binary." \
       org.opencontainers.image.vendor="HotLoop" \
       org.opencontainers.image.source="https://github.com/HotLoop-io/hotloop-flow" \
-      org.opencontainers.image.licenses="LicenseRef-EmberNet-Source-1.0"
+      org.opencontainers.image.licenses="LicenseRef-HotLoop-Source-1.0"
 
 COPY --from=builder /out/hotloop-flow /usr/local/bin/hotloop-flow
 
