@@ -210,7 +210,7 @@ biggest hole in a product built for plants.
       `instrument.write`). Until now the diagram routes had no tool, so an agent
       could deploy a diagram and not run it. Every admin route is now a tool or
       is named in a test as one a person has to make, and the test fails when a
-      new route is added without one. 43 tools now, with the stations and trace ones
+      new route is added without one. 44 tools now, with the stations, failover and trace ones
 
 ### Phase 8: the editor, rewritten in Astro
 
