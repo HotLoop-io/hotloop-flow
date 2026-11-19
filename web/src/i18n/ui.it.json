@@ -525,5 +525,7 @@
   "diagrambar.speed_very_fast": "Molto veloce",
   "editor.replay_nothing": "Quell'esecuzione non ha registrato nulla da riprodurre.",
   "editor.replay_truncated": "Quell'esecuzione è più lunga di quanto viene conservato. Vengono riprodotti i primi {n} eventi.",
-  "editor.replay_not_run": "Eseguire il diagramma una volta, poi riprodurlo."
+  "editor.replay_not_run": "Eseguire il diagramma una volta, poi riprodurlo.",
+  "editor.failover_standby": "Questa installazione è quella di riserva. Esegue i flussi, ma trattiene le scritture verso le apparecchiature finché non prende il lease da {owner}.",
+  "editor.failover_lost": "Questa installazione ha perso il lease e trattiene le scritture verso le apparecchiature. {owner} potrebbe star scrivendo ora."
 }

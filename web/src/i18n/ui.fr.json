@@ -525,5 +525,7 @@
   "diagrambar.speed_very_fast": "Très rapide",
   "editor.replay_nothing": "Cette exécution n'a rien enregistré à rejouer.",
   "editor.replay_truncated": "Cette exécution est plus longue que ce qui est conservé. La relecture montre ses {n} premiers événements.",
-  "editor.replay_not_run": "Exécutez le diagramme une fois, puis rejouez-le."
+  "editor.replay_not_run": "Exécutez le diagramme une fois, puis rejouez-le.",
+  "editor.failover_standby": "Cette installation est la réserve. Elle exécute les flux, mais retient ses écritures vers les équipements jusqu'à ce qu'elle reprenne le bail de {owner}.",
+  "editor.failover_lost": "Cette installation a perdu le bail et retient ses écritures vers les équipements. {owner} peut être en train d'écrire."
 }

@@ -352,10 +352,14 @@ but plenty of people drop one that doesn't.
 
 ## Later
 
-- [ ] Active/standby: a lease, context in Postgres, and a failover that is
-      proven not to double-write to a PLC. Not before durable wires and
-      persistent context, because a split brain writing to equipment is worse
-      than a restart
+- [x] Active/standby: a lease in a PostgreSQL with a fencing number, a fence on
+      every write to equipment, and a standby that holds its writes until it
+      takes the lease over ([failover.md](failover.md)). Proven on two real
+      Flow processes against a real PostgreSQL and a Modbus server that logs
+      every write: killed mid stream, frozen and thawed, and stopped cleanly,
+      with no write from both. The context stays on each install's disk and
+      not in Postgres, which was the first sketch and is not needed to keep
+      two writers apart
 
 ## Decided
 

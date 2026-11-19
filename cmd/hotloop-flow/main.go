@@ -250,6 +250,18 @@ func cmdServe(args []string) error {
 	contexts := store.NewScopedContexts()
 	var extraMetrics []metrics.Family
 	extraMetrics = append(extraMetrics, spool.Families()...)
+
+	// Failover: before any flow starts, so the first write an instance could make
+	// is already asked about. It knows whether it is the writer or the standby
+	// before it returns.
+	failover, err := startFailover(context.Background(), cfg, log)
+	if err != nil {
+		return err
+	}
+	if failover != nil {
+		defer failover.Close()
+		extraMetrics = append(extraMetrics, failover.Families()...)
+	}
 	if cfg.Store.Context.Persist {
 		pc := store.NewPersistentContexts(stateDB, cfg.Store.Context.FlushInterval)
 		defer pc.Close()
@@ -375,6 +387,7 @@ func cmdServe(args []string) error {
 		Version:      version,
 		Diagrams:     app.diagrams,
 		Stations:     app.stationsService(),
+		Failover:     failoverStatus(failover),
 	})
 	app.hub = srv.Hub()
 	// A diagram reaches the same brokers the flows do, and the same durable store.

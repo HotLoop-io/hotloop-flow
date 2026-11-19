@@ -86,6 +86,7 @@ func TestAnAgentDeploysAFlowThroughMCPAndItRuns(t *testing.T) {
 		d.Diagrams = app.diagrams
 		d.Instruments = switches
 		d.Stations = app.stationsService()
+		d.Failover = stubFailover{}
 	})
 	agent := mcpSession(t, e, e.login(t, "agent"))
 

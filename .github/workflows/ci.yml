@@ -648,7 +648,8 @@ jobs:
             echo "::error::a chart config test skipped"; exit 1
           fi
           for t in TestChartDefaultsAreTheConfigDefaults TestChartTraceAndStoreValuesReachTheConfig \
-                   TestChartPluginsAreOffByDefault TestChartPluginsValuesReachTheConfig; do
+                   TestChartPluginsAreOffByDefault TestChartPluginsValuesReachTheConfig \
+                   TestChartFailoverIsOffByDefaultAndItsValuesReachTheConfig; do
             echo "$OUT" | grep -q -- "--- PASS: $t" || { echo "::error::$t did not pass"; exit 1; }
           done
 

@@ -1038,6 +1038,9 @@ func (n *modbusWriteNode) Receive(ctx context.Context, m *engine.Msg, out node.E
 		return n.fail(out, fmt.Errorf("value resolved to nothing, so there is nothing to write. "+
 			"Check the Value field, which reads %s %q", n.value.Type, n.value.Value))
 	}
+	if err := fenceWrite(n.svc, "modbus write"); err != nil {
+		return n.fail(out, err)
+	}
 	if n.gate != nil {
 		return n.gate.write(ctx, m, raw, out, n.fail)
 	}

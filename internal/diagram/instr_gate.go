@@ -3,12 +3,17 @@ package diagram
 import (
 	"strings"
 
+	"github.com/HotLoop-io/hotloop-flow/internal/fence"
 	"github.com/HotLoop-io/hotloop-flow/internal/instruments"
 )
 
 // CodeInstrument is the error code of a write to an instrument whose writes are
 // switched off.
 const CodeInstrument = 5007
+
+// CodeFenced is the error code of a write this instance may not make because it is
+// the standby, or its lease is running out. See internal/fence.
+const CodeFenced = 5008
 
 // InstrumentGate is what a diagram asks before it writes to an instrument.
 type InstrumentGate interface {
@@ -58,6 +63,9 @@ func isWriteCommand(cmd string) bool {
 // lets the write through only when that instrument's writes are on, and it leaves
 // an audit row either way, with the diagram and the node.
 func (m *Manager) guardWrite(rc *Ctx, instrument, what string) error {
+	if err := fence.Check("instrument write"); err != nil {
+		return &Fault{Code: CodeFenced, Source: "not written to " + instrument + ": " + err.Error()}
+	}
 	who := "flow:" + rc.Diagram.ID + "/" + rc.Node.ID
 	m.mu.Lock()
 	gate, audit := m.services.Instruments, m.services.Audit

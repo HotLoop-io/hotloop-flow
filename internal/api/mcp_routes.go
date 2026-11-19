@@ -160,7 +160,7 @@ func (t routeTool) run(s *Server, ctx context.Context, caller string, args map[s
 
 // allRouteTools is every tool that is one row over one admin route.
 func allRouteTools() []routeTool {
-	return append(append(append(append([]routeTool(nil), routeTools...), diagramTools...), instrumentTools...), stationTools...)
+	return append(append(append(append(append([]routeTool(nil), routeTools...), diagramTools...), instrumentTools...), stationTools...), failoverTools...)
 }
 
 func init() {

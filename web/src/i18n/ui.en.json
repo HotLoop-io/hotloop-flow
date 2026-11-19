@@ -525,5 +525,7 @@
   "diagrambar.speed_very_fast": "Very fast",
   "editor.replay_nothing": "That run recorded nothing to replay.",
   "editor.replay_truncated": "That run was longer than what is kept. This replays its first {n} events.",
-  "editor.replay_not_run": "Run the diagram once, then replay it."
+  "editor.replay_not_run": "Run the diagram once, then replay it.",
+  "editor.failover_standby": "This install is the standby. It runs the flows but holds its equipment writes until it takes the lease over from {owner}.",
+  "editor.failover_lost": "This install lost the lease, so it is holding its equipment writes. {owner} may be writing now."
 }

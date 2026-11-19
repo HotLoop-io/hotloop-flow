@@ -6,7 +6,7 @@ looks at and change what the editor changes, with the token's own permissions an
 nothing past them. There is no read only mode: a server an agent can look at and
 not touch is a status page.
 
-There are 43 tools of Flow's own, beside the tools each flow serves through its
+There are 44 tools of Flow's own, beside the tools each flow serves through its
 `mcp tool` nodes. Every one is a route of the admin API. A call goes through the
 route's own handler, as the caller the endpoint signed in, so the validation, the
 change, the deployment history and the audit row are the route's, and a refusal
@@ -79,6 +79,7 @@ HotLoop's write gate and an instrument's own switch.
 | `set_diagram_breakpoints` | `PUT /diagrams/{id}/breakpoints` | `diagram.run` | Set the wires a diagram stops at, kept for the next run too. |
 | `set_diagram_probes` | `PUT /diagrams/{id}/probes` | `diagram.run` | Choose the wires a diagram records values on, and how many it keeps. |
 | `extract_sub_diagram` | `POST /diagrams/{id}/sub` | `status.read` | Make a sub-diagram out of some nodes and answer the new flow file. Nothing is saved or deployed. |
+| `get_failover` | `GET /failover` | `status.read` | Whether this install is the writer or the standby of a failover pair: its role, the lease holder, the fencing number it holds, and the equipment writes it has held back. Only where failover is set up. |
 | `list_stations` | `GET /stations` | `flows.read` | The HotLoop Flow installs EmberNet shows as running for this instance's tenant, which are the stations a push goes to. Only where the stations settings are set. |
 | `push_to_stations` | `POST /stations/push` | `flows.write` | **Push** a flow file to every station of the tenant, one at a time, each checked, a failed one put back and the push stopped. A push that would restart a running logger changes nothing unless `confirmRestart` is true or a window that holds now is given. |
 | `list_instruments` | `GET /instruments` | `status.read` | The instruments the deployed diagrams would write to, and whether each one's writes are on. |

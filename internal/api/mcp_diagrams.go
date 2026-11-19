@@ -53,6 +53,12 @@ var stationTools = []routeTool{
 		handler: func(s *Server) http.HandlerFunc { return s.handleStationsPush }},
 }
 
+// The tool for the failover pair, served only where failover is set up.
+var failoverTools = []routeTool{
+	{name: "get_failover", desc: "Whether this install is the writer or the standby of a failover pair: its role, the lease holder, the fencing number it holds, and how many equipment writes it has held back, by what was writing.",
+		perm: PermStatusRead, method: "GET", path: "/failover", handler: func(s *Server) http.HandlerFunc { return s.handleFailover }},
+}
+
 var instrumentTools = []routeTool{
 	{name: "list_instruments", desc: "The instruments the deployed diagrams would write to, and whether each one's writes are on. Every instrument starts with writes off.",
 		perm: PermStatusRead, method: "GET", path: "/instruments", handler: func(s *Server) http.HandlerFunc { return s.handleInstruments }},
@@ -70,6 +76,9 @@ var toolNeeds = func() map[string]func(*Server) bool {
 	}
 	for _, t := range instrumentTools {
 		m[t.name] = func(s *Server) bool { return s.deps.Instruments != nil }
+	}
+	for _, t := range failoverTools {
+		m[t.name] = func(s *Server) bool { return s.deps.Failover != nil }
 	}
 	for _, t := range stationTools {
 		m[t.name] = func(s *Server) bool { return s.deps.Stations != nil }

@@ -505,5 +505,7 @@
   "diagrambar.speed_very_fast": "很快",
   "editor.replay_nothing": "该次运行没有可回放的记录。",
   "editor.replay_truncated": "该次运行比保留的内容更长。回放显示它的前 {n} 个事件。",
-  "editor.replay_not_run": "请先运行一次图表，再回放。"
+  "editor.replay_not_run": "请先运行一次图表，再回放。",
+  "editor.failover_standby": "此安装是备用节点。它运行流程，但在从 {owner} 接管租约之前，会暂停对设备的写入。",
+  "editor.failover_lost": "此安装已失去租约，正在暂停对设备的写入。此时可能由 {owner} 在写入。"
 }

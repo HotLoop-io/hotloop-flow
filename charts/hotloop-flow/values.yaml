@@ -366,6 +366,32 @@ stations:
     name: ""
     key: token
 
+# ── Failover: a warm standby with a lease ────────────────────────────────────
+# Two installs of this chart, with the same lease name, make a failover pair. One
+# holds a lease in a PostgreSQL both can reach and is the only one that writes to
+# equipment; the other runs the same flows and holds its equipment writes until it
+# takes the lease over (docs/failover.md). Install the chart twice (two Helm
+# releases, each with its own volume) and keep the second on the same flow file
+# with a push to stations. It stays off until a Secret holding the lease
+# database's URL is named, and replicaCount stays 1 in each release.
+failover:
+  # A Secret with a key that holds a PostgreSQL URL, for example
+  # postgres://user:password@host:5432/db?sslmode=require. It is mounted as a
+  # file and never touches the ConfigMap.
+  urlSecret:
+    name: ""
+    key: url
+  # The lease. The same on both installs.
+  name: flow
+  # How long a grant lasts. A standby can take over once it has run out, so this is
+  # about the failover time. The holder asks again every renewEvery (empty is a
+  # third of ttl) and a write needs writeMargin of lease left, which is the longest
+  # a write may take: keep protocol timeouts under it. The render is refused when
+  # the holder would dip under its margin between renewals.
+  ttl: 15s
+  renewEvery: ""
+  writeMargin: 5s
+
 # ── Audit trail ──────────────────────────────────────────────────────────────
 # /data/audit.log: who did what in the editor. Rotates, so it cannot fill the
 # volume.
