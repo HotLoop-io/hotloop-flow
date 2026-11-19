@@ -1,5 +1,5 @@
 HotLoop Flow
-Copyright 2026 HotLoop
+Copyright 2026 HotLoop LLC
 
 This product includes software developed by HotLoop (https://hotloop.io).
 
@@ -8,7 +8,7 @@ HotLoop Flow is licensed under the HotLoop Source License Agreement 1.0
 copy of the canonical text in HotLoop-io/HotLoop-io (LICENSE.md). Where they
 ever disagree, the canonical copy wins. Releases from before the move to the
 HotLoop Source License Agreement were published under their own earlier terms, the
-EmberNet Source License 1.0 and the Business Source License 1.1 among them, and those terms stay with those copies.
+Business Source License 1.1 among them, and those terms stay with those copies.
 
 The HotLoop Source License Agreement covers HotLoop's own code. It does not relicense
 anyone else's. Everything below keeps the license it came under, and the ported
