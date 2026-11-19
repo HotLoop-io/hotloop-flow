@@ -262,6 +262,7 @@ kbd { font: 600 var(--hl-fs-2xs)/1 var(--hl-font-mono); color: var(--hl-ink-soft
 .test-badge.fail circle { fill: var(--hl-danger); }
 .test-badge text { fill: var(--hl-on-accent); font-size: 11px; font-weight: 800; pointer-events: none; }
 
+.failover-banner { position: absolute; top: 0; left: 0; right: 0; z-index: 7; padding: var(--hl-s2) var(--hl-s4); background: var(--hl-warn-tint, #fdf0d5); color: var(--hl-ink); border-bottom: 1px solid var(--hl-border); font-weight: 600; text-align: center; }
 .toast {
   position: absolute; left: 50%; bottom: var(--hl-s4); transform: translateX(-50%); z-index: 6; max-width: calc(100% - 32px);
   padding: var(--hl-s2) var(--hl-s4); background: var(--hl-ink); color: var(--hl-bg);

@@ -1297,7 +1297,7 @@ constructor-chain escape to prove it reaches nothing.
 The FlowLab row is a different kind of node. It runs on a tab that is a diagram, where
 a node runs once when every input has a value, and never takes a message. What
 FlowLab is, and how its loops, error wire, panel and debugger work, is
-[docs/diagrams.md](docs/diagrams.md). One flow file, and so one set of diagrams, can be pushed to every Flow install a tenant runs in EmberNet, each checked and a failed one put back: [docs/stations.md](docs/stations.md).
+[docs/diagrams.md](docs/diagrams.md). One flow file, and so one set of diagrams, can be pushed to every Flow install a tenant runs in EmberNet, each checked and a failed one put back: [docs/stations.md](docs/stations.md). Two installs can share the job of one, with a lease and a fence on every write to equipment so only one writes: [docs/failover.md](docs/failover.md).
 
 ### Telling people, and Kafka
 
@@ -1711,7 +1711,7 @@ sits, and `mcp result` hands what it would have answered to the test as
 ### Flow's own tools
 
 An agent that could only call what a flow author wired up could not see the
-flows or change them, so Flow serves 43 tools of its own at the same `/mcp`,
+flows or change them, so Flow serves 44 tools of its own at the same `/mcp`,
 beside the flows' tools. They read and they write. Seven are about the flows, in
 the table below, and the rest are the admin API's other routes: the settings, the
 palette, the audit log, deployment detail and diffs, the export, the flow tests,

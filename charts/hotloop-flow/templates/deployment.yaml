@@ -192,6 +192,11 @@ spec:
               mountPath: /etc/hotloop-flow-stations
               readOnly: true
             {{- end }}
+            {{- if .Values.failover.urlSecret.name }}
+            - name: failover
+              mountPath: /etc/hotloop-flow-failover
+              readOnly: true
+            {{- end }}
             {{- range $i, $m := .Values.secrets.mounts }}
             - name: secret-{{ $i }}
               mountPath: {{ required "secrets.mounts[].mountPath is required" $m.mountPath }}
@@ -230,6 +235,16 @@ spec:
                   items:
                     - key: {{ .Values.stations.deployTokenSecret.key }}
                       path: deploy-token
+        {{- end }}
+        {{- if .Values.failover.urlSecret.name }}
+        # The lease database's URL, as a file only this app's group can read.
+        - name: failover
+          secret:
+            secretName: {{ .Values.failover.urlSecret.name }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.failover.urlSecret.key }}
+                path: url
         {{- end }}
         {{- range $i, $m := .Values.secrets.mounts }}
         # Group-readable only: fsGroup gives the app the group, and nobody

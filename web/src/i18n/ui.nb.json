@@ -525,5 +525,7 @@
   "diagrambar.speed_very_fast": "Veldig rask",
   "editor.replay_nothing": "Den kjøringen tok ikke opp noe å spille av.",
   "editor.replay_truncated": "Den kjøringen var lengre enn det som lagres. Avspillingen viser de første {n} hendelsene.",
-  "editor.replay_not_run": "Kjør diagrammet én gang, og spill det så av."
+  "editor.replay_not_run": "Kjør diagrammet én gang, og spill det så av.",
+  "editor.failover_standby": "Denne installasjonen er reserven. Den kjører flytene, men holder tilbake skrivingen til utstyr til den overtar leasen fra {owner}.",
+  "editor.failover_lost": "Denne installasjonen mistet leasen og holder tilbake skrivingen til utstyr. {owner} kan skrive nå."
 }

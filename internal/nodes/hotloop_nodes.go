@@ -590,6 +590,9 @@ func (n *hotloopScriptNode) Receive(ctx context.Context, m *engine.Msg, out node
 		return n.fail(out, err)
 	}
 	reason := hotloopReason(n.id, n.reason)
+	if err := fenceWrite(n.svc, "hotloop script"); err != nil {
+		return n.fail(out, err)
+	}
 
 	var run map[string]any
 	server := "stand-in"
@@ -766,6 +769,9 @@ func (n *hotloopRecipeNode) Receive(ctx context.Context, m *engine.Msg, out node
 		return n.fail(out, err)
 	}
 	reason := hotloopReason(n.id, n.reason)
+	if err := fenceWrite(n.svc, "hotloop recipe"); err != nil {
+		return n.fail(out, err)
+	}
 	req := map[string]any{"params": params, "reason": reason}
 	if n.version > 0 {
 		req["version"] = n.version

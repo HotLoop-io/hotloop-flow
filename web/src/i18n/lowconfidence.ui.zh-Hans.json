@@ -12,6 +12,8 @@
  "dialogs.wireprobe.probe_keep_the_last_100",
  "dialogs.wireprops.durable",
  "dialogs.wireprops.while_the_target_keeps_up",
+ "editor.failover_lost",
+ "editor.failover_standby",
  "lib.promises",
  "palette.cat.discover",
  "palette.cat.parser",

@@ -586,3 +586,33 @@ func TestStationsSettingsAreAllOrNothing(t *testing.T) {
 		t.Fatalf("none: %v enabled=%v", err, cfg.Stations.Enabled())
 	}
 }
+
+// Failover refuses settings under which the holder would stop writing for no
+// reason: a margin as long as the lease, or renewals too slow to keep it above the
+// margin.
+func TestFailoverSettingsAreChecked(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("HOTLOOP_FLOW_INSECURE", "true")
+	t.Setenv("HOTLOOP_FLOW_FAILOVER_URL_FILE", "/run/secrets/lease-url")
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("the defaults: %v", err)
+	}
+	if !cfg.Failover.Enabled() || cfg.Failover.TTL != 15*time.Second || cfg.Failover.WriteMargin != 5*time.Second || cfg.Failover.Name != "flow" {
+		t.Fatalf("%+v", cfg.Failover)
+	}
+	t.Setenv("HOTLOOP_FLOW_FAILOVER_WRITE_MARGIN", "15s")
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "writeMargin") {
+		t.Fatalf("a margin as long as the ttl: %v", err)
+	}
+	t.Setenv("HOTLOOP_FLOW_FAILOVER_WRITE_MARGIN", "5s")
+	t.Setenv("HOTLOOP_FLOW_FAILOVER_RENEW_EVERY", "9s")
+	if _, err := Load(""); err == nil || !strings.Contains(err.Error(), "between renewals") {
+		t.Fatalf("renewals too slow: %v", err)
+	}
+	t.Setenv("HOTLOOP_FLOW_FAILOVER_RENEW_EVERY", "")
+	t.Setenv("HOTLOOP_FLOW_FAILOVER_URL_FILE", "")
+	if cfg, err := Load(""); err != nil || cfg.Failover.Enabled() {
+		t.Fatalf("off: %v", err)
+	}
+}

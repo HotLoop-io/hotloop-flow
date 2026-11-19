@@ -469,6 +469,11 @@ export class Api {
     return this.get(`/diagrams/${encodeURIComponent(id)}`);
   }
 
+  /** Whether this install is the writer or the standby of a failover pair. A 404 means failover is not set up. */
+  failover(): Promise<FailoverStatus> {
+    return this.get('/failover');
+  }
+
   /** What the last run of a diagram did, event by event, to replay it. A 404 means it has not run. */
   diagramTrace(id: string): Promise<DiagramTrace> {
     return this.get(`/diagrams/${encodeURIComponent(id)}/trace`);
@@ -646,6 +651,16 @@ export interface TraceView {
   started: string;
   truncated?: boolean;
   hops: HopView[];
+}
+
+/** What a failover pair's install says about the lease it shares. */
+export interface FailoverStatus {
+  role: 'active' | 'standby' | 'lost';
+  holder: string;
+  name: string;
+  owner?: string;
+  epoch: number;
+  current: number;
 }
 
 /** One thing a run did: a node starting or finishing, or a value on a wire. T is milliseconds into the run. */

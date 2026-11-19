@@ -1092,12 +1092,25 @@
   let statsTimer: number | undefined;
   let statsStopped = false;
   let historyTimer: number | undefined;
+  // Whether this install holds equipment writes: the standby of a failover pair, or
+  // a holder that lost its lease. Null when failover is not set up here.
+  let failover = $state<{ role: string; owner: string } | null>(null);
+  let failoverTimer: number | undefined;
+  async function refreshFailover(): Promise<void> {
+    try {
+      const st = await api.failover();
+      failover = st.role === 'active' ? null : { role: st.role, owner: st.owner ?? '' };
+    } catch {
+      failover = null;
+    }
+  }
   let disconnect: (() => void) | null = null;
 
   function teardown(): void {
     statsStopped = true;
     window.clearTimeout(statsTimer);
     window.clearInterval(historyTimer);
+    window.clearInterval(failoverTimer);
     window.clearTimeout(typeTimer);
     window.clearTimeout(noticeTimer);
     disconnect?.();
@@ -1158,6 +1171,8 @@
     // not to matter on an edge link.
     void refreshHistory();
     historyTimer = window.setInterval(() => void refreshHistory(), 15000);
+    void refreshFailover();
+    failoverTimer = window.setInterval(() => void refreshFailover(), 10000);
     void refreshTests();
 
     disconnect = api.connectEvents(appendEvent, (up) => { live = up; });
@@ -1233,6 +1248,11 @@
         canReplay={!(diagState === 'running' || diagState === 'paused' || diagMissing)}
         onreplay={() => void startReplay()} onreplaystop={stopReplay} onreplayspeed={(ms) => (replaySpeed = ms)}
       />
+    {/if}
+    {#if failover}
+      <div class="failover-banner" role="status" data-test="failover-banner" data-role={failover.role}>
+        {failover.role === 'lost' ? tr('editor.failover_lost', { owner: failover.owner }) : tr('editor.failover_standby', { owner: failover.owner })}
+      </div>
     {/if}
     {#if noticeText}
       <div class="toast" role="status" data-test="notice">{noticeText}</div>

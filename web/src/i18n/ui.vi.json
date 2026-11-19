@@ -505,5 +505,7 @@
   "diagrambar.speed_very_fast": "Rất nhanh",
   "editor.replay_nothing": "Lần chạy đó không ghi lại gì để phát lại.",
   "editor.replay_truncated": "Lần chạy đó dài hơn phần được lưu. Bản phát lại cho thấy {n} sự kiện đầu tiên.",
-  "editor.replay_not_run": "Chạy sơ đồ một lần, rồi phát lại."
+  "editor.replay_not_run": "Chạy sơ đồ một lần, rồi phát lại.",
+  "editor.failover_standby": "Bản cài này là bản dự phòng. Nó chạy các luồng nhưng giữ lại việc ghi vào thiết bị cho đến khi nhận lease từ {owner}.",
+  "editor.failover_lost": "Bản cài này đã mất lease nên đang giữ lại việc ghi vào thiết bị. {owner} có thể đang ghi."
 }

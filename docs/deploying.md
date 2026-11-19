@@ -172,6 +172,7 @@ On a pod you run yourself, mount the PEM and set `HOTLOOP_FLOW_ASSERTION_PUBLIC_
 | `history.git.url` | empty | Mirror every deploy to a git repository as a commit from whoever deployed. Empty is off. `history.git.branch`, `.path`, `.emailDomain` and `.username` go with it, and left empty they get the binary's own defaults. |
 | `history.git.passwordSecret.name`, `.key` | empty, `password` | A Secret holding the access token for that repository. It reaches the pod as `HOTLOOP_FLOW_GIT_PASSWORD` and never touches the ConfigMap. |
 | `stations.dashboardUrl`, `stations.tenant`, `stations.dashboardTokenSecret.name`, `.key`, `stations.deployTokenSecret.name`, `.key` | empty, empty, empty, `token`, empty, `token` | Push one flow file to every Flow install the tenant runs in EmberNet, with a check after each ([stations.md](stations.md)). All four of the dashboard, the tenant and the two Secret names are set or none is; a render with some of them is refused. Each Secret holds one token and is mounted as a file, never put in the ConfigMap. The deploy token is the one the stations accept and needs `flows.read`, `flows.write` and `status.read`. |
+| `failover.urlSecret.name`, `.key`, `failover.name`, `failover.ttl`, `failover.renewEvery`, `failover.writeMargin` | empty, `url`, `flow`, `15s`, a third of the ttl, `5s` | A failover pair: two installs share a lease in a PostgreSQL, one writes to equipment and the other holds its writes until it takes over ([failover.md](failover.md)). Off until the Secret is named. The Secret's key holds the PostgreSQL URL and is mounted as a file, never put in the ConfigMap. |
 | `audit.maxBytes`, `audit.keep` | 16 MiB, `4` | When `/data/audit.log` rotates, and how many rotated files stay beside it. |
 | `tests.gate`, `tests.timeout` | off, `2m` | `true` refuses a deploy whose flows fail `/data/flows.test.yaml`. Off by default, because a gate nobody asked for fails a deploy at 3 AM for a reason nobody on shift has heard of. |
 | `discovery.enabled`, `discovery.allowedCIDRs` | off, empty | The scan nodes. Enabled with an empty list refuses to start. |
@@ -287,6 +288,16 @@ Secret=hotloop-flow-station-token,type=mount,target=stations-deploy-token
 All four settings or none: Flow refuses to start with some of them. The deploy token is
 made with `hotloop-flow token` and given to each station as an API token with
 `flows.read`, `flows.write` and `status.read`.
+
+**A failover pair** is two units like this one, each with its own volume, and the same
+three lines in each `[Container]` section (see [failover.md](failover.md)); the second unit's
+host name is its own, so the two never share a holder name:
+
+```ini
+Environment=HOTLOOP_FLOW_FAILOVER_URL_FILE=/run/secrets/flow-lease-url
+Environment=HOTLOOP_FLOW_FAILOVER_NAME=line3
+Secret=hotloop-flow-lease-url,type=mount,target=flow-lease-url
+```
 
 **Upgrading** is changing the tag in `Image=`, then `daemon-reload` and
 `restart`. Flows, credentials and the secret stay where they were. Pin the tag.

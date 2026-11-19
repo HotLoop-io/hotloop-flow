@@ -505,5 +505,7 @@
   "diagrambar.speed_very_fast": "매우 빠르게",
   "editor.replay_nothing": "이 실행에는 다시 볼 기록이 없습니다.",
   "editor.replay_truncated": "이 실행은 보관되는 양보다 깁니다. 처음 {n}개 이벤트를 다시 재생합니다.",
-  "editor.replay_not_run": "다이어그램을 한 번 실행한 다음 다시 보십시오."
+  "editor.replay_not_run": "다이어그램을 한 번 실행한 다음 다시 보십시오.",
+  "editor.failover_standby": "이 설치는 대기 설치입니다. 흐름은 실행하지만 {owner}에게서 리스를 넘겨받을 때까지 장비 쓰기를 보류합니다.",
+  "editor.failover_lost": "이 설치는 리스를 잃어 장비 쓰기를 보류하고 있습니다. 지금은 {owner}이(가) 쓰고 있을 수 있습니다."
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/HotLoop-io/hotloop-flow/internal/fence"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
 )
 
@@ -21,6 +22,9 @@ var ErrGateRefused = errors.New("HotLoop's gate refused the write")
 // beside the write. It never writes to the equipment itself, and when HotLoop
 // refuses or cannot be reached the write does not happen.
 func GatedWrite(ctx context.Context, cfg node.Node, tag string, value any, reason string) error {
+	if err := fence.Check("hotloop write"); err != nil {
+		return fmt.Errorf("not written, hotloop write: %w", err)
+	}
 	t, ok := cfg.(hotloopTarget)
 	if !ok {
 		return fmt.Errorf("the config node is not a HotLoop connection")

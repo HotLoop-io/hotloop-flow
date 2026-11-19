@@ -525,5 +525,7 @@
   "diagrambar.speed_very_fast": "Sehr schnell",
   "editor.replay_nothing": "Diese Ausführung hat nichts zum Wiedergeben aufgezeichnet.",
   "editor.replay_truncated": "Diese Ausführung war länger als das, was aufbewahrt wird. Wiedergegeben werden ihre ersten {n} Ereignisse.",
-  "editor.replay_not_run": "Führen Sie das Diagramm einmal aus und geben Sie es dann wieder."
+  "editor.replay_not_run": "Führen Sie das Diagramm einmal aus und geben Sie es dann wieder.",
+  "editor.failover_standby": "Diese Installation ist die Reserve. Sie führt die Flows aus, hält aber ihre Schreibzugriffe auf Anlagen zurück, bis sie die Lease von {owner} übernommen hat.",
+  "editor.failover_lost": "Diese Installation hat die Lease verloren und hält ihre Schreibzugriffe auf Anlagen zurück. {owner} schreibt möglicherweise gerade."
 }

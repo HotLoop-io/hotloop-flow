@@ -85,6 +85,18 @@ data:
       deployTokenFile: /etc/hotloop-flow-stations/deploy-token
     {{- end }}
 
+    {{- if .Values.failover.urlSecret.name }}
+
+    failover:
+      urlFile: /etc/hotloop-flow-failover/url
+      name: {{ .Values.failover.name | quote }}
+      ttl: {{ .Values.failover.ttl }}
+      {{- if .Values.failover.renewEvery }}
+      renewEvery: {{ .Values.failover.renewEvery }}
+      {{- end }}
+      writeMargin: {{ .Values.failover.writeMargin }}
+    {{- end }}
+
     audit:
       maxBytes: {{ .Values.audit.maxBytes | int64 }}
       keep: {{ .Values.audit.keep | int }}

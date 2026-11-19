@@ -46,7 +46,30 @@ type Config struct {
 	Trace     Trace     `yaml:"trace"`
 	Plugins   Plugins   `yaml:"plugins"`
 	Stations  Stations  `yaml:"stations"`
+	Failover  Failover  `yaml:"failover"`
 }
+
+// Failover makes this install one of two that share a lease: the one that holds it
+// writes to equipment, the other runs the same flows and holds its writes until it
+// takes the lease over (docs/failover.md). Off until a URL file is set.
+type Failover struct {
+	// URLFile holds the PostgreSQL connection URL of the database the lease lives
+	// in. It is a file so the password never touches the config.
+	URLFile string `yaml:"urlFile"`
+	// Name is the lease, the same on both installs. Holder is this install's own
+	// name, which has to differ between them; it defaults to the host name.
+	Name   string `yaml:"name"`
+	Holder string `yaml:"holder"`
+	// TTL is how long a grant lasts, RenewEvery how often the holder asks again, and
+	// WriteMargin how much lease a write needs left, which is the longest a write
+	// may take. Zero RenewEvery is a third of the ttl.
+	TTL         time.Duration `yaml:"ttl"`
+	RenewEvery  time.Duration `yaml:"renewEvery"`
+	WriteMargin time.Duration `yaml:"writeMargin"`
+}
+
+// Enabled says a lease database is set.
+func (f Failover) Enabled() bool { return f.URLFile != "" }
 
 // Stations is how this instance reaches the other Flow installs of its tenant in
 // EmberNet, to push one flow file to all of them. Off unless every part is set.
@@ -548,12 +571,13 @@ func Default() Config {
 			Context:     StoreContext{Persist: true, FlushInterval: 30 * time.Second},
 			Durable:     StoreDurable{MaxBytes: 256 << 20, AckFlush: 100 * time.Millisecond},
 		},
-		Logging: Logging{Level: "info", Format: "text"},
-		Metrics: Metrics{Enabled: true, Path: "/metrics"},
-		History: History{Retain: 100},
-		Audit:   Audit{MaxBytes: 16 << 20, Keep: 4},
-		Tests:   Tests{Timeout: 2 * time.Minute},
-		Plugins: Plugins{MaxMemoryMiB: 64, MaxTimeout: 5 * time.Second},
+		Logging:  Logging{Level: "info", Format: "text"},
+		Metrics:  Metrics{Enabled: true, Path: "/metrics"},
+		History:  History{Retain: 100},
+		Audit:    Audit{MaxBytes: 16 << 20, Keep: 4},
+		Tests:    Tests{Timeout: 2 * time.Minute},
+		Plugins:  Plugins{MaxMemoryMiB: 64, MaxTimeout: 5 * time.Second},
+		Failover: Failover{Name: "flow", TTL: 15 * time.Second, WriteMargin: 5 * time.Second},
 		Trace: Trace{
 			Enabled: true, Traces: 256, MaxHops: 512, MaxMessageBytes: 16 << 10, MaxBytes: 16 << 20, PerSecond: 1000,
 			OTLP: OTLP{ServiceName: "hotloop-flow", Interval: 2 * time.Second},
@@ -694,6 +718,12 @@ func applyEnv(cfg *Config) {
 	if v := os.Getenv("HOTLOOP_FLOW_DISCOVERY_CIDRS"); v != "" {
 		cfg.Discovery.AllowedCIDRs = splitList(v)
 	}
+	envStr("HOTLOOP_FLOW_FAILOVER_URL_FILE", &cfg.Failover.URLFile)
+	envStr("HOTLOOP_FLOW_FAILOVER_NAME", &cfg.Failover.Name)
+	envStr("HOTLOOP_FLOW_FAILOVER_HOLDER", &cfg.Failover.Holder)
+	envDuration("HOTLOOP_FLOW_FAILOVER_TTL", &cfg.Failover.TTL)
+	envDuration("HOTLOOP_FLOW_FAILOVER_RENEW_EVERY", &cfg.Failover.RenewEvery)
+	envDuration("HOTLOOP_FLOW_FAILOVER_WRITE_MARGIN", &cfg.Failover.WriteMargin)
 	envStr("HOTLOOP_FLOW_STATIONS_DASHBOARD_URL", &cfg.Stations.DashboardURL)
 	envStr("HOTLOOP_FLOW_STATIONS_TENANT", &cfg.Stations.Tenant)
 	envStr("HOTLOOP_FLOW_STATIONS_DASHBOARD_TOKEN_FILE", &cfg.Stations.DashboardTokenFile)
@@ -734,6 +764,14 @@ func applyEnv(cfg *Config) {
 func envStr(key string, dst *string) {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		*dst = v
+	}
+}
+
+func envDuration(key string, dst *time.Duration) {
+	if v, ok := os.LookupEnv(key); ok && v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			*dst = d
+		}
 	}
 }
 
@@ -804,6 +842,21 @@ func (c *Config) Validate() error {
 	}
 	if c.History.Retain < 0 {
 		return fmt.Errorf("history.retain must not be negative; 0 keeps every deployment")
+	}
+	if f := c.Failover; f.Enabled() {
+		if f.TTL <= 0 || f.WriteMargin <= 0 || f.WriteMargin >= f.TTL {
+			return fmt.Errorf("failover.writeMargin must be above zero and less than failover.ttl, or the holder could never write")
+		}
+		if f.Name == "" {
+			return fmt.Errorf("failover.name must not be empty")
+		}
+		renew := f.RenewEvery
+		if renew <= 0 {
+			renew = f.TTL / 3
+		}
+		if renew+2*time.Second >= f.TTL-f.WriteMargin {
+			return fmt.Errorf("failover.ttl %s with a write margin of %s and renewals every %s leaves the holder under its margin between renewals; make the ttl longer, or the renewal faster", f.TTL, f.WriteMargin, renew)
+		}
 	}
 	if st := c.Stations; !st.Enabled() && (st.DashboardURL != "" || st.Tenant != "" || st.DashboardTokenFile != "" || st.DeployTokenFile != "") {
 		return fmt.Errorf("stations needs dashboardUrl, tenant, dashboardTokenFile and deployTokenFile together; a push to stations needs all four")

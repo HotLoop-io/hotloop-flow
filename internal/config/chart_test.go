@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -227,5 +228,34 @@ func TestChartPluginsValuesReachTheConfig(t *testing.T) {
 	want := Default().Plugins
 	if bare.Dir != "" || bare.MaxMemoryMiB != want.MaxMemoryMiB || bare.MaxTimeout != want.MaxTimeout {
 		t.Errorf("bare plugins = %+v, binary defaults %+v", bare, want)
+	}
+}
+
+// Failover is off in a default render, and every failover.* value reaches the field
+// of the same name with the secret as a file the binary can open, never in the
+// ConfigMap.
+func TestChartFailoverIsOffByDefaultAndItsValuesReachTheConfig(t *testing.T) {
+	off := loadRendered(t, helmConfig(t))
+	if off.Failover.Enabled() {
+		t.Fatalf("a default render turned failover on: %+v", off.Failover)
+	}
+	render := helmRender(t,
+		"--set", "failover.urlSecret.name=lease-db",
+		"--set", "failover.urlSecret.key=pg",
+		"--set", "failover.name=line3",
+		"--set", "failover.ttl=20s",
+		"--set", "failover.renewEvery=4s",
+		"--set", "failover.writeMargin=6s",
+	)
+	got := loadRendered(t, configFromRender(t, render))
+	f := got.Failover
+	if f.URLFile != "/etc/hotloop-flow-failover/url" || f.Name != "line3" || f.TTL != 20*time.Second || f.RenewEvery != 4*time.Second || f.WriteMargin != 6*time.Second {
+		t.Fatalf("failover = %+v", f)
+	}
+	if strings.Contains(configFromRender(t, render), "lease-db") {
+		t.Error("the Secret's name is in the ConfigMap")
+	}
+	if !strings.Contains(string(render), "secretName: lease-db") || !strings.Contains(string(render), "key: pg") {
+		t.Error("the Secret is not mounted from the name and key given")
 	}
 }
