@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr, trn } from '../../lib/i18n.svelte';
   // Click Trace on a debug message and the canvas lights the path it took. This
   // lists the same path a hop at a time: how long each node had the message and
   // what it looked like there. A trace can become a test, or be replayed into the
@@ -37,29 +38,29 @@
       return {
         h, id, onPath: onPath.has(h.id), focus: h.id === focus,
         name: entry ? graph.label(entry) : h.node,
-        via: h.via === 'error' ? 'error' : h.parents?.length ? `port ${h.port + 1}` : h.entry === 'emit' ? 'came in' : 'pressed',
+        via: h.via === 'error' ? tr('panels.trace.via_error') : h.parents?.length ? tr('panels.trace.via_port', { n: h.port + 1 }) : h.entry === 'emit' ? tr('panels.trace.via_came_in') : tr('panels.trace.via_pressed'),
       };
     });
   });
 </script>
 
 <section class="section trace-section">
-  <div class="section-head"><h3>Trace</h3></div>
+  <div class="section-head"><h3>{tr('panels.trace.trace')}</h3></div>
   <div class="section-body">
     <div class="trace" data-test="trace">
       {#if view.kind === 'empty'}
-        <div class="empty">Click Trace on a debug message to see the path it took.</div>
+        <div class="empty">{tr('panels.trace.click_trace_on_a_debug')}</div>
       {:else if view.kind === 'gone'}
         <div class="empty" data-test="trace-gone">{view.text}</div>
       {:else if view.kind === 'replaying'}
-        <div class="empty">Replaying…</div>
+        <div class="empty">{tr('panels.trace.replaying')}</div>
       {:else if view.kind === 'trace'}
         {@const total = view.trace.hops.reduce((t, h) => t + h.nanos, 0)}
-        <div class="trace-head" data-test="trace-summary">{view.trace.hops.length} hops, {fmtNanos(total)} in nodes{view.trace.truncated ? ', cut short: the trace hit its hop limit' : ''}</div>
+        <div class="trace-head" data-test="trace-summary">{trn('panels.trace.summary', view.trace.hops.length, { time: fmtNanos(total) })}{view.trace.truncated ? tr('panels.trace.cut_short') : ''}</div>
         <div class="actions">
-          <button class="ghost sm" data-test="trace-make-test" title="Make a flow test from this trace" onclick={onmaketest}>Make test</button>
-          <button class="ghost sm" data-test="trace-replay" title="Put this message into the working copy and compare" onclick={onreplay}>Replay into draft</button>
-          <button class="ghost sm" data-test="trace-clear" onclick={onclear}>Clear</button>
+          <button class="ghost sm" data-test="trace-make-test" title={tr('panels.trace.make_a_flow_test_from')} onclick={onmaketest}>{tr('panels.trace.make_test')}</button>
+          <button class="ghost sm" data-test="trace-replay" title={tr('panels.trace.put_this_message_into_the')} onclick={onreplay}>{tr('panels.trace.replay_into_draft')}</button>
+          <button class="ghost sm" data-test="trace-clear" onclick={onclear}>{tr('panels.trace.clear')}</button>
         </div>
         {#each hops as x (x.h.id)}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -76,23 +77,23 @@
       {:else}
         {@const res = view.result}
         {#if res.problems?.length}
-          <div class="test-summary fail" data-test="replay-summary">It couldn't be replayed.</div>
+          <div class="test-summary fail" data-test="replay-summary">{tr('panels.trace.it_couldnt_be_replayed')}</div>
           {#each res.problems as p, i (i)}<pre class="diff-text test-problem">{p.message}</pre>{/each}
         {:else if res.same}
-          <div class="test-summary pass" data-test="replay-summary">The draft sends it everywhere the original went, with the same message.</div>
+          <div class="test-summary pass" data-test="replay-summary">{tr('panels.trace.the_draft_sends_it_everywhere')}</div>
         {:else}
           {@const n = res.differences?.length ?? 0}
-          <div class="test-summary fail" data-test="replay-summary">The draft differs in {n} place{n === 1 ? '' : 's'}.</div>
+          <div class="test-summary fail" data-test="replay-summary">{trn('panels.trace.differs', n)}</div>
           {#each res.differences ?? [] as d, i (i)}
             <div class="test-result fail" data-test="replay-diff" data-node={d.node}>
-              <div class="meta"><span class="kind test-fail">{d.kind}</span><span class="name">{d.label}</span></div>
+              <div class="meta"><span class="kind test-fail">{tr('panels.trace.diff_' + d.kind)}</span><span class="name">{d.label}</span></div>
               {#each d.changes ?? [] as c, j (j)}<pre class="diff-text test-problem">{c}</pre>{/each}
-              {#if d.kind === 'missing'}<pre class="diff-text test-problem">ended here before: {preview(d.before, false, 160)}</pre>{/if}
-              {#if d.kind === 'extra'}<pre class="diff-text test-problem">ends here now: {preview(d.after, false, 160)}</pre>{/if}
+              {#if d.kind === 'missing'}<pre class="diff-text test-problem">{tr('panels.trace.ended_here_before', { value: preview(d.before, false, 160) })}</pre>{/if}
+              {#if d.kind === 'extra'}<pre class="diff-text test-problem">{tr('panels.trace.ends_here_now', { value: preview(d.after, false, 160) })}</pre>{/if}
             </div>
           {/each}
         {/if}
-        <button class="ghost" data-test="replay-back" onclick={onback}>Back to the original trace</button>
+        <button class="ghost" data-test="replay-back" onclick={onback}>{tr('panels.trace.back_to_the_original_trace')}</button>
       {/if}
     </div>
   </div>

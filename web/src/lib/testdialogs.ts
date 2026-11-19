@@ -6,6 +6,7 @@
 import { type Api, ApiError } from './api';
 import { openDialog } from './dialogs';
 import TextEdit from '../components/dialogs/TextEdit.svelte';
+import { tr, serverText } from './i18n.svelte';
 
 interface EditProps extends Record<string, unknown> {
   title: string;
@@ -29,12 +30,12 @@ const edit = (p: EditProps) => openDialog<string | null, EditProps>(TextEdit, p)
  * Resolves with the names of the tests added, or null when nothing was.
  */
 export function draftTestDialog(api: Api, node: string, msgId: string): Promise<string[] | null> {
-  return offerDraft(api, () => api.draftTest(node, msgId), 'What went in at the source, and what this Debug node showed. Change anything you like before adding it.');
+  return offerDraft(api, () => api.draftTest(node, msgId), tr('lib.draft_from_message'));
 }
 
 /** The same two clicks, for a test made from a whole trace: every place the message ended. */
 export function draftTestFromTraceDialog(api: Api, traceId: string): Promise<string[] | null> {
-  return offerDraft(api, () => api.draftTestFromTrace(traceId), 'What went in at the source, and what every Debug node or other end of the trace was handed. Change anything you like before adding it.');
+  return offerDraft(api, () => api.draftTestFromTrace(traceId), tr('lib.draft_from_trace'));
 }
 
 async function offerDraft(api: Api, make: () => Promise<{ name: string; yaml: string }>, intro: string): Promise<string[] | null> {
@@ -43,7 +44,7 @@ async function offerDraft(api: Api, make: () => Promise<{ name: string; yaml: st
     draft = await make();
   } catch (ex) {
     if (ex instanceof ApiError && ex.status === 401) throw ex;
-    alert(`Could not make a test from that message: ${ex instanceof Error ? ex.message : ex}`);
+    alert(tr('lib.test_from_message_failed', { error: ex instanceof Error ? serverText(ex.message) : String(ex) }));
     return null;
   }
 
@@ -61,7 +62,7 @@ async function offerDraft(api: Api, make: () => Promise<{ name: string; yaml: st
     } catch (ex) {
       if (ex instanceof ApiError && ex.status === 401) throw ex;
       // Back to the draft with the reason, rather than losing the edit.
-      alert(`The test wasn't added: ${ex instanceof Error ? ex.message : ex}`);
+      alert(tr('lib.test_not_added', { error: ex instanceof Error ? serverText(ex.message) : String(ex) }));
     }
   }
 }
@@ -73,14 +74,14 @@ export async function editSuiteDialog(api: Api): Promise<boolean> {
     current = await api.tests();
   } catch (ex) {
     if (ex instanceof ApiError && ex.status === 401) throw ex;
-    alert(`Could not load the flow tests: ${ex instanceof Error ? ex.message : ex}`);
+    alert(tr('lib.tests_load_failed', { error: ex instanceof Error ? serverText(ex.message) : String(ex) }));
     return false;
   }
   let text = current.tests || 'tests:\n';
   for (;;) {
     const answer = await edit({
       title: current.file || 'Flow tests', text, rows: 22,
-      textTest: 'tests-yaml', cancelTest: 'tests-cancel', okLabel: 'Save', okTest: 'tests-save',
+      textTest: 'tests-yaml', cancelTest: 'tests-cancel', okLabel: tr('lib.save'), okTest: 'tests-save',
     });
     if (answer === null) return false;
     text = answer;
@@ -89,7 +90,7 @@ export async function editSuiteDialog(api: Api): Promise<boolean> {
       return true;
     } catch (ex) {
       if (ex instanceof ApiError && ex.status === 401) throw ex;
-      alert(`The tests weren't saved: ${ex instanceof Error ? ex.message : ex}`);
+      alert(tr('lib.tests_not_saved', { error: ex instanceof Error ? serverText(ex.message) : String(ex) }));
     }
   }
 }

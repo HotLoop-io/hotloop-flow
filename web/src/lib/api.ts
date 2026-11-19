@@ -6,6 +6,7 @@
 
 import type { WireProblem } from './wiretypes';
 import type { FlowEntry } from './graph';
+import { tr, serverText } from './i18n.svelte';
 
 /**
  * A node type, as served by GET /nodes.
@@ -177,7 +178,8 @@ export class ApiError extends Error {
   body: Record<string, unknown> = {};
 
   constructor(readonly status: number, message: string, readonly mfaRequired = false) {
-    super(message);
+    // The runtime answers in English. What is shown is what the person reads.
+    super(serverText(message));
   }
 }
 
@@ -250,7 +252,7 @@ export class Api {
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
-      throw new ApiError(res.status, body.error ?? 'login failed', body.mfa === 'required');
+      throw new ApiError(res.status, body.error ?? tr('api.login_failed'), body.mfa === 'required');
     }
     const body = await res.json();
     this.setToken(body.access_token);
@@ -276,7 +278,7 @@ export class Api {
       // Expired or revoked. Drop it so the UI falls back to the login screen
       // rather than looping on failed requests.
       this.setToken(null);
-      throw new ApiError(401, 'session expired');
+      throw new ApiError(401, tr('api.session_expired'));
     }
     if (!res.ok) {
       const body = await res.json().catch(() => ({ error: res.statusText }));
@@ -289,8 +291,9 @@ export class Api {
     return this.get<Settings>('/settings');
   }
 
-  nodes(): Promise<Descriptor[]> {
-    return this.get<Descriptor[]>('/nodes');
+  /** Every node type, with its help and its labels in the language asked for. English is the default. */
+  nodes(lang = 'en'): Promise<Descriptor[]> {
+    return this.get<Descriptor[]>(lang === 'en' ? '/nodes' : `/nodes?lang=${encodeURIComponent(lang)}`);
   }
 
   stats(): Promise<{ nodes: NodeStat[] }> {
@@ -376,7 +379,7 @@ export class Api {
     });
     if (res.status === 401) {
       this.setToken(null);
-      throw new ApiError(401, 'session expired');
+      throw new ApiError(401, tr('api.session_expired'));
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -399,7 +402,7 @@ export class Api {
     });
     if (res.status === 401) {
       this.setToken(null);
-      throw new ApiError(401, 'session expired');
+      throw new ApiError(401, tr('api.session_expired'));
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));

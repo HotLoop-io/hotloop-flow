@@ -2,12 +2,13 @@
 // dialogs are Svelte components, and they show their words with these.
 
 import type { Deployment } from './api';
+import { tr, fmtDate } from './i18n.svelte';
 
 /** Who, when and why, in one line. */
 export function describe(d: Deployment): string {
-  const who = d.user || 'nobody signed in';
-  const when = new Date(d.time).toLocaleString();
-  return `#${d.seq} ${d.kind} by ${who}, ${when}`;
+  const who = d.user || tr('lib.nobody_signed_in');
+  const when = fmtDate(d.time);
+  return tr('lib.describe_deployment', { seq: d.seq, kind: tr('panels.history.kind_' + d.kind), who, when });
 }
 
 export interface Conflict {

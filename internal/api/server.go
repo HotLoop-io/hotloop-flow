@@ -21,6 +21,7 @@ import (
 	"github.com/HotLoop-io/hotloop-flow/internal/flowdiff"
 	"github.com/HotLoop-io/hotloop-flow/internal/flowhttp"
 	"github.com/HotLoop-io/hotloop-flow/internal/history"
+	"github.com/HotLoop-io/hotloop-flow/internal/i18n"
 	"github.com/HotLoop-io/hotloop-flow/internal/instruments"
 	"github.com/HotLoop-io/hotloop-flow/internal/mcphost"
 	"github.com/HotLoop-io/hotloop-flow/internal/metrics"
@@ -774,8 +775,17 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 // handleNodes returns every registered node type, which is what the editor
 // renders its palette and every edit dialog from. Node-RED serves an HTML
 // document here containing a hand-written dialog per node; this is JSON.
-func (s *Server) handleNodes(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, s.deps.Registry.Descriptors())
+//
+// ?lang=de (or any tag the runtime speaks) returns the same node types with
+// their help, labels, placeholders and choices in that language. Without it the
+// answer is English, exactly as it always was: what a script, an MCP client or an
+// older editor reads never depends on a header.
+func (s *Server) handleNodes(w http.ResponseWriter, r *http.Request) {
+	ds := s.deps.Registry.Descriptors()
+	if l := r.URL.Query().Get("lang"); l != "" {
+		ds = i18n.Localize(ds, i18n.Normalize(l))
+	}
+	writeJSON(w, http.StatusOK, ds)
 }
 
 // handlePlugins says which plugins loaded and which were refused and why. A

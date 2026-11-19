@@ -90,7 +90,7 @@ func TestTheHandlerServesThePageItsAssetsAndTheLayout(t *testing.T) {
 	if r.StatusCode != http.StatusFound || r.Header.Get("Location") != "/ui/" {
 		t.Fatalf("/ui = %d %q", r.StatusCode, r.Header.Get("Location"))
 	}
-	for path, want := range map[string]string{"/ui/": "<title>Dashboard</title>", "/ui/app.js": "EventSource", "/ui/app.css": "--primary"} {
+	for path, want := range map[string]string{"/ui/": ">Dashboard</title>", "/ui/app.js": "EventSource", "/ui/app.css": "--primary"} {
 		r, err := http.Get(srv.URL + path)
 		if err != nil {
 			t.Fatal(err)

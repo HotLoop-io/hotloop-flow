@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from '../../lib/i18n.svelte';
   // Takes pasted or chosen flow JSON. Resolves with what was added, or null if it
   // was cancelled. A problem is shown in the dialog, which stays open.
   import { type ImportResult, importEntries, parseEntries } from '../../lib/flowio';
@@ -34,27 +35,27 @@
   }
 </script>
 
-<Dialog title="Import" backdropClose onclose={() => done(null)}>
+<Dialog title={tr('dialogs.import.import')} backdropClose onclose={() => done(null)}>
   <div class="field">
-    <label>Flow JSON</label>
-    <textarea class="code lang-json" spellcheck="false" rows="12" data-test="import-text" placeholder="Paste flow JSON here, or choose a file." bind:this={area} bind:value={text}></textarea>
+    <label>{tr('dialogs.import.flow_json')}</label>
+    <textarea class="code lang-json" spellcheck="false" rows="12" data-test="import-text" placeholder={tr('dialogs.import.paste_flow_json_here_or')} bind:this={area} bind:value={text}></textarea>
   </div>
   <div class="field">
-    <label>Or a file</label>
+    <label>{tr('dialogs.import.or_a_file')}</label>
     <input type="file" accept=".json,application/json" data-test="import-file" onchange={chosen} />
   </div>
   <div class="field">
-    <label>Put it on</label>
+    <label>{tr('dialogs.import.put_it_on')}</label>
     <select data-test="import-target" bind:value={target}>
-      <option value="here">{inSubflow ? 'This subflow' : 'This flow'}</option>
-      <option value="new">A new flow</option>
+      <option value="here">{inSubflow ? tr('dialogs.import.this_subflow') : tr('dialogs.import.this_flow')}</option>
+      <option value="new">{tr('dialogs.import.a_new_flow')}</option>
     </select>
-    <div class="field-help">A file that brings its own flows keeps them, whatever you pick here.</div>
+    <div class="field-help">{tr('dialogs.import.a_file_that_brings_its')}</div>
   </div>
   <div class="dialog-error" data-test="import-error">{error}</div>
   {#snippet foot()}
     <div class="spacer"></div>
-    <button class="primary" type="button" data-test="import-go" onclick={go}>Import</button>
-    <button class="ghost" type="button" data-test="import-cancel" onclick={() => done(null)}>Cancel</button>
+    <button class="primary" type="button" data-test="import-go" onclick={go}>{tr('dialogs.import.import')}</button>
+    <button class="ghost" type="button" data-test="import-cancel" onclick={() => done(null)}>{tr('dialogs.import.cancel')}</button>
   {/snippet}
 </Dialog>

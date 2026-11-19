@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { tr } from '../lib/i18n.svelte';
   // The top bar: who this is, whether it is connected, the editor's few global
   // actions, and Deploy.
   import Icon from './Icon.svelte';
+  import LanguagePicker from './LanguagePicker.svelte';
 
   interface Props {
     version: string;
@@ -26,27 +28,28 @@
 <div class="topbar">
   <div class="brand">
     <img src="brand/logo-mark.svg" alt="" width="26" height="26" />
-    <span>HotLoop Flow</span>
+    <span>{tr('topbar.hotloop_flow')}</span>
     <span class="version">{version}</span>
   </div>
   <div class="conn mono">
     <span class="dot {live === null ? 'grey' : live ? 'green' : 'red'}"></span>
-    <span>{live === null ? 'connecting' : live ? 'live' : 'reconnecting'}</span>
+    <span>{live === null ? tr('topbar.connecting') : live ? tr('topbar.live') : tr('topbar.reconnecting')}</span>
   </div>
   <div class="spacer"></div>
-  <button class="ghost" data-test="search-open" title="Search every flow (Ctrl+F)" onclick={onsearch}><Icon name="search" />Search<kbd>Ctrl F</kbd></button>
-  <button class="ghost" data-test="import-open" title="Import flows from JSON or a file" disabled={importDisabled} onclick={onimport}>Import</button>
-  <button class="ghost" data-test="export-open" title="Export the selection, this flow, or everything" onclick={onexport}>Export</button>
+  <button class="ghost" data-test="search-open" title={tr('topbar.search_every_flow_ctrlf')} onclick={onsearch}><Icon name="search" />{tr('topbar.search')}<kbd>{tr('topbar.ctrl_f')}</kbd></button>
+  <button class="ghost" data-test="import-open" title={tr('topbar.import_flows_from_json_or')} disabled={importDisabled} onclick={onimport}>{tr('topbar.import')}</button>
+  <button class="ghost" data-test="export-open" title={tr('topbar.export_the_selection_this_flow')} onclick={onexport}>{tr('topbar.export')}</button>
   <span class="sep"></span>
-  <button class="ghost icon" title="Fit to view" aria-label="Fit to view" onclick={onfit}><Icon name="fit" /></button>
-  <button class="ghost" title="Switch light and dark" onclick={ontheme}>{dark ? 'Light' : 'Dark'}</button>
+  <button class="ghost icon" title={tr('topbar.fit_to_view')} aria-label={tr('topbar.fit_to_view')} onclick={onfit}><Icon name="fit" /></button>
+  <LanguagePicker compact />
+  <button class="ghost" title={tr('topbar.switch_light_and_dark')} onclick={ontheme}>{dark ? tr('topbar.light') : tr('topbar.dark')}</button>
   {#if canSignOut}
-    <button class="ghost" data-test="mfa-open" title="Two-factor sign-in" onclick={onmfa}>Two-factor</button>
-    <button class="ghost" onclick={onsignout}>Sign out</button>
+    <button class="ghost" data-test="mfa-open" title={tr('topbar.twofactor_signin')} onclick={onmfa}>{tr('topbar.twofactor')}</button>
+    <button class="ghost" onclick={onsignout}>{tr('topbar.sign_out')}</button>
   {:else}
     <!-- No Sign out without a login to go back to. The badge takes its place so
          nobody forgets this editor is open to anyone who can reach it. -->
-    <span class="no-auth mono" title="Started with HOTLOOP_FLOW_INSECURE: anyone who can reach this port can deploy.">no login</span>
+    <span class="no-auth mono" title={tr('topbar.started_with_hotloopflowinsecure_anyone_who')}>{tr('topbar.no_login')}</span>
   {/if}
-  <button class="primary" disabled={deployDisabled} onclick={ondeploy}>Deploy</button>
+  <button class="primary" disabled={deployDisabled} onclick={ondeploy}>{tr('topbar.deploy')}</button>
 </div>

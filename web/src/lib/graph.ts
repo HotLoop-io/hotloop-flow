@@ -7,6 +7,7 @@
 
 import type { Descriptor } from './api';
 import { layout } from './layout';
+import { tr, trn } from './i18n.svelte';
 
 /** Pseudo node types for a subflow template's own input and output ports. */
 export const PORT_IN = '@subflow-in';
@@ -94,7 +95,7 @@ function instanceDescriptor(type: string, tpl: FlowEntry): Descriptor {
     type, category: 'subflows',
     color: typeof tpl.color === 'string' && tpl.color ? tpl.color : '#DDAA99',
     icon: 'subflow', inputs, outputs,
-    paletteLabel: typeof tpl.name === 'string' && tpl.name ? tpl.name : 'subflow',
+    paletteLabel: typeof tpl.name === 'string' && tpl.name ? tpl.name : tr('editor.default_subflow'),
     labelProp: 'name',
     compatibility: { level: 'full' },
   };
@@ -327,7 +328,7 @@ export class Graph {
       id: portId(kind, subflow, n),
       type: kind === 'in' ? PORT_IN : PORT_OUT,
       z: subflow,
-      name: kind === 'in' ? 'input' : (((tpl.out as SubflowPortDef[]).length > 1) ? `output ${n + 1}` : 'output'),
+      name: kind === 'in' ? tr('graph.input') : (((tpl.out as SubflowPortDef[]).length > 1) ? tr('graph.output_n', { n: n + 1 }) : tr('graph.output')),
       x: port.x ?? 0,
       y: port.y ?? 0,
       wires: kind === 'in' ? [(port.wires ?? []).map((w) => w.id)] : [],
@@ -936,10 +937,10 @@ export class Graph {
   /** Removes a configuration node, unless something still uses it. */
   deleteConfig(id: string): string | null {
     const cfg = this.configNodes().find((e) => e.id === id);
-    if (!cfg) return 'There is no such configuration node.';
+    if (!cfg) return tr('graph.no_such_config');
     const users = this.usersOfConfig(id);
     if (users.length > 0) {
-      return `${users.length} node${users.length === 1 ? ' uses' : 's use'} it. Point ${users.length === 1 ? 'it' : 'them'} at another one first.`;
+      return trn('graph.config_in_use', users.length);
     }
     this.checkpoint('delete configuration node');
     this.entries = this.entries.filter((e) => e.id !== id);
@@ -1016,7 +1017,7 @@ export class Graph {
     const tplIn = (scopeTpl?.in as SubflowPortDef[] | undefined) ?? [];
     for (const p of tplIn) for (const w of p.wires ?? []) if (inside.has(w.id)) entering.add(w.id);
     if (entering.size > 1) {
-      return 'A subflow has one input, and this selection is wired into more than one node. Select so that everything arrives at a single node.';
+      return tr('graph.subflow_one_input');
     }
 
     type Leave = { key: string; node: FlowEntry; port: number };
@@ -1331,7 +1332,7 @@ export class Graph {
     if (!tpl) return 'There is no such subflow.';
     const used = this.instancesOf(id);
     if (used.length > 0) {
-      return `${used.length} instance${used.length === 1 ? ' is' : 's are'} still in use. Delete them first.`;
+      return trn('graph.subflow_in_use', used.length);
     }
     this.checkpoint('delete subflow');
     const doomed = new Set(this.entries.filter((e) => e.z === id).map((e) => e.id));
@@ -1400,7 +1401,7 @@ export class Graph {
     const picked = ids.map((id) => this.byId(id)).filter((e): e is FlowEntry => e !== undefined);
     if (picked.length === 0) return 'Select something to group first.';
     const parents = new Set(picked.map((e) => e.g ?? ''));
-    if (parents.size > 1) return 'Everything selected has to be in the same group, or in none.';
+    if (parents.size > 1) return tr('graph.same_group');
     if (new Set(picked.map((e) => e.z)).size > 1) return 'Everything selected has to be on the same flow.';
     // A group cannot be put inside itself: skip any selected group whose
     // ancestor is also selected, since moving the ancestor moves it anyway.

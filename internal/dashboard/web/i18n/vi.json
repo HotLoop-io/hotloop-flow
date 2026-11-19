@@ -1,0 +1,16 @@
+{
+  "title": "Bảng điều khiển",
+  "menu": "Menu",
+  "connection": "Kết nối với máy chủ",
+  "tabs": "Thẻ",
+  "empty_1": "Chưa có gì trên bảng điều khiển này.",
+  "empty_2": "Thêm các nút ui_tab, ui_group và widget vào một luồng rồi triển khai.",
+  "decrease": "Giảm",
+  "increase": "Tăng",
+  "value": "giá trị",
+  "switch": "công tắc",
+  "text": "văn bản",
+  "no_value": "không có giá trị",
+  "no_data": "Không có dữ liệu",
+  "language": "Ngôn ngữ"
+}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from '../../lib/i18n.svelte';
   // A template's own properties: name, colour, how many ports, and the
   // parameters an instance can set.
   import type { FlowEntry, Graph } from '../../lib/graph';
@@ -46,42 +47,42 @@
   }
 </script>
 
-<Dialog title="Subflow properties" backdropClose onclose={() => done(null)}>
-  <div class="field"><label>Name</label><input type="text" data-test="subflow-name" bind:this={nameInput} bind:value={name} /></div>
-  <div class="field"><label>Category</label><input type="text" data-test="subflow-category" bind:value={category} /><div class="field-help">Groups it in the palette.</div></div>
-  <div class="field"><label>Colour</label><input type="text" data-test="subflow-color" placeholder="#DDAA99" bind:value={color} /><div class="field-help">A hex colour for the node. Blank for the default.</div></div>
+<Dialog title={tr('dialogs.subflowprops.subflow_properties')} backdropClose onclose={() => done(null)}>
+  <div class="field"><label>{tr('dialogs.subflowprops.name_2')}</label><input type="text" data-test="subflow-name" bind:this={nameInput} bind:value={name} /></div>
+  <div class="field"><label>{tr('dialogs.subflowprops.category')}</label><input type="text" data-test="subflow-category" bind:value={category} /><div class="field-help">{tr('dialogs.subflowprops.groups_it_in_the_palette')}</div></div>
+  <div class="field"><label>{tr('dialogs.subflowprops.colour')}</label><input type="text" data-test="subflow-color" placeholder={tr('dialogs.subflowprops.ddaa99')} bind:value={color} /><div class="field-help">{tr('dialogs.subflowprops.a_hex_colour_for_the')}</div></div>
   <div class="field">
-    <label>Inputs</label>
-    <select data-test="subflow-inputs" bind:value={inputs}><option value="0">none</option><option value="1">one</option></select>
+    <label>{tr('dialogs.subflowprops.inputs')}</label>
+    <select data-test="subflow-inputs" bind:value={inputs}><option value="0">{tr('dialogs.subflowprops.none')}</option><option value="1">{tr('dialogs.subflowprops.one')}</option></select>
   </div>
-  <div class="field"><label>Outputs</label><input type="number" min="0" max="20" data-test="subflow-outputs" bind:value={outputs} /><div class="field-help">Instances on flows follow when this changes.</div></div>
-  <div class="field"><label>Description</label><textarea rows="3" data-test="subflow-info" bind:value={info}></textarea></div>
+  <div class="field"><label>{tr('dialogs.subflowprops.outputs')}</label><input type="number" min="0" max="20" data-test="subflow-outputs" bind:value={outputs} /><div class="field-help">{tr('dialogs.subflowprops.instances_on_flows_follow_when')}</div></div>
+  <div class="field"><label>{tr('dialogs.subflowprops.description')}</label><textarea rows="3" data-test="subflow-info" bind:value={info}></textarea></div>
   <div class="field">
-    <label>Properties</label>
+    <label>{tr('dialogs.subflowprops.properties')}</label>
     <div>
       <div class="list-rows" data-test="subflow-env">
         {#each rows as r, i (r)}
           <div class="list-row">
             <div class="list-row-fields">
-              <input type="text" placeholder="name" data-test="subflow-env-name" bind:value={r.name} />
+              <input type="text" placeholder={tr('dialogs.subflowprops.name')} data-test="subflow-env-name" bind:value={r.name} />
               <div class="typed-input">
                 <select bind:value={r.type}>{#each ENV_TYPES as [v, label] (v)}<option value={v}>{label}</option>{/each}</select>
-                <input type="text" placeholder="default" data-test="subflow-env-value" bind:value={r.value} />
+                <input type="text" placeholder={tr('dialogs.subflowprops.default')} data-test="subflow-env-value" bind:value={r.value} />
               </div>
             </div>
-            <button class="icon" type="button" title="Remove" onclick={() => rows.splice(i, 1)}>✕</button>
+            <button class="icon" type="button" title={tr('dialogs.subflowprops.remove')} onclick={() => rows.splice(i, 1)}>✕</button>
           </div>
         {/each}
       </div>
-      <button class="ghost" type="button" data-test="subflow-env-add" onclick={() => rows.push({ name: '', type: 'str', value: '' })}>Add property</button>
+      <button class="ghost" type="button" data-test="subflow-env-add" onclick={() => rows.push({ name: '', type: 'str', value: '' })}>{tr('dialogs.subflowprops.add_property')}</button>
     </div>
-    <div class="field-help">Each instance can set a value for these.</div>
+    <div class="field-help">{tr('dialogs.subflowprops.each_instance_can_set_a')}</div>
   </div>
   <div class="dialog-error" data-test="subflow-error">{error}</div>
   {#snippet foot()}
     <div class="spacer"></div>
-    <button class="ghost" type="button" data-test="subflow-delete" onclick={remove}>Delete subflow</button>
-    <button class="ghost" type="button" data-test="subflow-cancel" onclick={() => done(null)}>Cancel</button>
-    <button class="primary" type="button" data-test="subflow-done" onclick={save}>Done</button>
+    <button class="ghost" type="button" data-test="subflow-delete" onclick={remove}>{tr('dialogs.subflowprops.delete_subflow')}</button>
+    <button class="ghost" type="button" data-test="subflow-cancel" onclick={() => done(null)}>{tr('dialogs.subflowprops.cancel')}</button>
+    <button class="primary" type="button" data-test="subflow-done" onclick={save}>{tr('dialogs.subflowprops.done')}</button>
   {/snippet}
 </Dialog>

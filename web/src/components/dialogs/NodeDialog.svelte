@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from '../../lib/i18n.svelte';
   // A node's settings. The form is made from the node type's descriptor, so every
   // type gets a working dialog with no front-end change, and a type this runtime
   // does not implement is edited as raw JSON and kept exactly as it was.
@@ -17,7 +18,7 @@
   }
   let { graph, entry, descriptor, done }: Props = $props();
 
-  const nameProp: PropDef = { name: 'name', kind: 'string', label: 'Name' };
+  const nameProp: PropDef = { name: 'name', kind: 'string', label: tr('dialogs.nodedialog.name') };
   const hasName = !!descriptor?.props?.some((p) => p.name === 'name');
   const fields: PropDef[] = [...(hasName ? [] : [nameProp]), ...(descriptor?.props ?? [])];
   const model: Model = $state({});
@@ -52,13 +53,13 @@
 <Dialog title={descriptor?.paletteLabel ?? entry.type} chip={descriptor?.color ?? ''} backdropClose focusField onclose={() => done(null)} onsubmit={commit}>
   {#snippet badge()}
     {#if descriptor}
-      <span class="badge {level === 'hotloop-flow-only' ? 'only' : level}" title={descriptor.compatibility.notes ?? ''}>{level}</span>
+      <span class="badge {level === 'hotloop-flow-only' ? 'only' : level}" title={descriptor.compatibility.notes ?? ''}>{tr('dialogs.nodedialog.level_' + level)}</span>
     {/if}
   {/snippet}
 
   {#if !descriptor}
     <div class="banner">
-      {entry.type} is not installed in this runtime. Its configuration is shown as raw JSON and will be preserved exactly as it is.
+      {tr('dialogs.nodedialog.not_installed', { type: entry.type })}
     </div>
   {/if}
 
@@ -68,24 +69,24 @@
 
   {#if !descriptor}
     <div class="field">
-      <label>Configuration</label>
+      <label>{tr('dialogs.nodedialog.configuration')}</label>
       <textarea class="code lang-json" spellcheck="false" rows="10" bind:value={raw}></textarea>
     </div>
   {/if}
 
   {#if showTypes}
     <details class="dialog-types" data-test="types" open={typesOpen}>
-      <summary>Types</summary>
+      <summary>{tr('dialogs.nodedialog.types')}</summary>
       <div class="field-help">
-        Optional JSON Schemas over the whole message, so the payload is properties.payload. A wire between two typed ends that can never agree is refused at deploy; anything else that breaks a schema goes to a Catch node with the path of the bad field.
+        {tr('dialogs.nodedialog.optional_json_schemas_over_the')}
       </div>
       <div class="field">
-        <label>Accepts (input)</label>
+        <label>{tr('dialogs.nodedialog.accepts_input')}</label>
         <textarea class="code lang-json" spellcheck="false" rows="4" data-test="schema-in" bind:value={types.accepts}></textarea>
       </div>
       {#each types.promises as _, i (i)}
         <div class="field">
-          <label>{types.ports === 1 ? 'Promises (output)' : `Promises (output ${i + 1})`}</label>
+          <label>{types.ports === 1 ? tr('dialogs.nodedialog.promises_output') : tr('dialogs.nodedialog.promises_output_n', { n: i + 1 })}</label>
           <textarea class="code lang-json" spellcheck="false" rows="4" data-test="schema-out-{i + 1}" bind:value={types.promises[i]}></textarea>
         </div>
       {/each}
@@ -95,7 +96,7 @@
   {#snippet help()}
     {#if descriptor?.help}
       <details class="dialog-help">
-        <summary>About this node</summary>
+        <summary>{tr('dialogs.nodedialog.about_this_node')}</summary>
         <p>{descriptor.help}</p>
         {#if descriptor.compatibility.notes}<p class="muted">{descriptor.compatibility.notes}</p>{/if}
       </details>
@@ -104,8 +105,8 @@
 
   {#snippet foot()}
     <div class="dialog-error">{error}</div>
-    <span class="hint">Ctrl+Enter finishes</span>
-    <button class="ghost" onclick={() => done(null)}>Cancel</button>
-    <button class="primary" onclick={commit}>Done</button>
+    <span class="hint">{tr('dialogs.nodedialog.ctrlenter_finishes')}</span>
+    <button class="ghost" onclick={() => done(null)}>{tr('dialogs.nodedialog.cancel')}</button>
+    <button class="primary" onclick={commit}>{tr('dialogs.nodedialog.done')}</button>
   {/snippet}
 </Dialog>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from '../lib/i18n.svelte';
   // One tab per flow and per subflow template, and the actions that belong to
   // the flow on show.
   import Icon from './Icon.svelte';
@@ -33,23 +34,23 @@
     <button class="tab" class:active={t.id === active} class:has-diff={changed.has(t.id)} data-test="tab-flow" data-scope={t.id} onclick={() => onpick(t.id)} ondblclick={() => onedit(t.id)}>{t.label}</button>
   {/each}
   {#each subflows as t (t.id)}
-    <button class="tab tab-subflow" class:active={t.id === active} class:has-diff={changed.has(t.id)} data-test="tab-subflow" data-scope={t.id} title="Subflow" style:--pip={t.color} onclick={() => onpick(t.id)}>{t.label}</button>
+    <button class="tab tab-subflow" class:active={t.id === active} class:has-diff={changed.has(t.id)} data-test="tab-subflow" data-scope={t.id} title={tr('tabbar.subflow')} style:--pip={t.color} onclick={() => onpick(t.id)}>{t.label}</button>
   {/each}
   {#if editing}
-    <button class="tab tab-add" data-test="tab-add" title="Add a flow" aria-label="Add a flow" onclick={onaddflow}><Icon name="plus" /></button>
-    <button class="tab tab-add" data-test="tab-add-subflow" title="Add a subflow" onclick={onaddsubflow}><Icon name="plus" />subflow</button>
-    <button class="tab tab-add" data-test="tab-add-diagram" title="Add a FlowLab diagram: nodes that run when all their inputs are ready, with a panel" onclick={onadddiagram}><Icon name="plus" />FlowLab</button>
+    <button class="tab tab-add" data-test="tab-add" title={tr('tabbar.add_a_flow')} aria-label={tr('tabbar.add_a_flow')} onclick={onaddflow}><Icon name="plus" /></button>
+    <button class="tab tab-add" data-test="tab-add-subflow" title={tr('tabbar.add_a_subflow')} onclick={onaddsubflow}><Icon name="plus" />{tr('tabbar.subflow_2')}</button>
+    <button class="tab tab-add" data-test="tab-add-diagram" title={tr('tabbar.add_a_flowlab_diagram_nodes')} onclick={onadddiagram}><Icon name="plus" />{tr('tabbar.flowlab')}</button>
   {/if}
   <div class="spacer"></div>
   {#if editing}
-    <button class="ghost" data-test="auto-layout" title="Lay the nodes out so data reads left to right and no wire runs through a node" onclick={onlayout}>Tidy layout</button>
-    <button class="ghost" data-test="selection-to-subflow" title="Move the selected nodes into a subflow and put an instance where they were" disabled={!canMakeSubflow} onclick={ontosubflow}>Selection to subflow</button>
+    <button class="ghost" data-test="auto-layout" title={tr('tabbar.lay_the_nodes_out_so')} onclick={onlayout}>{tr('tabbar.tidy_layout')}</button>
+    <button class="ghost" data-test="selection-to-subflow" title={tr('tabbar.move_the_selected_nodes_into')} disabled={!canMakeSubflow} onclick={ontosubflow}>{tr('tabbar.selection_to_subflow')}</button>
   {/if}
   {#if showFlowProps}
-    <button class="ghost" data-test="flow-properties" title="Rename or delete this flow" onclick={onflowprops}>Flow properties</button>
+    <button class="ghost" data-test="flow-properties" title={tr('tabbar.rename_or_delete_this_flow')} onclick={onflowprops}>{tr('tabbar.flow_properties')}</button>
   {/if}
   {#if showSubflowProps}
-    <button class="ghost" data-test="subflow-properties" onclick={onsubflowprops}>Subflow properties</button>
+    <button class="ghost" data-test="subflow-properties" onclick={onsubflowprops}>{tr('tabbar.subflow_properties')}</button>
   {/if}
   <div class="tab-state mono" class:dirty data-test="tab-state">{state}</div>
 </div>

@@ -1,0 +1,16 @@
+{
+  "title": "Tableau de bord",
+  "menu": "Menu",
+  "connection": "Connexion au serveur",
+  "tabs": "Onglets",
+  "empty_1": "Il n'y a encore rien sur ce tableau de bord.",
+  "empty_2": "Ajoutez des nœuds ui_tab, ui_group et widget à un flux, puis déployez-le.",
+  "decrease": "Diminuer",
+  "increase": "Augmenter",
+  "value": "valeur",
+  "switch": "interrupteur",
+  "text": "texte",
+  "no_value": "aucune valeur",
+  "no_data": "Aucune donnée",
+  "language": "Langue"
+}

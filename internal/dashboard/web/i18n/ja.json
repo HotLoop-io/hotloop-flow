@@ -1,0 +1,16 @@
+{
+  "title": "ダッシュボード",
+  "menu": "メニュー",
+  "connection": "サーバーへの接続",
+  "tabs": "タブ",
+  "empty_1": "このダッシュボードにはまだ何もありません。",
+  "empty_2": "フローに ui_tab、ui_group、ウィジェットのノードを追加してデプロイしてください。",
+  "decrease": "減らす",
+  "increase": "増やす",
+  "value": "値",
+  "switch": "スイッチ",
+  "text": "テキスト",
+  "no_value": "値なし",
+  "no_data": "データなし",
+  "language": "言語"
+}

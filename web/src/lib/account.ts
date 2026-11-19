@@ -8,6 +8,7 @@
 import { type Api, ApiError, type MFASetup } from './api';
 import { openDialog } from './dialogs';
 import Mfa, { type Step } from '../components/dialogs/Mfa.svelte';
+import { tr, serverText } from './i18n.svelte';
 
 type Answer = { answer: string | null; code: string };
 const ask = (step: Step) => openDialog<Answer, { step: Step }>(Mfa, { step });
@@ -20,7 +21,7 @@ export async function twoFactorDialog(api: Api): Promise<void> {
   try {
     enabled = (await api.mfaStatus()).enabled;
   } catch (ex) {
-    alert(`Could not read your two-factor settings: ${ex instanceof Error ? ex.message : ex}`);
+    alert(tr('lib.mfa_read_failed', { error: ex instanceof Error ? serverText(ex.message) : String(ex) }));
     return;
   }
 
@@ -35,7 +36,7 @@ export async function twoFactorDialog(api: Api): Promise<void> {
   try {
     setup = await api.mfaSetup();
   } catch (ex) {
-    alert(`Could not start two-factor setup: ${ex instanceof Error ? ex.message : ex}`);
+    alert(tr('lib.mfa_start_failed', { error: ex instanceof Error ? serverText(ex.message) : String(ex) }));
     return;
   }
 

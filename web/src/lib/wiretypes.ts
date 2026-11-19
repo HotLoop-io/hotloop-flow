@@ -8,6 +8,7 @@
 // what the canvas shows and what a deploy refuses are the same answer.
 
 import type { FlowEntry } from './graph';
+import { tr } from './i18n.svelte';
 
 export const IN_KEY = 'ew_inSchema';
 export const OUT_KEY = 'ew_outSchemas';
@@ -100,16 +101,16 @@ export function wireTypeLabel(
   const sends = out ? summarize(out) : undefined;
   const takes = inn ? summarize(inn) : undefined;
   const lines = [
-    `${from.name || from.type} output ${port + 1} to ${to.name || to.type}`,
-    sends !== undefined ? `sends: ${sends}` : 'sends: nothing declared',
-    takes !== undefined ? `takes: ${takes}` : 'takes: nothing declared',
+    tr('lib.wire_ends', { from: from.name || from.type, n: port + 1, to: to.name || to.type }),
+    sends !== undefined ? tr('lib.wire_sends', { type: sends }) : tr('lib.wire_sends_nothing'),
+    takes !== undefined ? tr('lib.wire_takes', { type: takes }) : tr('lib.wire_takes_nothing'),
   ];
 
   const found = clashes.get(clashKey(from.id, port + 1, to.id));
   if (found && found.length > 0) {
     // "payload.temp: the sender sends string and ..." leads with the field.
     const field = found[0]!.split(':')[0] ?? '';
-    return { state: 'clash', text: `≠ ${field}`, title: [...lines, '', 'A deploy would refuse this wire:', ...found].join('\n') };
+    return { state: 'clash', text: `≠ ${field}`, title: [...lines, '', tr('lib.wire_refused'), ...found].join('\n') };
   }
   if (out && inn) return { state: 'ok', text: sends!, title: lines.join('\n') };
   return { state: 'half', text: sends ?? takes!, title: lines.join('\n') };

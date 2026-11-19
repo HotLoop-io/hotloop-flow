@@ -9,6 +9,7 @@
 import type { PropDef } from './api';
 import type { FlowEntry, Graph } from './graph';
 import { IN_KEY, OUT_KEY } from './wiretypes';
+import { tr } from './i18n.svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Model = Record<string, any>;
@@ -17,10 +18,18 @@ export type Read = { values?: Record<string, unknown>; error?: string };
 /** The sentinel the runtime understands as "keep the stored credential". */
 export const UNCHANGED = '__PWRD__';
 
-export const TYPE_LABELS: Record<string, string> = {
-  msg: 'msg.', flow: 'flow.', global: 'global.', str: 'string', num: 'number',
-  bool: 'boolean', json: 'JSON', bin: 'buffer', re: 'regex', date: 'timestamp',
-  jsonata: 'JSONata', env: 'env',
+/** What a typed input's type selector shows. msg., flow., global., JSONata and env are names and stay as they are. */
+export const typeLabel = (t: string): string => {
+  switch (t) {
+    case 'msg': return 'msg.';
+    case 'flow': return 'flow.';
+    case 'global': return 'global.';
+    case 'json': return 'JSON';
+    case 'jsonata': return 'JSONata';
+    case 'env': return 'env';
+    case 'str': case 'num': case 'bool': case 'bin': case 're': case 'date': return tr('propform.type_' + t);
+    default: return t;
+  }
 };
 
 export const typeKeyOf = (p: PropDef): string => p.typeProp ?? `${p.name}Type`;
@@ -75,9 +84,9 @@ export function readProp(p: PropDef, model: Model, entry: Model, graph?: Graph):
     case 'number': {
       // A number input answers null when it is empty.
       const v = model[p.name] == null ? '' : String(model[p.name]);
-      if (v === '') return p.required ? { error: `${label} is required` } : { values: {} };
+      if (v === '') return p.required ? { error: tr('lib.required', { label }) } : { values: {} };
       const n = Number(v);
-      if (!Number.isFinite(n)) return { error: `${label} must be a number` };
+      if (!Number.isFinite(n)) return { error: tr('lib.must_be_number', { label }) };
       return { values: { [p.name]: n } };
     }
     case 'text':
@@ -89,16 +98,16 @@ export function readProp(p: PropDef, model: Model, entry: Model, graph?: Graph):
         try {
           JSON.parse(v);
         } catch (ex) {
-          return { error: `${label} is not valid JSON: ${(ex as Error).message}` };
+          return { error: tr('lib.not_valid_json', { label, error: (ex as Error).message }) };
         }
       }
-      if (p.required && !v.trim()) return { error: `${label} is required` };
+      if (p.required && !v.trim()) return { error: tr('lib.required', { label }) };
       return { values: { [p.name]: v } };
     }
     case 'typedInput': {
       const t = String(model[typeKeyOf(p)] ?? '');
       const v = String(model[p.name] ?? '');
-      if (p.required && t !== 'date' && !v) return { error: `${label} is required` };
+      if (p.required && t !== 'date' && !v) return { error: tr('lib.required', { label }) };
       return { values: { [p.name]: v, [typeKeyOf(p)]: t } };
     }
     case 'cases': {
@@ -107,10 +116,10 @@ export function readProp(p: PropDef, model: Model, entry: Model, graph?: Graph):
         const o = JSON.parse(v) as Record<string, unknown>;
         if (o === null || typeof o !== 'object' || Array.isArray(o)) throw new Error('not an object');
         for (const [name, body] of Object.entries(o)) {
-          if (!String(body ?? '')) return { error: `${label}: the case "${name}" has no diagram` };
+          if (!String(body ?? '')) return { error: tr('lib.case_no_diagram', { label, name }) };
         }
       } catch {
-        return { error: `${label} is not a set of cases` };
+        return { error: tr('lib.not_cases', { label }) };
       }
       return { values: { [p.name]: v } };
     }
@@ -162,17 +171,17 @@ export function readTypes(m: TypesModel): Read {
     if (t === '') return {};
     try {
       const v = JSON.parse(t) as unknown;
-      if (typeof v !== 'object' || v === null || Array.isArray(v)) return { error: `${label} is a JSON Schema: an object` };
+      if (typeof v !== 'object' || v === null || Array.isArray(v)) return { error: tr('lib.schema_object', { label }) };
       return { value: v };
     } catch (ex) {
-      return { error: `${label} is not valid JSON: ${(ex as Error).message}` };
+      return { error: tr('lib.not_valid_json', { label, error: (ex as Error).message }) };
     }
   };
-  const accepted = parse('Accepts', m.accepts);
+  const accepted = parse(tr('dialogs.nodedialog.accepts_input_short'), m.accepts);
   if (accepted.error) return { error: accepted.error };
   const promised: unknown[] = [];
   for (let i = 0; i < m.promises.length; i++) {
-    const r = parse(m.ports === 1 ? 'Promises' : `Promises (output ${i + 1})`, m.promises[i]!);
+    const r = parse(m.ports === 1 ? tr('lib.promises') : tr('dialogs.nodedialog.promises_output_n', { n: i + 1 }), m.promises[i]!);
     if (r.error) return { error: r.error };
     promised.push(r.value ?? null);
   }
@@ -195,10 +204,10 @@ export function readRaw(text: string): Read {
   try {
     const parsed = JSON.parse(text) as Record<string, unknown>;
     for (const k of Object.keys(parsed)) {
-      if (STRUCTURAL.has(k)) return { error: `${k} is managed by the editor and cannot be set here` };
+      if (STRUCTURAL.has(k)) return { error: tr('lib.structural', { key: k }) };
     }
     return { values: parsed };
   } catch (ex) {
-    return { error: `Configuration is not valid JSON: ${(ex as Error).message}` };
+    return { error: tr('lib.config_not_json', { error: (ex as Error).message }) };
   }
 }

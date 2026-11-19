@@ -1,0 +1,16 @@
+{
+  "title": "Dashboard",
+  "menu": "Menu",
+  "connection": "Connection to the server",
+  "tabs": "Tabs",
+  "empty_1": "Nothing is on this dashboard yet.",
+  "empty_2": "Add ui_tab, ui_group and widget nodes to a flow and deploy it.",
+  "decrease": "Decrease",
+  "increase": "Increase",
+  "value": "value",
+  "switch": "switch",
+  "text": "text",
+  "no_value": "no value",
+  "no_data": "No data",
+  "language": "Language"
+}

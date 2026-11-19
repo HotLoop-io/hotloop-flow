@@ -1,4 +1,5 @@
 <script lang="ts" module>
+  import { tr } from '../../lib/i18n.svelte';
   import type { EnvVar as Env } from '../../lib/subflowenv';
   export type InstanceOutcome = { kind: 'save'; name: string; env: Env[] } | { kind: 'edit' } | null;
 </script>
@@ -38,13 +39,13 @@
   }
 </script>
 
-<Dialog title="Subflow: {String(template.name || 'subflow')}" backdropClose onclose={() => done(null)}>
+<Dialog title={tr('dialogs.instance.title', { name: String(template.name || tr('editor.default_subflow')) })} backdropClose onclose={() => done(null)}>
   <div class="field">
-    <label>Name</label>
+    <label>{tr('dialogs.instance.name')}</label>
     <input type="text" data-test="instance-name" placeholder={String(template.name || 'subflow')} bind:this={nameInput} bind:value={name} />
   </div>
   {#if declared.length > 0}
-    <div class="field-help">Properties this subflow takes. Each instance can set its own.</div>
+    <div class="field-help">{tr('dialogs.instance.properties_this_subflow_takes_each')}</div>
   {/if}
   {#each rows as r (r.decl.name)}
     <div class="field">
@@ -60,8 +61,8 @@
   {#if info}<div class="field-help">{info}</div>{/if}
   {#snippet foot()}
     <div class="spacer"></div>
-    <button class="ghost" type="button" data-test="instance-edit" onclick={() => done({ kind: 'edit' })}>Edit subflow</button>
-    <button class="ghost" type="button" data-test="instance-cancel" onclick={() => done(null)}>Cancel</button>
-    <button class="primary" type="button" data-test="instance-done" onclick={save}>Done</button>
+    <button class="ghost" type="button" data-test="instance-edit" onclick={() => done({ kind: 'edit' })}>{tr('dialogs.instance.edit_subflow')}</button>
+    <button class="ghost" type="button" data-test="instance-cancel" onclick={() => done(null)}>{tr('dialogs.instance.cancel')}</button>
+    <button class="primary" type="button" data-test="instance-done" onclick={save}>{tr('dialogs.instance.done')}</button>
   {/snippet}
 </Dialog>

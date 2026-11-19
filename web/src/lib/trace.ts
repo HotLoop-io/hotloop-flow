@@ -4,6 +4,7 @@
 // Trace panel draws it.
 
 import type { HopView, TraceView } from './api';
+import { tr, fmtFixed, fmtNumber } from './i18n.svelte';
 
 /** What the canvas draws for one node a trace went through. */
 export interface TraceMark {
@@ -55,15 +56,15 @@ export function overlayFrom(trace: TraceView, focus: number | null, path: number
 
 /** 840 ns, 12 µs, 3.4 ms, 1.2 s. */
 export function fmtNanos(n: number): string {
-  if (n < 1_000) return `${n} ns`;
-  if (n < 1_000_000) return `${(n / 1_000).toFixed(n < 10_000 ? 1 : 0)} µs`;
-  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(n < 10_000_000 ? 1 : 0)} ms`;
-  return `${(n / 1_000_000_000).toFixed(1)} s`;
+  if (n < 1_000) return `${fmtNumber(n)} ns`;
+  if (n < 1_000_000) return `${fmtFixed(n / 1_000, n < 10_000 ? 1 : 0)} µs`;
+  if (n < 1_000_000_000) return `${fmtFixed(n / 1_000_000, n < 10_000_000 ? 1 : 0)} ms`;
+  return `${fmtFixed(n / 1_000_000_000, 1)} s`;
 }
 
 /** A message, short enough for a row: its payload, or the whole thing when it has none. */
 export function preview(msg: Record<string, unknown> | undefined, cut?: boolean, max = 90): string {
-  if (!msg) return cut ? '(too big to keep)' : '(not kept)';
+  if (!msg) return cut ? tr('lib.too_big_to_keep') : tr('lib.not_kept');
   const v = 'payload' in msg ? msg.payload : msg;
   let s: string;
   try {
@@ -77,7 +78,7 @@ export function preview(msg: Record<string, unknown> | undefined, cut?: boolean,
 /** Everything a node's tooltip says about the trace going through it. */
 export function tipFor(mark: TraceMark): string {
   const lines = mark.hops.slice(0, 6).map((h) =>
-    `${fmtNanos(h.nanos)}${h.error ? ` failed: ${h.error}` : ''}  ${preview(h.msg, h.cut, 120)}`);
-  if (mark.hops.length > 6) lines.push(`and ${mark.hops.length - 6} more`);
+    `${fmtNanos(h.nanos)}${h.error ? tr('lib.hop_failed', { error: h.error }) : ''}  ${preview(h.msg, h.cut, 120)}`);
+  if (mark.hops.length > 6) lines.push(tr('lib.and_n_more', { n: mark.hops.length - 6 }));
   return lines.join('\n');
 }

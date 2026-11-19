@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tr } from '../../lib/i18n.svelte';
   // One line of text. Resolves with it, or null if the person backed out or left it blank.
   import Dialog from './Dialog.svelte';
 
@@ -31,7 +32,7 @@
     <input type="text" bind:this={input} bind:value data-test="{test}-input" onkeydown={(e) => { if (e.key === 'Enter') ok(); }} />
   </div>
   {#snippet foot()}
-    <button class="ghost" type="button" data-test="{test}-cancel" onclick={() => done(null)}>Cancel</button>
-    <button class="primary" type="button" data-test="{test}-ok" onclick={ok}>Create</button>
+    <button class="ghost" type="button" data-test="{test}-cancel" onclick={() => done(null)}>{tr('dialogs.asktext.cancel')}</button>
+    <button class="primary" type="button" data-test="{test}-ok" onclick={ok}>{tr('dialogs.asktext.create')}</button>
   {/snippet}
 </Dialog>
