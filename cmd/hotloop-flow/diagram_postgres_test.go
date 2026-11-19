@@ -52,7 +52,7 @@ type pgOutage struct {
 	outage      time.Duration // how long the link stays cut
 	cutAfter    int           // rows to see arrive before the cut; 0 cuts before the run starts
 	preload     bool          // fill the queue on disk with every row instead of running the diagram
-	poison      int           // a pass whose row the table already holds, or 0 for none
+	poison      int           // a pass whose row the table already holds, or 0 for none; the node then raises an error on a duplicate
 	drainWithin time.Duration // when set, the backlog must be written this soon after the link is back
 }
 
@@ -112,6 +112,13 @@ func pgOutageRun(t *testing.T, o pgOutage) {
 		},
 	})
 
+	// With a unique key and Skip on conflict a row that is sent twice, because the
+	// link died with its insert in flight, is written once: the advice in the docs.
+	// The refused-row test leaves it at Error, so a duplicate is a refusal.
+	onConflict := "nothing"
+	if o.poison > 0 {
+		onConflict = "error"
+	}
 	pace := ""
 	if o.paceMs > 0 {
 		pace = fmt.Sprintf(`,
@@ -125,11 +132,11 @@ func pgOutageRun(t *testing.T, o pgOutage) {
   {"id":"iter","type":"dia-body-in","z":"body","x":100,"y":100,"name":"iter","ew_in":[["n","a"],[]],"wires":[["bun","last"],[]]},
   {"id":"sens","type":"dia-const","z":"body","x":100,"y":150,"value":"\"dryer-1\"","ew_in":[["sensor"]],"wires":[["bun"]]},
   {"id":"bun","type":"dia-bundle","z":"body","x":300,"y":100,"names":"n,sensor","ew_in":[["row"],[]],"wires":[["out"],[]]},
-  {"id":"out","type":"dia-postgres-out","z":"body","x":500,"y":100,"server":"pg","table":%q,"columns":"n,sensor","timeColumn":"made_at","durable":true,"wires":[]},
+  {"id":"out","type":"dia-postgres-out","z":"body","x":500,"y":100,"server":"pg","table":%q,"columns":"n,sensor","timeColumn":"made_at","onConflict":%q,"durable":true,"wires":[]},
   {"id":"last","type":"dia-compare","z":"body","x":300,"y":200,"op":"ge","ew_in":[["value"],[]],"wires":[["stop"],[]]},
   {"id":"top","type":"dia-const","z":"body","x":100,"y":200,"value":"%%d","ew_in":[["b"],[]],"wires":[["last"],[]]},
   {"id":"stop","type":"dia-body-out","z":"body","x":500,"y":200,"name":"stop","wires":[]}%s
-]`, host, port, table, pace)
+]`, host, port, table, onConflict, pace)
 	flow = fmt.Sprintf(flow, total-1)
 	deployJSON(t, app, flow, runtime.DeployFull)
 
@@ -244,11 +251,25 @@ func pgOutageRun(t *testing.T, o pgOutage) {
 	events := append([]map[string]any(nil), audited...)
 	auditMu.Unlock()
 	if o.poison > 0 {
-		if rejected != 1 || len(events) != 1 {
-			t.Fatalf("rejected %d, audited %d; want the one row the table already held", rejected, len(events))
+		// The row the table already held is let go with its audit event. A row sent
+		// twice because the link died with its insert in flight is refused the same
+		// way here, because this table raises an error on a duplicate, so more than
+		// one is possible and none of them may be a row that was lost.
+		found := false
+		for _, ev := range events {
+			var env struct {
+				Values []any `json:"values"`
+			}
+			row, _ := ev["row"].(string)
+			if err := json.Unmarshal([]byte(row), &env); err != nil || len(env.Values) == 0 {
+				t.Fatalf("the audit event does not carry a readable row: %v", ev)
+			}
+			if env.Values[0] == float64(o.poison) {
+				found = true
+			}
 		}
-		if row, _ := events[0]["row"].(string); !strings.Contains(row, "150") {
-			t.Fatalf("the audit event does not carry the row: %v", events[0])
+		if !found || rejected < 1 || int(rejected) != len(events) {
+			t.Fatalf("rejected %d, audited %d, row %d found in the audit: %v; want the row the table already held, once each", rejected, len(events), o.poison, found)
 		}
 	} else if rejected != 0 || len(events) != 0 {
 		t.Fatalf("rejected %d, audited %d; nothing should have been refused", rejected, len(events))
