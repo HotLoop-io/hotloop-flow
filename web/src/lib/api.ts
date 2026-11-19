@@ -469,6 +469,11 @@ export class Api {
     return this.get(`/diagrams/${encodeURIComponent(id)}`);
   }
 
+  /** What the last run of a diagram did, event by event, to replay it. A 404 means it has not run. */
+  diagramTrace(id: string): Promise<DiagramTrace> {
+    return this.get(`/diagrams/${encodeURIComponent(id)}/trace`);
+  }
+
   /** The flow file with the nodes cut out of a diagram into a sub-diagram. Nothing is saved. */
   diagramSub(id: string, flows: FlowEntry[], nodes: string[], name: string): Promise<{ flows: FlowEntry[] }> {
     return this.send('POST', `/diagrams/${encodeURIComponent(id)}/sub`, { flows, nodes, name });
@@ -641,6 +646,24 @@ export interface TraceView {
   started: string;
   truncated?: boolean;
   hops: HopView[];
+}
+
+/** One thing a run did: a node starting or finishing, or a value on a wire. T is milliseconds into the run. */
+export interface DiagramTraceEvent {
+  t: number;
+  kind: 'node' | 'token';
+  data: Record<string, unknown>;
+}
+
+/** The recording of a diagram's last run. Truncated means the run was longer than what was kept. */
+export interface DiagramTrace {
+  run: string;
+  diagram: string;
+  state: string;
+  started: string;
+  events: DiagramTraceEvent[];
+  truncated: boolean;
+  dropped: number;
 }
 
 /** How a replay into a draft came out against the original. */

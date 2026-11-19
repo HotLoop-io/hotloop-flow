@@ -61,6 +61,43 @@ test('a diagram is run from the bar and its panel shows the answer', async ({ pa
   await expect(page.locator('[data-test="ind"][data-id="passes"] [data-test="ind-value"]')).toHaveText('10');
 });
 
+// G1: the run records what it did, and Replay plays it again on the canvas, slowed
+// down, after the run is over.
+test('the last run is replayed on the canvas from what it recorded', async ({ page, request }) => {
+  await seed(request, counter());
+  await signIn(page, 'loop');
+
+  // Nothing has run yet, so there is nothing to replay, and it says so.
+  await page.locator('[data-test="diagram-replay"]').click();
+  await expect(page.locator('[data-test="notice"]')).toContainText('Run the diagram once, then replay it.');
+
+  await page.locator('[data-test="diagram-run"]').click();
+  await expect(state(page)).toHaveAttribute('data-state', 'done');
+
+  await page.locator('[data-test="diagram-replay-speed"]').selectOption('30');
+  await page.locator('[data-test="diagram-replay"]').click();
+  const progress = page.locator('[data-test="diagram-replay-progress"]');
+  await expect(progress).toBeVisible();
+  expect(Number(await progress.getAttribute('data-total'))).toBeGreaterThan(40);
+  // The loop is marked running on the canvas while its replay goes, as it was in the run.
+  await expect(canvasNode(page, 'loop')).toHaveClass(/run-start/);
+  await expect.poll(async () => Number(await progress.getAttribute('data-index'))).toBeGreaterThan(5);
+
+  // It ends by itself and leaves what the run left.
+  await expect(page.locator('[data-test="diagram-replay"]')).toBeVisible({ timeout: 30_000 });
+  await expect(progress).toHaveCount(0);
+  const wire = page.locator('.canvas-host > .canvas path.wire[data-from="loop"][data-to="total"]');
+  await expect(wire.locator('title')).toHaveText('45');
+
+  // And it can be stopped part of the way.
+  await page.locator('[data-test="diagram-replay-speed"]').selectOption('700');
+  await page.locator('[data-test="diagram-replay"]').click();
+  await expect(progress).toBeVisible();
+  await page.locator('[data-test="diagram-replay-stop"]').click();
+  await expect(progress).toHaveCount(0);
+  await expect(page.locator('[data-test="diagram-replay"]')).toBeVisible();
+});
+
 test('a breakpoint pauses the run before its node, and step and resume carry on', async ({ page, request }) => {
   await seed(request, counter());
   await signIn(page, 'loop');

@@ -256,24 +256,24 @@ change, and the flow file still loads and saves byte for byte: a diagram is a ta
 with an `ew_diagram` key, and which input a wire lands on is kept in `ew_in` on the
 node it leaves. [diagrams.md](diagrams.md) has the rest.
 
-- [ ] The scheduler: all wired inputs ready, independent branches in parallel,
+- [x] The scheduler: all wired inputs ready, independent branches in parallel,
       and an `after` wire for order where no data flows
-- [ ] While and for loops with carried values, and an error wire that skips the
+- [x] While and for loops with carried values, and an error wire that skips the
       nodes after a fault, stops a loop and carries its source and code
-- [ ] A serial port, with reads to a terminator or a byte count, a timeout on the
+- [x] A serial port, with reads to a terminator or a byte count, a timeout on the
       error wire, and a port that is opened again after a pulled cable and counted
-- [ ] A reading parser, stable-value detection, and a text log with a time column
-- [ ] A panel served by Flow: controls, indicators and a chart or graph, open on a
+- [x] A reading parser, stable-value detection, and a text log with a time column
+- [x] A panel served by Flow: controls, indicators and a chart or graph, open on a
       phone while a run is live
-- [ ] Run, stop, highlight execution, probes on any wire, breakpoints on nodes,
+- [x] Run, stop, highlight execution, probes on any wire, breakpoints on nodes,
       wires and passes, and step into, over and out
-- [ ] The editor draws named ports and wires to the one you drop on, and the same
+- [x] The editor draws named ports and wires to the one you drop on, and the same
       page runs and debugs
-- [ ] Case structure, records and shared types, waveforms
-- [ ] TDMS and binary logging, and a database and MQTT out
-- [ ] Instrument sessions and a data acquisition client
-- [ ] Analysis: statistics and filters
-- [ ] Sub-diagrams, an error list in CI, and the editor's zoom and layout work
+- [x] Case structure, records and shared types, waveforms
+- [x] TDMS and binary logging, and a database and MQTT out
+- [x] Instrument sessions and a data acquisition client
+- [x] Analysis: statistics and filters
+- [x] Sub-diagrams, an error list in CI, and the editor's zoom and layout work
 - [ ] Proven on a Pi for a day, which needs the board and a long run
 
 ---

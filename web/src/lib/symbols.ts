@@ -17,6 +17,7 @@ export const SYMBOLS: Record<string, string> = {
   wave: 'M4 12c2-6 4-6 6 0s4 6 6 0 2-4 4-2',
   serial: 'M8 8h8v6H8z M10 14v4 M14 14v4 M10 6v2 M14 6v2',
   mqtt: 'M5 12a7 7 0 017-7 M5 16a3 3 0 013-3 M19 12a7 7 0 01-7 7 M19 8a3 3 0 01-3 3',
+  db: 'M6 7c0-1.7 2.7-3 6-3s6 1.3 6 3-2.7 3-6 3-6-1.3-6-3z M6 7v10c0 1.7 2.7 3 6 3s6-1.3 6-3V7 M6 12c0 1.7 2.7 3 6 3s6-1.3 6-3',
   log: 'M7 5h8l3 3v11H7z M10 12h5 M10 15h5',
   stats: 'M16 6H8l5 6-5 6h8',
   stable: 'M5 12h14 M16 9l3 3-3 3',

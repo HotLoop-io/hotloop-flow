@@ -28,8 +28,17 @@
     onsub: () => void;
     onexpand: () => void;
     onproblem: (nodeId: string) => void;
+    /** Replay of the last run: whether it is playing, how far, the pace, and whether there is a run to play. */
+    replaying: boolean;
+    replayIndex: number;
+    replayTotal: number;
+    replaySpeed: number;
+    canReplay: boolean;
+    onreplay: () => void;
+    onreplaystop: () => void;
+    onreplayspeed: (ms: number) => void;
   }
-  let { runState, error, problems, warnings, highlight, waiting, hasSelection, canExpand, expandedSelected, breakOnSelection, panelHref, nodeName, onrun, onstop, onhighlight, onpause, onresume, onstep, onbreak, onsub, onexpand, onproblem }: Props = $props();
+  let { runState, error, problems, warnings, highlight, waiting, hasSelection, canExpand, expandedSelected, breakOnSelection, panelHref, nodeName, onrun, onstop, onhighlight, onpause, onresume, onstep, onbreak, onsub, onexpand, onproblem, replaying, replayIndex, replayTotal, replaySpeed, canReplay, onreplay, onreplaystop, onreplayspeed }: Props = $props();
 
   const running = $derived(runState === 'running' || runState === 'paused');
   let listOpen = $state(false);
@@ -51,6 +60,21 @@
   <button class="ghost" data-test="diagram-break" disabled={!hasSelection} onclick={onbreak}>{breakOnSelection ? tr('diagrambar.clear_breakpoint') : tr('diagrambar.break_on_selected')}</button>
   <button class="ghost" data-test="selection-to-subdiagram" title={tr('diagrambar.cut_the_selected_nodes_out')} disabled={!hasSelection || running} onclick={onsub}>{tr('diagrambar.selection_to_subdiagram')}</button>
   <button class="ghost" data-test="subdiagram-expand" title={tr('diagrambar.draw_the_selected_subdiagram_open')} disabled={!canExpand} onclick={onexpand}>{expandedSelected ? tr('diagrambar.close_in_place') : tr('diagrambar.open_in_place')}</button>
+  <span class="sep"></span>
+  {#if replaying}
+    <button class="primary" data-test="diagram-replay-stop" onclick={onreplaystop}>{tr('diagrambar.stop_replay')}</button>
+    <span class="mono" data-test="diagram-replay-progress" data-index={replayIndex} data-total={replayTotal}>{tr('diagrambar.replaying', { i: replayIndex, n: replayTotal })}</span>
+  {:else}
+    <button class="ghost" data-test="diagram-replay" disabled={!canReplay} title={tr('diagrambar.replay_title')} onclick={onreplay}>{tr('diagrambar.replay_last_run')}</button>
+  {/if}
+  <label class="check">{tr('diagrambar.replay_speed')}
+    <select data-test="diagram-replay-speed" value={String(replaySpeed)} onchange={(e) => onreplayspeed(Number((e.currentTarget as HTMLSelectElement).value))}>
+      <option value="700">{tr('diagrambar.speed_slow')}</option>
+      <option value="350">{tr('diagrambar.speed_normal')}</option>
+      <option value="120">{tr('diagrambar.speed_fast')}</option>
+      <option value="30">{tr('diagrambar.speed_very_fast')}</option>
+    </select>
+  </label>
   <span class="sep"></span>
   <a class="ghost link" data-test="diagram-panel" href={panelHref} target="_blank" rel="noopener">{tr('diagrambar.open_panel')}</a>
   <div class="spacer"></div>

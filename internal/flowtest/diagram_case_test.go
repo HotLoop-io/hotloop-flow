@@ -85,3 +85,27 @@ func TestADiagramTestWillNotRunNodesThatReachOutside(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+// A diagram that writes rows into a database is refused by a test, never run: a
+// test has no database stand-in, and it must not write to a real one.
+func TestADiagramTestRefusesToWriteRowsToADatabase(t *testing.T) {
+	doc := `[
+  {"id":"pg","type":"hotloop-flow-postgres","host":"127.0.0.1","port":1,"database":"x","user":"x"},
+  {"id":"main","type":"tab","label":"Rows","ew_diagram":{}},
+  {"id":"c","type":"dia-const","z":"main","x":10,"y":10,"value":"{\"a\":1}","wires":[["out"]],"ew_in":[["row"]]},
+  {"id":"out","type":"dia-postgres-out","z":"main","x":100,"y":10,"server":"pg","table":"t","columns":"a","wires":[]},
+  {"id":"one","type":"dia-const","z":"main","x":10,"y":60,"value":"1","wires":[["seen"]],"ew_in":[["value"]]},
+  {"id":"seen","type":"dia-indicator","z":"main","x":100,"y":60,"label":"Seen","kind":"number"}
+]`
+	r := one(t, doc, "tests:\n  - {name: x, diagram: {name: Rows, expect: {Seen: 1}}}\n")
+	if r.Status == flowtest.Pass {
+		t.Fatalf("a test ran a diagram that writes to a database: %+v", r)
+	}
+	var said string
+	for _, p := range r.Problems {
+		said += p.Message
+	}
+	if !strings.Contains(said, "dia-postgres-out") {
+		t.Fatalf("problems %q do not name the node", said)
+	}
+}

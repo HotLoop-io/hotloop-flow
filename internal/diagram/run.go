@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -54,6 +55,9 @@ type Run struct {
 	nodeRuns   atomic.Int64
 	errorsSeen atomic.Int64
 	limit      eventLimit
+
+	// rec keeps what the run did, to replay it after it is over.
+	rec traceRecorder
 }
 
 // Ctx is what a node is handed when it runs.
@@ -200,10 +204,15 @@ func (r *Run) emit(kind string, data map[string]any) {
 	if data == nil {
 		data = map[string]any{}
 	}
+	data["diagram"] = r.Diagram
+	if kind == "node" || kind == "token" {
+		// Every one is kept, including the node events the live stream thins out at
+		// full speed, because a replay shows the run slowed down.
+		r.rec.add(kind, data)
+	}
 	if kind == "node" && r.highlight.Load() == 0 && !r.limit.allow() {
 		return
 	}
-	data["diagram"] = r.Diagram
 	r.mgr.publish("diagram/"+r.Diagram+"/"+kind, data)
 }
 
@@ -356,6 +365,11 @@ func (in *instance) send(ctx context.Context, w *Wire, v any) error {
 	r.wires.record(key, v, r.mgr.probeDepth(r.Diagram, key))
 	if r.mgr.wantsToken(r.Diagram, key) || r.highlight.Load() > 0 {
 		r.emit("token", map[string]any{"wire": key, "value": preview(v)})
+	} else {
+		// Nobody is watching this wire live. It is still kept for a replay, as a
+		// short preview and only while the recording has room, so a run of big
+		// arrays at full speed pays for no more than the first few thousand.
+		r.rec.addToken(key, v, r.Diagram)
 	}
 	if err := r.ctl.before(ctx, "wire:"+key, in.depth, in.d.ID); err != nil {
 		return err
@@ -425,6 +439,15 @@ func (l *eventLimit) allow() bool {
 
 // preview is a token as a browser should see it: short enough for a wire label.
 func preview(v any) any {
+	// A long array is cut before it is turned into JSON, so a recording of a run
+	// of big reads does not marshal every sample of every one.
+	if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice && rv.Len() > 64 {
+		head := make([]any, 16)
+		for i := range head {
+			head[i] = jsonValue(rv.Index(i).Interface())
+		}
+		return map[string]any{"length": rv.Len(), "head": head}
+	}
 	j := jsonValue(v)
 	if s, ok := j.(string); ok && len(s) > 200 {
 		return s[:200] + "..."

@@ -6,6 +6,8 @@
  "node.dia-filter.prop.kind.opt.bandpass",
  "node.dia-instr-query.prop.order.label",
  "node.dia-mqtt-out.prop.retain.label",
+ "node.dia-postgres-out.prop.durable.label",
+ "node.dia-postgres-out.prop.timeColumn.label",
  "node.function.compat",
  "node.hotloop-flow-mcp-server.prop.url.placeholder",
  "node.hotloop-flow-s7.prop.rack.label",

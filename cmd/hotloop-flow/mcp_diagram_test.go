@@ -68,6 +68,13 @@ func TestAnAgentRunsAndControlsADiagramThroughMCP(t *testing.T) {
 	if text, st, isErr := callTool(t, agent, "run_diagram", map[string]any{"id": "main"}); isErr || st["diagram"] != "main" {
 		t.Fatalf("run_diagram: %v %s", isErr, text)
 	}
+	// What the run did is a tool too, the recording the editor replays.
+	if text, st, isErr := callTool(t, agent, "get_diagram_trace", map[string]any{"id": "main"}); isErr || st["diagram"] != "main" || !strings.Contains(text, `"events"`) {
+		t.Fatalf("get_diagram_trace: %v %s", isErr, text)
+	}
+	if text, _, isErr := callTool(t, agent, "get_diagram_trace", map[string]any{"id": "no-such"}); !isErr || !strings.Contains(text, "404") {
+		t.Errorf("the trace of a diagram that is not there: %v %s", isErr, text)
+	}
 	if text, st, isErr := callTool(t, agent, "set_diagram_control", map[string]any{"id": "main", "node": "gain", "body": map[string]any{"value": 4}}); isErr || st["value"] != float64(4) {
 		t.Fatalf("set_diagram_control: %v %s", isErr, text)
 	}

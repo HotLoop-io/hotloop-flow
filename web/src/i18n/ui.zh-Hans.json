@@ -493,5 +493,17 @@
   "dialogs.mfa.title_setup": "设置两步登录",
   "dialogs.mfa.title_on": "两步登录已开启",
   "dialogs.nodedialog.not_installed": "此运行时中未安装 {type}。其配置以原始 JSON 显示，并将原样保留。",
-  "lib.list_separator": "，"
+  "lib.list_separator": "，",
+  "diagrambar.replay_last_run": "回放上次运行",
+  "diagrambar.replay_title": "根据记录的内容，在画布上放慢速度重新播放上次运行",
+  "diagrambar.stop_replay": "停止回放",
+  "diagrambar.replaying": "正在回放第 {i} 条，共 {n} 条",
+  "diagrambar.replay_speed": "速度",
+  "diagrambar.speed_slow": "慢",
+  "diagrambar.speed_normal": "正常",
+  "diagrambar.speed_fast": "快",
+  "diagrambar.speed_very_fast": "很快",
+  "editor.replay_nothing": "该次运行没有可回放的记录。",
+  "editor.replay_truncated": "该次运行比保留的内容更长。回放显示它的前 {n} 个事件。",
+  "editor.replay_not_run": "请先运行一次图表，再回放。"
 }

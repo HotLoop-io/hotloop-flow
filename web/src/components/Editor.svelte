@@ -3,8 +3,8 @@
   // The editor: palette, tabs, canvas, the live dock, and the rail with review,
   // history, tests and trace. The canvas and the graph under it are the engine in
   // src/lib; this is what holds them together and what a person touches.
-  import { onMount, tick } from 'svelte';
-  import { type Api, ApiError, type DiagramDescription, type Deployment, type DiffResult, type Descriptor, type NodeStat, type RuntimeEvent, type TestReport, type TraceView } from '../lib/api';
+  import { onMount, tick, untrack } from 'svelte';
+  import { type Api, ApiError, type DiagramDescription, type DiagramTraceEvent, type Deployment, type DiffResult, type Descriptor, type NodeStat, type RuntimeEvent, type TestReport, type TraceView } from '../lib/api';
   import { Canvas } from '../lib/canvas';
   import { type DiffOverlay, overlayFrom, summarise } from '../lib/diff';
   import { describeImport, exportEntries, importEntries, parseEntries, toText, type ImportResult } from '../lib/flowio';
@@ -388,6 +388,56 @@
     }
     paintLive();
   }
+
+  // ── Replay ─────────────────────────────────────────────────────────────────
+  //
+  // The run records what it did, and a replay feeds those events to the same
+  // handler the live run feeds, one at a time, at a pace a person can follow. It
+  // changes nothing in the runtime, and it ends by drawing what the run left.
+  let replay = $state({ playing: false, i: 0, total: 0 });
+  let replaySpeed = $state(350);
+  let replayEvents: DiagramTraceEvent[] = [];
+  let replayTimer = 0;
+
+  async function startReplay(): Promise<void> {
+    stopReplay();
+    const id = runId;
+    try {
+      const rec = await api.diagramTrace(id);
+      if (!rec.events.length) { notice(tr('editor.replay_nothing')); return; }
+      replayEvents = rec.events;
+      nodeStates.clear(); litWires.clear(); wireValues.clear();
+      replay = { playing: true, i: 0, total: rec.events.length };
+      if (rec.truncated) notice(tr('editor.replay_truncated', { n: rec.events.length }));
+      paintLive();
+      stepReplay(id);
+    } catch (ex) {
+      notice(ex instanceof ApiError && ex.status === 404 ? tr('editor.replay_not_run') : ex instanceof Error ? ex.message : String(ex));
+    }
+  }
+
+  function stepReplay(id: string): void {
+    if (!replay.playing) return;
+    const e = replayEvents[replay.i];
+    if (!e) { stopReplay(); return; }
+    onDiagramEvent({ topic: `diagram/${id}/${e.kind}`, data: e.data } as RuntimeEvent);
+    replay = { ...replay, i: replay.i + 1 };
+    replayTimer = window.setTimeout(() => stepReplay(id), replaySpeed);
+  }
+
+  function stopReplay(): void {
+    if (!replay.playing) return;
+    window.clearTimeout(replayTimer);
+    replay = { playing: false, i: 0, total: 0 };
+    replayEvents = [];
+    nodeStates.clear(); litWires.clear();
+    void refreshDiagram();
+  }
+
+  // Going to another tab ends a replay: it was of the diagram that is left.
+  // It reads runId and nothing else: stopping reads the replay's own state, and an
+  // effect that tracked that would stop the replay on its first step.
+  $effect(() => { void runId; untrack(stopReplay); });
 
   async function diagAction(what: () => Promise<unknown>): Promise<void> {
     try { await what(); } catch (ex) { notice(ex instanceof Error ? ex.message : String(ex)); }
@@ -1179,6 +1229,9 @@
         onsub={() => void selectionToSubDiagram()}
         onexpand={toggleOpenInPlace}
         onproblem={(id) => selectNode(id)}
+        replaying={replay.playing} replayIndex={replay.i} replayTotal={replay.total} replaySpeed={replaySpeed}
+        canReplay={!(diagState === 'running' || diagState === 'paused' || diagMissing)}
+        onreplay={() => void startReplay()} onreplaystop={stopReplay} onreplayspeed={(ms) => (replaySpeed = ms)}
       />
     {/if}
     {#if noticeText}

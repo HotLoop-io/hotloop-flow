@@ -16,6 +16,10 @@ import (
 // ErrNoDiagram is returned for a diagram id that is not deployed.
 var ErrNoDiagram = errors.New("no such diagram")
 
+// ErrNoRun is returned for the trace of a diagram that has not been run since the
+// flow file was deployed.
+var ErrNoRun = errors.New("this diagram has not been run since it was deployed")
+
 // ErrBusy is returned when a diagram already has a run going.
 var ErrBusy = errors.New("this diagram is already running")
 
@@ -119,6 +123,11 @@ func (m *Manager) startOutboxes(set *Set) {
 			}
 			key := id + "/" + nid
 			b := newOutbox(sp.Wire("dia:"+key), dn.Kind.Deliver(m, dn.Raw))
+			if dn.Kind.DeliverBatch != nil {
+				b.sendBatch = dn.Kind.DeliverBatch(m, dn.Raw)
+				diagramID, nodeID := id, nid
+				b.onReject = func(body []byte, err error) { m.rowRejected(diagramID, nodeID, body, err) }
+			}
 			boxes[key] = b
 			m.pumpsDone.Add(1)
 			go func() {
@@ -270,6 +279,7 @@ func (m *Manager) Start(id string, opt StartOptions) (*Run, error) {
 		ID: fmt.Sprintf("%s-%d", id, m.nextRun), Diagram: id, Started: time.Now(),
 		set: set, mgr: m, cancel: cancel, done: make(chan struct{}), state: StateRunning,
 	}
+	r.rec.started = r.Started
 	r.ctl = newController(func(kind string, data map[string]any) { r.emit(kind, data) })
 	if opt.Breakpoints != nil {
 		m.breaks[id] = append([]string(nil), opt.Breakpoints...)
@@ -443,6 +453,29 @@ func (m *Manager) Breakpoints(id string) []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]string(nil), m.breaks[id]...)
+}
+
+// AuditRowRejected is the audit event for a row a database refused for what was in
+// it. The row is let go from the queue, so the event carries it.
+const AuditRowRejected = "diagram.row_rejected"
+
+func (m *Manager) rowRejected(tab, nodeID string, body []byte, err error) {
+	m.mu.Lock()
+	audit := m.services.Audit
+	m.mu.Unlock()
+	if audit != nil {
+		audit(AuditRowRejected, "", map[string]any{"diagram": tab, "node": nodeID, "error": err.Error(), "row": string(body)})
+	}
+}
+
+// OutboxRejected is how many messages of a durable output the target refused for
+// what was in them.
+func (m *Manager) OutboxRejected(tab, nodeID string) int64 {
+	b := m.outboxFor(tab, nodeID)
+	if b == nil {
+		return 0
+	}
+	return b.rejected.Load()
 }
 
 // OutboxUnconfirmedSends is how many sends of a durable output were taken by the

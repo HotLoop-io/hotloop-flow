@@ -493,5 +493,17 @@
   "dialogs.mfa.title_setup": "2 要素サインインの設定",
   "dialogs.mfa.title_on": "2 要素サインインはオンです",
   "dialogs.nodedialog.not_installed": "{type} はこのランタイムにインストールされていません。構成は生の JSON として表示され、そのまま保持されます。",
-  "lib.list_separator": "、"
+  "lib.list_separator": "、",
+  "diagrambar.replay_last_run": "直前の実行を再生",
+  "diagrambar.replay_title": "記録された内容から、直前の実行をキャンバス上でゆっくり再生し直します",
+  "diagrambar.stop_replay": "再生を停止",
+  "diagrambar.replaying": "{n} 件中 {i} 件目を再生中",
+  "diagrambar.replay_speed": "速度",
+  "diagrambar.speed_slow": "遅い",
+  "diagrambar.speed_normal": "標準",
+  "diagrambar.speed_fast": "速い",
+  "diagrambar.speed_very_fast": "とても速い",
+  "editor.replay_nothing": "この実行には再生できる記録がありません。",
+  "editor.replay_truncated": "この実行は保存できる量より長くなっています。先頭の {n} 件のイベントを再生します。",
+  "editor.replay_not_run": "ダイアグラムを一度実行してから再生してください。"
 }

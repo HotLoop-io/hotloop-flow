@@ -513,5 +513,17 @@
   "dialogs.mfa.title_setup": "Настройване на вход с два фактора",
   "dialogs.mfa.title_on": "Входът с два фактора е включен",
   "dialogs.nodedialog.not_installed": "{type} не е инсталиран в този runtime. Конфигурацията му се показва като суров JSON и ще бъде запазена точно както е.",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "Повтори последното изпълнение",
+  "diagrambar.replay_title": "Възпроизвеждане отново на платното на последното изпълнение, по-бавно, по записаното от него",
+  "diagrambar.stop_replay": "Спри повторението",
+  "diagrambar.replaying": "Повторение {i} от {n}",
+  "diagrambar.replay_speed": "Скорост",
+  "diagrambar.speed_slow": "Бавно",
+  "diagrambar.speed_normal": "Нормално",
+  "diagrambar.speed_fast": "Бързо",
+  "diagrambar.speed_very_fast": "Много бързо",
+  "editor.replay_nothing": "Това изпълнение не е записало нищо за повторение.",
+  "editor.replay_truncated": "Това изпълнение е по-дълго от запазеното. Повторението показва първите му {n} събития.",
+  "editor.replay_not_run": "Изпълнете диаграмата веднъж и след това я повторете."
 }

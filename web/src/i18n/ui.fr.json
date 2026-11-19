@@ -513,5 +513,17 @@
   "dialogs.mfa.title_setup": "Configurer la connexion en deux étapes",
   "dialogs.mfa.title_on": "La connexion en deux étapes est activée",
   "dialogs.nodedialog.not_installed": "{type} n'est pas installé dans ce runtime. Sa configuration est affichée en JSON brut et sera conservée exactement telle quelle.",
-  "lib.list_separator": ", "
+  "lib.list_separator": ", ",
+  "diagrambar.replay_last_run": "Rejouer la dernière exécution",
+  "diagrambar.replay_title": "Rejouer sur le canevas la dernière exécution, plus lentement, à partir de ce qu'elle a enregistré",
+  "diagrambar.stop_replay": "Arrêter la relecture",
+  "diagrambar.replaying": "Relecture {i} sur {n}",
+  "diagrambar.replay_speed": "Vitesse",
+  "diagrambar.speed_slow": "Lente",
+  "diagrambar.speed_normal": "Normal",
+  "diagrambar.speed_fast": "Rapide",
+  "diagrambar.speed_very_fast": "Très rapide",
+  "editor.replay_nothing": "Cette exécution n'a rien enregistré à rejouer.",
+  "editor.replay_truncated": "Cette exécution est plus longue que ce qui est conservé. La relecture montre ses {n} premiers événements.",
+  "editor.replay_not_run": "Exécutez le diagramme une fois, puis rejouez-le."
 }
