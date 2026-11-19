@@ -50,7 +50,7 @@ warm-up is discarded.
 **Measured 2026-10-02.** Linux under WSL2, 24 CPUs (Ryzen 9 7900X), the native
 binary built from `main` at `950076b`. Three runs of each command above.
 
-| | Run 1 | Run 2 | Run 3 |
+| Measure | Run 1 | Run 2 | Run 3 |
 |---|---|---|---|
 | Cold start | 0.05 s | 0.05 s | 0.05 s |
 | RSS, idle | 16.7 MiB | 16.7 MiB | 16.4 MiB |
@@ -86,7 +86,7 @@ barely moved. The median is where the cost of handling a request shows up.
 
 **WSL2 is not a Pi.** The Pi 5 numbers are in the next section. A Pi 4 and a
 Zero 2 W still get their own, measured on the boards, in Phase 4 of the
-[roadmap](../ROADMAP.md), and I haven't had those two in front of me.
+[roadmap](../ROADMAP.md), and we haven't had those two in front of us.
 
 ## Results on a Raspberry Pi 5
 
@@ -101,19 +101,19 @@ board.
 
 It ran as a pod on a k3s node, with nothing else on that node but the cluster's
 own DaemonSets (monitoring exporters, the load balancer shim, the reboot
-daemon). The node read 52m CPU before I started. The image was
+daemon). The node read 52m CPU before we started. The image was
 `ghcr.io/hotloop-io/hotloop-flow:2.2.0`, the arm64 manifest
 `sha256:657360c102afa69765c9f0e0dd9b01d085b81b4542ee4bedf1dceb41bb0d1115`
 (read anonymously from ghcr.io), which containerd on the node reported as image
 ID `sha256:de115f6214f23975c7b58bd0f2d89ff838ccaec15f1359e79c51292b5edf76bd`.
-Instead of building a native binary I ran the image's own binary:
+Instead of building a native binary we ran the image's own binary:
 `hotloop-flow bench -mode http -launch /usr/local/bin/hotloop-flow ...` as the
 container's command, with the same arguments as above, over the pod's loopback,
 data on an `emptyDir` seeded with `bench-flow.json`. The load generator and the
 flow share the same four cores, as they do in the x86 run. Each run was a fresh
 pod.
 
-| | Run 1 | Run 2 | Run 3 |
+| Measure | Run 1 | Run 2 | Run 3 |
 |---|---|---|---|
 | Cold start | 0.46 s | 0.15 s | 0.10 s |
 | RSS, idle | 88.3 MiB | 88.0 MiB | 88.1 MiB |
@@ -126,16 +126,16 @@ pod.
 | Engine, peak heap | 170.4 MiB | 172.3 MiB | 184.2 MiB |
 
 Run 1's cold start is the first run after the image was pulled, and the file
-cache was cold. I didn't run a fourth to see if that's the whole story.
+cache was cold. We didn't run a fourth to see if that's the whole story.
 
 ### Sustained, and what the board did
 
-Thirty seconds doesn't show a heat problem, so I ran the HTTP command once more
+Thirty seconds doesn't show a heat problem, so we ran the HTTP command once more
 with `-duration 600s` and everything else the same, while sampling
 `vcgencmd get_throttled`, `measure_temp` and `measure_clock arm` on the node
 every five seconds.
 
-| 600 seconds, one run | |
+| 600 seconds, one run | Result |
 |---|---|
 | Requests | 6.86M |
 | HTTP throughput | 11.4k req/s |
@@ -151,26 +151,26 @@ of the 119 samples during the run had at least one of them set, and for the last
 nine minutes the temperature sat between 83 and 86 C with the clock hovering
 between 1.5 and 1.7 GHz instead of the 2.0 GHz cap. The under-voltage bits were
 never set. So the sustained figure is 11.4k req/s against 13.2k to 13.4k for the
-30-second runs, and p50 moved from 0.48 to 0.58 ms. Those happened together. I
-didn't sample throughput per minute, so I can't tell you how much of the drop is
+30-second runs, and p50 moved from 0.48 to 0.58 ms. Those happened together. We
+didn't sample throughput per minute, so we can't tell you how much of the drop is
 the clock and how much is anything else. After the load stopped the board went
 back to about 55 C within ten minutes, and the sticky "has occurred" bits stay
-set until reboot, as they're meant to. The peak, 86.2 C, is above the 85 C line I
+set until reboot, as they're meant to. The peak, 86.2 C, is above the 85 C line we
 use as the stop for a memory test on these boards. Nothing on the node failed or
-froze, though I haven't tested its memory.
+froze, though we haven't tested its memory.
 
 The three 30-second runs were short enough that the sampler caught the soft
 limit bit during run 3 and nothing before it.
 
 ### What these numbers are not
 
-**RSS idle is bigger than the x86 figure, and I don't know why.** 88 MiB
+**RSS idle is bigger than the x86 figure, and we don't know why.** 88 MiB
 against 16.7 MiB. A separate pod running the same image idle held `VmRSS`
 89,648 kB (69,704 kB anonymous, 19,944 kB file-backed) flat from one second
 to two minutes after start, read from `/proc` on the node. The harness's "under
 load" number is lower than its idle number, because it samples only after the
-warm-up and the process's resident set was lower by then. I measured both and
-haven't found out what is holding the memory at start, so I'm not offering a
+warm-up and the process's resident set was lower by then. We measured both and
+haven't found out what is holding the memory at start, so we're not offering a
 cause.
 
 **One board, one afternoon, a capped clock.** At 2.4 GHz, with a cooler that

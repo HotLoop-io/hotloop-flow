@@ -187,8 +187,8 @@ On a pod you run yourself, mount the PEM and set `HOTLOOP_FLOW_ASSERTION_PUBLIC_
 Every `trace.*`, `store.*`, `history.*`, `audit.*` and `tests.*` value has to land in the field of the same name in
 `config.yaml`, and CI proves it: it renders the chart, takes the config out of the
 ConfigMap and loads it with the binary's own loader, which refuses keys it doesn't
-know. A default render has to equal the binary's own defaults too. I got tired of
-settings that say one thing in `values.yaml` and do another in the process.
+know. A default render has to equal the binary's own defaults too, so a setting in
+`values.yaml` always does what it says in the process.
 
 The Service listens on 8080 and forwards to the binary's 1880. Everything else is
 documented next to the value in
@@ -268,7 +268,7 @@ Rootless works the same way with the file in `~/.config/containers/systemd/`,
 `loginctl enable-linger <user>` too, or systemd stops that user's services when
 they log out, and Flow goes with them. That's
 [Podman's](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
-and systemd's documented behavior. The rootful unit above is the one I ran.
+and systemd's documented behavior. The rootful unit above is the one we ran.
 
 **Upgrading** is changing the tag in `Image=`, then `daemon-reload` and
 `restart`. Flows, credentials and the secret stay where they were. Pin the tag.
