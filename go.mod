@@ -13,6 +13,7 @@ require (
 	github.com/goburrow/serial v0.1.0
 	github.com/gopcua/opcua v0.9.1
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/mattn/go-isatty v0.0.24
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/recolabs/gnata v0.5.0
 	github.com/robinson/gos7 v0.0.0-20260924061028-c54e650665ba
@@ -56,7 +57,6 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/npat-efault/crc16 v0.0.0-20161013170008-4128ccbe47c3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect

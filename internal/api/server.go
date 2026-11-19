@@ -134,6 +134,9 @@ type Deps struct {
 
 	// Diagrams runs the flow file's diagrams. Nil turns the diagram routes off.
 	Diagrams *diagram.Manager
+	// Stations pushes a flow file to the tenant's other Flow installs. Nil turns
+	// the station routes off.
+	Stations StationsService
 }
 
 // DeployRequest is a deploy and everything the deployment log records about it.
@@ -313,6 +316,7 @@ func (s *Server) routes() {
 	s.mux.Handle("POST "+s.path("/inject/{id}"), s.auth(PermInject, s.handleInject))
 	s.mux.Handle("GET "+s.path("/comms"), s.auth(PermStatusRead, s.handleComms))
 	s.diagramRoutes()
+	s.stationRoutes()
 	s.instrumentRoutes()
 	if s.deps.MCP != nil {
 		// POST for every request, and GET and DELETE for the handshake revisions

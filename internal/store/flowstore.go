@@ -143,12 +143,10 @@ func (s *FlowStore) Save(flows *engine.Flows, expectedRev string) (string, error
 		return "", fmt.Errorf("%w (have %s, you sent %s)", ErrRevisionConflict, s.rev, expectedRev)
 	}
 
-	data, err := flows.Marshal()
+	data, err := flowBytes(flows)
 	if err != nil {
-		return "", fmt.Errorf("serialising flows: %w", err)
+		return "", err
 	}
-	// Trailing newline: the file is read by humans and diffed by git.
-	data = append(data, '\n')
 
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return "", fmt.Errorf("creating %s: %w", filepath.Dir(s.path), err)
@@ -185,6 +183,28 @@ func (s *FlowStore) Rev() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.rev
+}
+
+// flowBytes is the file a flow set is saved as. One place makes it, so the
+// revision a save will give can be known before it is made.
+func flowBytes(flows *engine.Flows) ([]byte, error) {
+	data, err := flows.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("serialising flows: %w", err)
+	}
+	// Trailing newline: the file is read by humans and diffed by git.
+	return append(data, '\n'), nil
+}
+
+// RevisionOf is the revision a flow set will have once it is saved, without
+// saving it. Two instances that save the same flows agree on it, which is what
+// lets a push to many stations check each one against a single value.
+func RevisionOf(flows *engine.Flows) (string, error) {
+	data, err := flowBytes(flows)
+	if err != nil {
+		return "", err
+	}
+	return revisionOf(data), nil
 }
 
 // revisionOf derives a revision token from the file bytes.

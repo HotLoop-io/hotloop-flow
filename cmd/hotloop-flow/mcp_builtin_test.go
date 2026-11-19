@@ -10,6 +10,7 @@ import (
 
 	"github.com/HotLoop-io/hotloop-flow/internal/api"
 	"github.com/HotLoop-io/hotloop-flow/internal/audit"
+	"github.com/HotLoop-io/hotloop-flow/internal/config"
 	"github.com/HotLoop-io/hotloop-flow/internal/diagram"
 	"github.com/HotLoop-io/hotloop-flow/internal/instruments"
 	"github.com/HotLoop-io/hotloop-flow/internal/mcphost"
@@ -74,11 +75,18 @@ func TestAnAgentDeploysAFlowThroughMCPAndItRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The station tools are served only where the stations settings are set.
+	app.cfg.Stations = config.Stations{DashboardURL: "http://127.0.0.1:1", Tenant: "t", DashboardTokenFile: "dash.token", DeployTokenFile: "deploy.token"}
 	e := serveAppWith(t, app, map[string][]string{
 		"agent":  {"mcp.call", "flows.read", "flows.write", "inject.write", "settings.read", "nodes.read", "audit.read", "status.read", "auth.admin", "diagram.run", "instrument.write"},
 		"viewer": {"mcp.call", "flows.read"},
 		"nomcp":  {"flows.read", "flows.write"},
-	}, func(d *api.Deps) { d.MCP = reg; d.Diagrams = app.diagrams; d.Instruments = switches })
+	}, func(d *api.Deps) {
+		d.MCP = reg
+		d.Diagrams = app.diagrams
+		d.Instruments = switches
+		d.Stations = app.stationsService()
+	})
 	agent := mcpSession(t, e, e.login(t, "agent"))
 
 	// The tools are offered to the agent, and the deploying ones are not offered to a
