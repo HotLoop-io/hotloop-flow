@@ -1604,7 +1604,7 @@ numbers can't hold them.
 An agent that speaks the Model Context Protocol can call a flow as a tool, and a
 flow can call a tool on any MCP server, HotLoop's own included. Three nodes and
 one config node do it: `mcp tool` and `mcp result` serve a flow, `mcp client` on
-an `hotloop-flow-mcp-server` connection calls out. If you only ever wire
+a `hotloop-flow-mcp-server` connection calls out. If you only ever wire
 sensors to dashboards you can skip all of this: a flow that uses none of these
 nodes never makes an MCP call, and the only tools Flow serves of its own are the ones that read and change its flows ([below](#flows-own-tools)).
 
