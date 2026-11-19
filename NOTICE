@@ -3,14 +3,14 @@ Copyright 2026 HotLoop
 
 This product includes software developed by HotLoop (https://hotloop.io).
 
-HotLoop Flow is licensed under the EmberNet Source License 1.0
-(LicenseRef-EmberNet-Source-1.0). The LICENSE file in this repository is a byte-for-byte
+HotLoop Flow is licensed under the HotLoop Source License Agreement 1.0
+(LicenseRef-HotLoop-Source-1.0). The LICENSE file in this repository is a byte-for-byte
 copy of the canonical text in HotLoop-io/HotLoop-io (LICENSE.md). Where they
 ever disagree, the canonical copy wins. Releases from before the move to the
-EmberNet Source License were published under their own earlier terms, the
-Business Source License 1.1 among them, and those terms stay with those copies.
+HotLoop Source License Agreement were published under their own earlier terms, the
+EmberNet Source License 1.0 and the Business Source License 1.1 among them, and those terms stay with those copies.
 
-The EmberNet Source License covers HotLoop's own code. It does not relicense
+The HotLoop Source License Agreement covers HotLoop's own code. It does not relicense
 anyone else's. Everything below keeps the license it came under, and the ported
 files keep their upstream copyright and license headers.
 

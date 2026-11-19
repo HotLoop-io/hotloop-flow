@@ -44,7 +44,7 @@ for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
 104,000 lines of Go, a little under 40 percent of it tests, 117 node types for messages and 37 for FlowLab diagrams, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
-use through EmberNET, business use included, is unrestricted, under HotLoop's EmberNet Source License.
+use through EmberNET, business use included, is unrestricted, under the HotLoop Source License Agreement.
 
 ---
 
@@ -2768,7 +2768,7 @@ send their writes through HotLoop's write gate. All of that is under
 [The plant floor](#the-plant-floor). A Flow with no HotLoop picked shares nothing
 with them but a broker, if you give them one.
 
-Flow is under the same license as those four: HotLoop's EmberNet Source License
+Flow is under the same license as those four: the HotLoop Source License Agreement
 1.0. Home and lab use is free, and so is use by accredited schools and educational institutions, nonprofit organizations and government bodies. Any use that runs through
 [EmberNET](https://embernet.ai), business use included, is unrestricted. Outside
 EmberNet, hosting Flow as a service for other people, reselling it and embedding
@@ -2777,7 +2777,7 @@ read every line you run.
 
 ## License
 
-HotLoop's EmberNet Source License 1.0 (`LicenseRef-EmberNet-Source-1.0`). It is not an open source
+The HotLoop Source License Agreement 1.0 (`LicenseRef-HotLoop-Source-1.0`). It is not an open source
 license until a version converts, and we won't pretend it is. Each version converts to AGPL-3.0 or later four years
 after it is first made publicly available. [LICENSE](LICENSE) is the legal text
 and the [Terms of Service](https://hotloop.io/terms) cover the rest. A few
