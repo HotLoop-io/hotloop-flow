@@ -21,7 +21,7 @@ What that means on a bad night:
   durable and when the node behind it stops taking messages they go to disk in
   order, and they're still there after a `kill -9`. While it's healthy, nothing is
   written. [Store and forward](#store-and-forward)
-  was proven against a real InfluxDB that I killed for ten minutes.
+  was proven against a real InfluxDB that we killed for ten minutes.
 - **Every node runs on its own.** One goroutine per node, so a Function node
   chewing on a big payload costs you a core, not the editor and every other flow
   on the box.
@@ -44,7 +44,7 @@ for amd64 and arm64, the Helm repo is `https://hotloop.io/hotloop-flow/`, and
 [docs/deploying.md](docs/deploying.md) has Kubernetes, Podman and Quadlet. About
 104,000 lines of Go, a little under 40 percent of it tests, 117 node types for messages and 37 for FlowLab diagrams, and the race
 detector comes back clean on every package. Home and lab use is free, so is use by schools, nonprofits and government, and
-use through EmberNET, business use included, is unrestricted, under HotLoop's EmberNet Source License.
+use through EmberNET, business use included, is unrestricted, under the HotLoop Source License Agreement.
 
 ---
 
@@ -106,7 +106,7 @@ disagree with me on your own hardware. Linux under WSL2, 24 CPUs (Ryzen 9 7900X)
 `CGO_ENABLED=0 -trimpath -ldflags="-s -w"`, except the two size rows, which are
 re-measured below. Three runs each, and the range is what's printed.
 
-| | |
+| Measure | Result |
 |---|---|
 | Binary, linux/amd64, static | **41.7 MB** |
 | Image, `2.8.0` amd64, as `podman image inspect` reports it | **45.64 MB** |
@@ -148,7 +148,7 @@ it at a sensor's pace and it sits where the RSS rows say.
 
 Know what these aren't. The HTTP number runs through the whole HTTP stack on
 purpose, because that's what a client of your flow sees. It isn't a scheduler
-benchmark and I won't let anybody quote it as one. And under saturation every
+benchmark and we won't let anybody quote it as one. And under saturation every
 runtime queues and queueing owns the tail, which is why p99 wanders more than
 p50 between runs.
 
@@ -159,7 +159,7 @@ The same flow and the same commands, 2026-10-22, on a Raspberry Pi 5 Model B
 its clock capped at 2.0 GHz, running the published `2.2.0` arm64 image as a pod
 with nothing else on the node but cluster DaemonSets. Three runs, range printed.
 
-| | |
+| Measure | Result |
 |---|---|
 | Start to answering its first request | **0.10 to 0.46 s** |
 | RSS, idle | **88.0 to 88.3 MiB** |
@@ -172,8 +172,8 @@ with nothing else on the node but cluster DaemonSets. Three runs, range printed.
 The last row is the honest one for a box that stays loaded. The board hit its
 soft temperature limit under a minute in, throttled from about two minutes in,
 and sat at 83 to 86 C with the clock at 1.5 to 1.7 GHz for the rest. The
-idle RSS is about five times the x86 figure above and I don't know why yet.
-The process, the board, the throttle readings, and what I didn't establish are
+idle RSS is about five times the x86 figure above and we don't know why yet.
+The process, the board, the throttle readings, and what we didn't establish are
 in [docs/bench/](docs/bench/README.md#results-on-a-raspberry-pi-5).
 
 `hotloop-flow bench` ships in this repository. The method and the rest of the
@@ -187,7 +187,7 @@ This is the whole project. The signature failure of a flow engine on an edge box
 is a pod that quietly inflates until the kubelet kills it, and the log it leaves
 explains nothing to whoever is holding the pager. So every place a message or a
 byte can pile up has a ceiling, and every ceiling is a written, documented
-decision in [docs/compatibility.md](docs/compatibility.md), not a cap I picked and
+decision in [docs/compatibility.md](docs/compatibility.md), not a cap we picked and
 never mentioned.
 
 | What can pile up | What stops it |
@@ -256,8 +256,8 @@ And it survives a restart. Flow, global and node context live in a SQLite file
 on the volume, loaded when a scope is first used and written behind, so a counter
 or a latch in a flow is where you left it when the pod comes back. The atomic
 operations are the same code as before. Changes are batched into one write every
-thirty seconds and a value set to what it already was writes nothing, because I
-care what this does to an SD card more than I care about being clever. A clean
+thirty seconds and a value set to what it already was writes nothing, because we
+care what this does to an SD card more than we care about being clever. A clean
 stop writes everything; a `kill -9` loses up to those thirty seconds, and
 `store.context.flushInterval` is the knob. Details, and what it costs a card, are
 in [docs/durable](docs/durable/README.md).
@@ -272,7 +272,7 @@ up to 256 for a target that writes to a database in one go (InfluxDB does), and 
 time for the rest. So the historian goes down, the readings pile up on disk instead of blocking
 the flow or getting dropped, and they go in, in order, when it comes back. The
 price of writing nothing while it's healthy is that a `kill -9` then loses what
-was in memory, about one poll's worth, and I'd rather say that here than have you
+was in memory, about one poll's worth, and we'd rather say that here than have you
 find out.
 
 ```json
@@ -285,7 +285,7 @@ tick *Durable*.
 It survives a restart, keeps order, honors a disk quota (256 MiB by default, and
 the overflow policy of the node on the other end decides what gives when it's
 full), and shows its depth as `hotloop_flow_durable_wire_depth`. It's
-at-least-once, not exactly-once, and I'd rather tell you that here than have you
+at-least-once, not exactly-once, and we'd rather tell you that here than have you
 find out in a postmortem: the exact words, and how `influxdb out` stays correct
 anyway, are in [docs/durable](docs/durable/README.md).
 
@@ -502,7 +502,7 @@ group and it comes along with everything in it. A configuration node that
 belongs to the flow and that only the selection uses goes into the subflow with
 it, along with whatever it points at. One that something left behind also uses
 goes global instead, so the two ends keep sharing the one connection, because a
-second broker connection on a box that counts them is the kind of surprise I do
+second broker connection on a box that counts them is the kind of surprise we do
 not ship. Environment variables the moved nodes read (typed as env, as `${NAME}`
 or `$(NAME)` in a string, or `env.get`) and that the flow declares become
 properties of the subflow that forward to the flow, so the value still comes
@@ -513,7 +513,7 @@ delete it. Deleting asks, takes every node on the flow with it, and cuts the
 wires and links other flows had into it so the file isn't left pointing at
 nothing. It takes the deleted nodes out of any Catch, Status or Complete scope
 that named them, too. A Catch or Status whose whole list was deleted keeps its
-last id, since an empty list means the whole flow and I won't flip a node from
+last id, since an empty list means the whole flow and we won't flip a node from
 watching one thing to watching everything behind your back. Ctrl+Z brings it
 back until you deploy. The last flow can't be deleted, because a runtime with no
 flow has nowhere to put a node.
@@ -987,7 +987,7 @@ A value goes wrong at 2 AM and the debug sidebar tells you the value. It does
 not tell you which of the nine nodes it went through changed it, how long the
 slow one sat on it, or what it looked like going in. You find that out by
 sprinkling Debug nodes through the flow, deploying, waiting for it to happen
-again, and taking them out. I've done that on a live line. Never again.
+again, and taking them out.
 
 So every message that enters the flow gets a trace. Every debug message in the
 sidebar has a **Trace** button, and one click lights the path that message took
@@ -1020,7 +1020,7 @@ the wire.
 This runs on the line it's watching, so every direction is bounded, and the
 limits are `trace:` in the [configuration](#configuration):
 
-| | Default |
+| Limit | Default |
 |---|---|
 | Traces kept, newest | 256 |
 | Hops one trace keeps, so a loop can't write itself down forever | 512 |
@@ -1041,7 +1041,7 @@ The soak: **a million messages through five nodes, 2026-10-18**, same machine as
 [the numbers above](#the-numbers). Heap after a forced GC, sampled every hundred
 thousand messages:
 
-| | Heap, every checkpoint | Messages a second |
+| Tracing | Heap, every checkpoint | Messages a second |
 |---|---|---|
 | Tracing off | **1.3 MiB** | 192,596 |
 | Tracing every message (`perSecond: 0`) | **2.7 MiB** | 115,770 |
@@ -1123,7 +1123,7 @@ shape of the journey and its timing.
 
 It speaks OTLP/HTTP with the JSON encoding the spec defines, written out by hand
 in one file, rather than pulling in the OpenTelemetry SDK with its protobuf and
-gRPC to do the same single POST. The binary has a size budget and I'm not
+gRPC to do the same single POST. The binary has a size budget and we're not
 spending it on that. A hand-written client has to be proved the only way that
 counts, so CI
 starts the stock `otel/opentelemetry-collector` image, a pinned release, sends
@@ -1373,7 +1373,7 @@ register 40001 in a manual is address 0.
 
 **S7** is `s7 read` and `s7 write` on a `hotloop-flow-s7` server, over ISO on TCP.
 gos7 is a Go implementation of the protocol and has none of Snap7's C library in
-it, which matters because Snap7 is LGPL and I'm not linking that into a product I ship. You
+it, which matters because Snap7 is LGPL and we're not linking that into a product we ship. You
 write the address the way Siemens does: `DB1.DBX0.0`, `DB1.DBW4`,
 `M10.2`, `MW20`, `I0.0`, `QB4`, with `E` and `A` for the German spellings. The
 size letter has to agree with the data type, so `DB1.DBW0` read as a float32 is
@@ -1395,7 +1395,7 @@ named. A tag read as the wrong type is refused and the error says to use the
 tag's own. The path to the CPU is `1,0` unless you change it, and empty for a
 controller you reach directly. PLC-5, SLC and MicroLogix speak PCCC and not CIP
 tags, and they're out. Yes, the library is tagged beta. It's the newest release
-there is, and I'd rather tell you than leave it out.
+there is, and we'd rather tell you than leave it out.
 
 **OPC UA** is `opcua read`, `opcua write` and `opcua subscribe` on a
 `hotloop-flow-opcua` server. Security mode None, Sign or SignAndEncrypt with the
@@ -1512,7 +1512,7 @@ stopped halfway, which says how many targets were written. Nothing that was
 written is undone, because that is HotLoop's rule too.
 
 **Writes change equipment, and there is no ceremony, unless HotLoop is there.**
-I looked for a confirmation pattern in Flow to follow and there isn't one for
+We looked for a confirmation pattern in Flow to follow and there isn't one for
 equipment. The guards that exist bound what a node may reach
 (`discovery.allowedCIDRs` for `scan`, the file and secret scopes), and nothing
 asks "are you sure" before a message does something. So the write nodes don't
@@ -1551,7 +1551,7 @@ with the state it had before. HotLoop's write audit and logbook were checked for
 the account and the reason. Signing in again after HotLoop forgets the session is
 tested, and so is a refused login. The reconnect and the diffing of the feed are
 tested against a small stand-in for HotLoop that answers in the documented
-shapes, because dropping a real HotLoop's connection on cue isn't something I
+shapes, because dropping a real HotLoop's connection on cue isn't something we
 can do. Not done: HotLoop records the account Flow signs in as, and `flow:<node
 id>` goes in as the reason, because the API gives a client no way to name its own
 actor. The connection trusts the system's certificate roots and nothing else, so
@@ -1581,12 +1581,12 @@ simulator's tags are lower case.
 gopcua.** v0.9.1 pads RSA-OAEP-SHA256 with 130 bytes where the number is 66
 (two hash lengths of 32, plus 2), so the secure channel request is cut into
 blocks the .NET stack under OPC PLC doesn't expect, and it answers
-`BadSecurityChecksFailed`. I changed that one constant in a copy of gopcua and
+`BadSecurityChecksFailed`. We changed that one constant in a copy of gopcua and
 the same client connected to the same OPC PLC in Sign and in SignAndEncrypt. The
 fix is two open pull requests on gopcua (#915 and #931) and no release has it, so
 the policy stays out, and a test fails the day a gopcua update carries it.
 Basic256 and Basic128Rsa15 are deprecated and the simulator doesn't offer them,
-so they're out too. A setting I can't test doesn't get a dropdown entry.
+so they're out too. A setting we can't test doesn't get a dropdown entry.
 
 Not done: no Modbus RTU, no Modbus over TLS, no OPC UA events, history or method
 calls, no browse, no S7 timers or counters, no PCCC controllers, and 64 bit
@@ -1856,7 +1856,7 @@ compiler.
 The limits are small on purpose. This runs on edge hardware next to the flows
 that actually matter, and a node that needs more should have to say so:
 
-| | goja | WASM |
+| Limit | goja | WASM |
 |---|---|---|
 | Timeout per call | 5 s | 5 s |
 | Memory ceiling | none enforceable | 16 MiB a node unless the plugin says otherwise, 64 MiB at most unless you raise `plugins.maxMemoryMiB`, hard |
@@ -1870,7 +1870,7 @@ and the distroless image go with it, and CI fails the build to tell you so.
 
 ## Typed wires
 
-A message with the wrong shape is the failure I least want on a live line. A
+A message with the wrong shape is the failure we least want on a live line. A
 temperature that arrives as the string `"hot"`, a missing `id`, a number where a
 list was supposed to be: nothing crashes, the flow keeps going, and something
 downstream quietly does the wrong thing. Flow takes JSON Schema to that problem
@@ -2262,8 +2262,7 @@ not "it's set, so yes". A safety switch that flips on because somebody typed
 Anything not in that table is file-only, and that is deliberate: session TTL,
 backup generations, request size limits, and the server timeouts are decisions
 somebody should be reviewing in a ConfigMap, not typing into a shell at 3 AM
-while a line is down. I have been that person. Do not let that person edit
-timeouts.
+while a line is down.
 
 ---
 
@@ -2310,8 +2309,7 @@ timeouts.
 
 `/metrics` and `/health` being unauthenticated is a decision rather than an
 oversight. A Prometheus scraper carries no bearer token, so requiring one means
-either handing a credential to your monitoring stack or having no monitoring, and
-I have watched people pick the second one.
+either handing a credential to your monitoring stack or having no monitoring.
 
 A user with two-factor sign-in on sends `"code"` with the username and password
 to `POST /auth/token`. Without it the answer is a 401 with `"mfa": "required"`.
@@ -2402,7 +2400,7 @@ you should not need a second container to find out that your inbox is full.
 The one to alert on is `hotloop_flow_node_queue_high_water` against
 `hotloop_flow_node_queue_capacity`. High water is the early warning that a flow is
 approaching its ceiling, which arrives before anything is dropped and long before
-anyone is awake. That alert is the whole reason I built the bounded inbox. You
+anyone is awake. That alert is the whole reason we built the bounded inbox. You
 can't report how close you are to a limit that doesn't exist, so the limit had to
 exist first.
 
@@ -2487,7 +2485,7 @@ anything, and you get identical bytes back: same key order, same spacing, no
 helpfully rewritten escapes. Edit one property and the diff is one line rather
 than the entire node.
 
-That is harder in Go than it sounds and I very nearly did not bother. A
+That is harder in Go than it sounds. A
 JavaScript object preserves key insertion order, so a JavaScript runtime gets this
 for free from `JSON.parse` and `JSON.stringify` without anybody thinking about it.
 A Go map has no order at all and `encoding/json` deliberately sorts keys. Rather
@@ -2525,7 +2523,7 @@ and finding out when a line stops.
 A node can also point at a config node that is not in the file. Delete a flow and
 its own MQTT broker goes with it, while a subflow that used that broker keeps
 pointing at an id that names nothing. A hand edit or a half-copied export does
-the same thing. I used to find that out when the first message hit the node, and
+the same thing. We used to find that out when the first message hit the node, and
 the nodes that only look their server up then said nothing at all. Now the import
 report has a section for it that names every node and the id it can't find, the
 editor puts the same lines in the log when it loads, and a deploy answers with
@@ -2534,7 +2532,7 @@ bad id. The rest of the flow keeps running. A node you disabled, and a TLS
 setting that is blank or says `true` or `false`, are not reported, because
 those are not mistakes.
 
-An id that exists is not the same as an id that works. I missed that the first
+An id that exists is not the same as an id that works. We missed that the first
 time. If the setting points at a tab, a subflow, a group or a plain node, or at
 a config node of the wrong kind, like a TLS setting aimed at an MQTT broker,
 it gets the same report and the same failed start, and the line says what the
@@ -2633,7 +2631,7 @@ the point. A flow that leans on one breaks the day it stops being there.
   They are also tested against real servers that speak the protocols.
 - **Durable wires have been run on bare metal (2026-11-17).** Store and forward
   and the disk writes were measured on an x86 box under WSL, and those numbers
-  stay labeled with where they were measured. I won't print a card figure I
+  stay labeled with where they were measured. We won't print a card figure we
   didn't measure on a card.
 - **Plugins have been run on bare metal (2026-11-17).** The traps and the
   refusals are tested against guests built from Rust, TinyGo and Go, and a signed
@@ -2720,7 +2718,7 @@ against my own encoder" is not a claim worth making.
 Run `gofmt -w ./internal ./cmd ./web` before committing. CI does not check
 formatting, so that one is on you.
 
-What CI does check, beyond vet and the race detector, is the set of things I have
+What CI does check, beyond vet and the race detector, is the set of things we have
 personally been burned by: that `go mod tidy` is committed, that the sandbox
 tests genuinely ran rather than silently skipping, that the editor bundle is
 actually inside the binary, that the binary is under 42MiB and statically linked,
@@ -2768,7 +2766,7 @@ send their writes through HotLoop's write gate. All of that is under
 [The plant floor](#the-plant-floor). A Flow with no HotLoop picked shares nothing
 with them but a broker, if you give them one.
 
-Flow is under the same license as those four: HotLoop's EmberNet Source License
+Flow is under the same license as those four: the HotLoop Source License Agreement
 1.0. Home and lab use is free, and so is use by accredited schools and educational institutions, nonprofit organizations and government bodies. Any use that runs through
 [EmberNET](https://embernet.ai), business use included, is unrestricted. Outside
 EmberNet, hosting Flow as a service for other people, reselling it and embedding
@@ -2777,7 +2775,7 @@ read every line you run.
 
 ## License
 
-HotLoop's EmberNet Source License 1.0 (`LicenseRef-EmberNet-Source-1.0`). It is not an open source
+The HotLoop Source License Agreement 1.0 (`LicenseRef-HotLoop-Source-1.0`). It is not an open source
 license until a version converts, and we won't pretend it is. Each version converts to AGPL-3.0 or later four years
 after it is first made publicly available. [LICENSE](LICENSE) is the legal text
 and the [Terms of Service](https://hotloop.io/terms) cover the rest. A few

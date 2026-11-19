@@ -25,7 +25,7 @@ source node says which input of that target each wire lands on, in the same shap
 
 The file loads and saves byte for byte with these keys in it. Settings of the tab:
 
-| Key | |
+| Key | What it does |
 |---|---|
 | `autostart` | `true` starts the run when Flow starts and after every deploy, with no browser open. |
 | `role` | `"body"` for a diagram that a loop runs. A body is not run by itself. |
@@ -53,7 +53,7 @@ every reason a diagram cannot run, each naming the node and the input.
 
 The same things are an API for scripts and CI:
 
-| | |
+| Call | What it does |
 |---|---|
 | `GET /diagrams`, `GET /diagrams/{id}` | What is deployed, the panel, the last value on every wire. |
 | `POST /diagrams/{id}/run`, `/stop`, `/debug` | Needs `diagram.run`. Each is in the audit log with who. |
@@ -66,7 +66,7 @@ Events for a run go out on the same socket as the editor's, as `diagram/<id>/nod
 
 ## Nodes
 
-| Node | |
+| Node | What it does |
 |---|---|
 | `dia-const`, `dia-math`, `dia-compare`, `dia-logic` | Values and arithmetic. Math works one by one on arrays. |
 | `dia-wait` | Waits, then passes its input on. |
@@ -114,7 +114,7 @@ of the record is a channel in one group, so a record of `pressure`, `ok` and
 as a bool, and anything else as text. A field that holds a list of numbers adds the
 whole list, which is how a block of samples goes in. Settings:
 
-| | |
+| Setting | Meaning |
 |---|---|
 | `path` | The file. A file that is already there is appended to, so one run after another builds one file. |
 | `group` | The group the channels go in. |

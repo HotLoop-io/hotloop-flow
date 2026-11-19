@@ -39,4 +39,4 @@ annotations:
   catalog.cattle.io/categories: "Forge Industrial,Automation,Flow"
   catalog.cattle.io/requests-cpu: "10m"
   catalog.cattle.io/requests-memory: "64Mi"
-  artifacthub.io/license: LicenseRef-EmberNet-Source-1.0
+  artifacthub.io/license: LicenseRef-HotLoop-Source-1.0

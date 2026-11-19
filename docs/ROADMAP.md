@@ -4,7 +4,7 @@ What HotLoop Flow is going to be, in the order it gets built. If it isn't on thi
 list it isn't getting done, so put it on the list.
 
 **None of this starts until HotLoop's own roadmap is done.** Flow waits its turn.
-The one exception is Phase 9, FlowLab and its diagrams. I'm building it now because it is a separate
+The one exception is Phase 9, FlowLab and its diagrams. We're building it now because it is a separate
 pack that sits beside the message runtime and doesn't take anything from HotLoop's
 own roadmap.
 
@@ -205,7 +205,7 @@ biggest hole in a product built for plants.
 
 ### Phase 8: the editor, rewritten in Astro
 
-Done, and moved up. It was meant to go last, and I moved it ahead of Flow's first
+Done, and moved up. It was meant to go last, and we moved it ahead of Flow's first
 screenshots, because nobody should see the first ones in an editor that looks like
 it came from a different company.
 
@@ -321,7 +321,7 @@ but plenty of people drop one that doesn't.
       it off. Flow carries gos7 in `third_party/gos7` now, with that one line
       sent through the handler's `Logger`, which Flow leaves unset. Nothing else
       in the library is touched, and `third_party/gos7/HOTLOOP_PATCH.txt` says
-      when the copy can go. Upstream still has the line; I didn't ask them to
+      when the copy can go. Upstream still has the line; we didn't ask them to
       take the change
 - [x] The durable wire purge test could count one more dropped than it had
       sampled as queued. The test was wrong, not the queue: it waited for 28 of
@@ -357,8 +357,8 @@ Decided 2026-10-03:
 
 - **Industrial nodes get built in Flow,** on the same open source libraries the
   HotLoop drivers use. HotLoop's drivers stay HotLoop's. Flow keeps its own license, which was
-  Apache-2.0 when this was decided and is HotLoop's EmberNet Source License 1.0,
-  which replaced the Business Source License 1.1 it carried from 2.2.0.
+  Apache-2.0 when this was decided and is now the HotLoop Source License Agreement 1.0,
+  which replaced the EmberNet Source License 1.0 and, before it, the Business Source License 1.1 it carried from 2.2.0.
 - **Flow stays its own product and is never embedded in HotLoop.** It runs next
   to HotLoop and talks to HotLoop's API from the outside, which is what the
   Phase 5 HotLoop nodes do, and that's the whole relationship.
