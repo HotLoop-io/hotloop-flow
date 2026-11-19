@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ type slowSnapshotStore struct {
 	entered chan struct{}
 	release chan struct{}
 	once    sync.Once
+	puts    atomic.Int32 // packets paho has put in the store: a publish that is in it will be in the snapshot
 }
 
 func (s *slowSnapshotStore) All() []string {
@@ -40,7 +42,10 @@ func (s *slowSnapshotStore) All() []string {
 	return s.MemoryStore.All()
 }
 
-func (s *slowSnapshotStore) Put(key string, p packets.ControlPacket) { s.MemoryStore.Put(key, p) }
+func (s *slowSnapshotStore) Put(key string, p packets.ControlPacket) {
+	s.MemoryStore.Put(key, p)
+	s.puts.Add(1)
+}
 
 // holdProxy forwards to the broker. Every connection after the first has the
 // broker's first four bytes (the CONNACK) passed on, and the rest held back until
@@ -191,7 +196,11 @@ func TestAPublishDuringPahoReplayIsSentOnce(t *testing.T) {
 	}
 	if published {
 		// Wait until the publish is in paho's store, so the snapshot will hold it.
-		time.Sleep(500 * time.Millisecond)
+		for end := time.Now().Add(20 * time.Second); store.puts.Load() == 0; time.Sleep(5 * time.Millisecond) {
+			if time.Now().After(end) {
+				t.Fatal("the publish never reached paho's store")
+			}
+		}
 	}
 
 	close(store.release)

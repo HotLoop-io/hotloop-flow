@@ -270,20 +270,46 @@ func TestJoinTimeout(t *testing.T) {
 		t.Errorf("timed out group = %v", got)
 	}
 
-	// restartTimeout pushes the deadline back.
-	e2 := newTestEmitter()
-	if err := pushTo(t, jn, e2, msg(t, `{"payload":3}`)); err != nil {
-		t.Fatal(err)
+	// restartTimeout pushes the deadline back. The claim is that at a moment after the
+	// first push's deadline and before the restarted one, nothing has been sent. It is
+	// only judged on a run where the box did not stall the test across either deadline
+	// (the restart was pushed before the first deadline could have passed, and the look
+	// came before the restarted one could have): a pause that runs long on a loaded
+	// runner moves the test, not the node, and the run is made again on a fresh node.
+	const timeout = 200 * time.Millisecond
+	for attempt := 1; ; attempt++ {
+		jn2 := build(t, "join", `{"mode":"custom","build":"array","count":10,"timeout":"0.2"}`, newTestServices())
+		e2 := newTestEmitter()
+		began := time.Now()
+		if err := pushTo(t, jn2, e2, msg(t, `{"payload":3}`)); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(120 * time.Millisecond)
+		restart := time.Now()
+		if err := pushTo(t, jn2, e2, msg(t, `{"payload":4,"restartTimeout":true}`)); err != nil {
+			t.Fatal(err)
+		}
+		restarted := time.Now()
+		time.Sleep(120 * time.Millisecond)
+		look := time.Now()
+		sent := e2.total()
+		// The restart reached the node before the first deadline (the push began after
+		// the first one ended, so the widest the first deadline can be early is began),
+		// and this look came before the restarted deadline (which is no earlier than the
+		// restart's start plus the timeout).
+		restartInTime := restarted.Sub(began) < timeout
+		lookInTime := look.Sub(restart) < timeout
+		if restartInTime && lookInTime {
+			if sent != 0 {
+				t.Fatal("sent at the original deadline despite msg.restartTimeout")
+			}
+			waitFor(t, 2*time.Second, "the restarted timeout", func() bool { return e2.total() == 1 })
+			break
+		}
+		if attempt == 5 {
+			t.Fatalf("the box stalled this test across the %s timeout on five runs in a row, so the claim could not be judged", timeout)
+		}
 	}
-	time.Sleep(120 * time.Millisecond)
-	if err := pushTo(t, jn, e2, msg(t, `{"payload":4,"restartTimeout":true}`)); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(120 * time.Millisecond)
-	if e2.total() != 0 {
-		t.Fatal("sent at the original deadline despite msg.restartTimeout")
-	}
-	waitFor(t, 2*time.Second, "the restarted timeout", func() bool { return e2.total() == 1 })
 
 	// reset drops the group, and nothing is sent for it.
 	e3 := newTestEmitter()
