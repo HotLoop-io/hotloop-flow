@@ -201,3 +201,45 @@ func TestLinkOutReturnModeIsRefused(t *testing.T) {
 		t.Error("return mode was accepted despite Link Call not being implemented")
 	}
 }
+
+// Node-RED's own exports before 1.0, and every example it ships today, write a
+// Debug node's default as "false", which means show msg.payload. Read as a
+// property called false it showed "(undefined)" for every Debug node of an
+// imported flow.
+func TestDebugCompleteFalseMeansThePayloadAsNodeRedExportsIt(t *testing.T) {
+	n := build(t, "debug", `{"active":true,"tosidebar":true,"complete":"false"}`, newTestServices())
+	e, _ := send(t, n, msg(t, `{"payload":"Hello, World!"}`))
+	events := e.publishedOn("debug")
+	if len(events) != 1 {
+		t.Fatalf("published %d events, want 1", len(events))
+	}
+	if s, _ := events[0].Data["msg"].(string); s != "Hello, World!" {
+		t.Errorf("msg = %#v, want the payload", s)
+	}
+}
+
+// An Inject in a file Node-RED 1.x or later wrote says {"p":"payload"} and keeps
+// the value on the node as payload and payloadType. Node-RED reads it from
+// there. Before this did, every Inject in such a file sent an empty payload and
+// the flow behind it ran on nothing.
+func TestInjectPayloadRowWithNoValueReadsThePayloadOnTheNode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cfg  string
+		want any
+	}{
+		"string": {`{"props":[{"p":"payload"},{"p":"topic","vt":"str"}],"topic":"t","payload":"World","payloadType":"str"}`, "World"},
+		"number": {`{"props":[{"p":"payload"},{"p":"topic","vt":"str"}],"payload":"-10","payloadType":"num"}`, -10.0},
+		"bool":   {`{"props":[{"p":"payload"}],"payload":"true","payloadType":"bool"}`, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			n := build(t, "inject", tc.cfg, newTestServices())
+			e, err := send(t, n, msg(t, `{}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := e.on(0)[0].Payload(); got != tc.want {
+				t.Errorf("payload = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}

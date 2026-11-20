@@ -59,6 +59,8 @@ var routeTools = []routeTool{
 		perm: PermFlowsRead, method: "GET", path: "/flows/export", handler: func(s *Server) http.HandlerFunc { return s.handleExport }},
 	{name: "check_flow_types", desc: "Whether the wires of a flow set agree about what travels on them, with every problem named. The body is the flow document. Nothing is changed.",
 		perm: PermFlowsRead, method: "POST", path: "/flows/types", body: "the flow document: an array of nodes, or an object with a flows array", handler: func(s *Server) http.HandlerFunc { return s.handleFlowTypes }},
+	{name: "import_vi", desc: "Read a LabVIEW VI and answer what it holds (name, description, front panel names, the VIs it calls), the flow file that carries it, and the list of what did not come across (the block diagram's wires and primitives are not read). Nothing is saved or deployed.",
+		perm: PermFlowsRead, method: "POST", path: "/flows/import-vi", body: "{name: the file's name, data: the VI file, base64}", handler: func(s *Server) http.HandlerFunc { return s.handleImportVI }},
 	{name: "get_tests", desc: "The flow tests this instance keeps, as the suite document.",
 		perm: PermFlowsRead, method: "GET", path: "/tests", handler: func(s *Server) http.HandlerFunc { return s.handleGetTests }},
 	{name: "put_tests", desc: "REPLACE the whole flow test suite with the one you send. It is parsed first and refused whole if it does not parse. Read it with get_tests, change it, send it back.",

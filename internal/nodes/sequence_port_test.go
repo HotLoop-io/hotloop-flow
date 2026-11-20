@@ -532,6 +532,25 @@ func TestBatchConcatenates(t *testing.T) {
 	}
 }
 
+// Node-RED's own example for this mode lists one topic twice, and its output is
+// that topic's sequence twice. Listing it twice used to panic the node, because
+// the first pass took the sequence off and the second found none.
+func TestBatchConcatenatesATopicListedTwice(t *testing.T) {
+	b := build(t, "batch", `{"mode":"concat","topics":[{"topic":"SEQ"},{"topic":"SEQ"}]}`, newTestServices())
+	e := newTestEmitter()
+	for _, m := range []string{
+		`{"topic":"SEQ","payload":1,"parts":{"id":"A","index":0,"count":2}}`,
+		`{"topic":"SEQ","payload":2,"parts":{"id":"A","index":1,"count":2}}`,
+	} {
+		if err := pushTo(t, b, e, msg(t, m)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := payloads(e.on(0)); !reflect.DeepEqual(got, []any{1.0, 2.0, 1.0, 2.0}) {
+		t.Fatalf("concatenated %v, want the sequence twice", got)
+	}
+}
+
 func TestBatchReset(t *testing.T) {
 	b := build(t, "batch", `{"mode":"count","count":2}`, newTestServices())
 	e := newTestEmitter()

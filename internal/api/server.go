@@ -304,6 +304,7 @@ func (s *Server) routes() {
 	s.mux.Handle("POST "+s.path("/flows/diff"), s.auth(PermFlowsRead, s.handleDiffPending))
 	s.mux.Handle("GET "+s.path("/flows/export"), s.auth(PermFlowsRead, s.handleExport))
 	s.mux.Handle("POST "+s.path("/deployments/{seq}/rollback"), s.auth(PermFlowsWrite, s.handleRollback))
+	s.mux.Handle("POST "+s.path("/flows/import-vi"), s.auth(PermFlowsRead, s.handleImportVI))
 	s.mux.Handle("POST "+s.path("/flows/types"), s.auth(PermFlowsRead, s.handleFlowTypes))
 	s.mux.Handle("GET "+s.path("/tests"), s.auth(PermFlowsRead, s.handleGetTests))
 	s.mux.Handle("PUT "+s.path("/tests"), s.auth(PermFlowsWrite, s.handlePutTests))

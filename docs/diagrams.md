@@ -433,3 +433,13 @@ Reading an instrument changes nothing and is always open. Writing one can: a sup
 - **Turning it on.** `PUT /instruments/writes` with `{"instrument": "tcp://10.0.0.5:5025", "allowed": true, "note": "bench 2"}`, which needs `instrument.write` (an admin has it) and is kept in `instrument-writes.json` in the data directory so a restart changes nothing. `GET /instruments` lists every instrument with a switch or a deployed diagram that would write to it, with who set it and the diagrams and nodes involved.
 - **Audit.** Every switch change is `instrument.switch`, and every write a diagram makes is `instrument.write` or, when refused, `instrument.refused`, with the diagram, the node, the instrument and the command.
 - **Deploy says.** A node that would write to an instrument is a note on the diagram (the bar's **notes**, and the list `hotloop-flow test` prints), naming the instrument and saying its writes are off until someone turns them on. Flow files that only read are unchanged.
+
+## Bringing a LabVIEW VI
+
+Import a `.vi` in the editor's Import dialog (or `import_vi` over MCP, or
+`POST /flows/import-vi`) and FlowLab reads what it can and lists, before anything
+is added, what it could not. Read [docs/labview-import.md](labview-import.md): it
+says exactly what comes across and what does not. The short version: the VI's
+name, description, version, front panel names and the VIs it calls come across, as
+a note on a flow of its own. The block diagram's wires and primitives do not, so
+the diagram is yours to draw with those names beside it.

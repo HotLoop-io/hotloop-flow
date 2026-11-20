@@ -426,6 +426,11 @@ export class Api {
     return this.send('POST', '/flows/types', flows);
   }
 
+  /** Reads a LabVIEW VI. Saves nothing: the answer is the flow that carries it and what did not come across. */
+  importVI(name: string, data: string): Promise<{ flows: unknown[]; unmapped: string[]; info: { name: string; description?: string } }> {
+    return this.send('POST', '/flows/import-vi', { name, data });
+  }
+
   /** Adds the tests in a test file of their own to the suite. */
   addTests(yaml: string): Promise<{ added: string[] }> {
     return this.sendText('POST', '/tests/cases', yaml);

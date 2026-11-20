@@ -352,9 +352,10 @@ func newCSVNode(def *node.Definition) (node.Node, error) {
 		n.separator = r[0]
 	}
 
-	if len(n.columns) == 0 && !n.hdrin {
-		return nil, fmt.Errorf("either list the columns or set that the first row contains column names")
-	}
+	// With no columns listed and no header row, Node-RED names them col1, col2 and
+	// so on, which parse already does. Refusing to start here made every CSV node
+	// of an imported flow that leaves the columns empty fail, and Node-RED's own
+	// example for it among them.
 	return n, nil
 }
 

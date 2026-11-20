@@ -308,12 +308,20 @@ func (n *batchNode) receiveConcat(m *engine.Msg, out node.Emitter) error {
 			return nil
 		}
 	}
+	// A topic may be listed twice, as Node-RED's own example for this mode lists
+	// SEQ twice: its sequence is then sent twice, and taken off once. Taking it
+	// off inside the first pass left the second pass with nothing and panicked.
 	for _, t := range n.topics {
 		tg := n.byTopic[t]
-		first := tg.groups[tg.order[0]]
-		all = append(all, first.msgs...)
-		delete(tg.groups, tg.order[0])
-		tg.order = tg.order[1:]
+		all = append(all, tg.groups[tg.order[0]].msgs...)
+	}
+	taken := map[string]bool{}
+	for _, t := range n.topics {
+		if tg := n.byTopic[t]; !taken[t] && len(tg.order) > 0 {
+			taken[t] = true
+			delete(tg.groups, tg.order[0])
+			tg.order = tg.order[1:]
+		}
 	}
 	sendBatch(out, all, true)
 	return nil
