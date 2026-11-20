@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
 	"github.com/HotLoop-io/hotloop-flow/internal/node"
@@ -289,6 +290,15 @@ type switchNode struct {
 	checkAll bool // evaluate every rule, not just up to the first match
 	repair   bool // rebuild msg.parts on the way out
 	svc      node.Services
+
+	mu     sync.Mutex
+	groups map[string]*switchGroup // repair: what each incoming sequence has produced so far
+}
+
+// switchGroup is the routing of one incoming sequence, held until all of it has
+// arrived, because each output's new sequence needs its length.
+type switchGroup struct {
+	onwards [][][]*engine.Msg // one entry per message, then per output
 }
 
 func registerSwitch() {
@@ -361,6 +371,7 @@ func newSwitch(def *node.Definition) (node.Node, error) {
 		prop:     ReadTypedValue(def.Node.Raw, "property", "propertyType", node.TypeMsg),
 		checkAll: def.Node.PropString("checkall", "true") != "false",
 		repair:   def.Node.PropBool("repair", false),
+		groups:   map[string]*switchGroup{},
 	}
 	if n.prop.Value == "" {
 		n.prop.Value = engine.PropPayload
@@ -480,7 +491,82 @@ func (n *switchNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitte
 		}
 	}
 
+	if n.repair {
+		if id, count, ok := sequenceOf(m); ok {
+			return n.hold(id, count, byPort, out)
+		}
+	}
 	out.SendAll(byPort)
+	return nil
+}
+
+// sequenceOf is a message's place in a sequence: the id and the length.
+func sequenceOf(m *engine.Msg) (string, int, bool) {
+	p, ok := m.Data[engine.PropParts].(map[string]any)
+	if !ok {
+		return "", 0, false
+	}
+	id, okID := p["id"]
+	count := int(jsNumberProp(p["count"]))
+	if !okID || count <= 0 {
+		return "", 0, false
+	}
+	return fmt.Sprint(id), count, true
+}
+
+// hold keeps what one message of a sequence was routed to until the whole
+// sequence is in, and then sends every message on with a new sequence for each
+// output that says how many came out of it and in what order. That is the
+// "recreate message sequences" setting: without it, a Join after a Switch waits
+// for messages that went another way.
+func (n *switchNode) hold(id string, count int, byPort [][]*engine.Msg, out node.Emitter) error {
+	n.mu.Lock()
+	g := n.groups[id]
+	if g == nil {
+		g = &switchGroup{}
+		n.groups[id] = g
+	}
+	g.onwards = append(g.onwards, byPort)
+	if len(g.onwards) < count {
+		n.mu.Unlock()
+		return nil
+	}
+	delete(n.groups, id)
+	n.mu.Unlock()
+
+	ports := len(n.rules)
+	counts := make([]int, ports)
+	for _, onward := range g.onwards {
+		for j := range ports {
+			if len(onward[j]) > 0 {
+				counts[j]++
+			}
+		}
+	}
+	ids := make([]string, ports)
+	for j := range ids {
+		ids[j] = engine.GenerateID()
+	}
+	index := make([]int, ports)
+	for _, onward := range g.onwards {
+		repaired := make([][]*engine.Msg, ports)
+		for j := range ports {
+			if len(onward[j]) == 0 {
+				continue
+			}
+			cp := onward[j][0].Clone()
+			parts, _ := cp.Data[engine.PropParts].(map[string]any)
+			np := make(map[string]any, len(parts)+3)
+			for k, v := range parts {
+				np[k] = v
+			}
+			np["id"], np["index"], np["count"] = ids[j], index[j], counts[j]
+			cp.Data[engine.PropParts] = np
+			index[j]++
+			repaired[j] = []*engine.Msg{cp}
+		}
+		out.SendAll(repaired)
+	}
 	return nil
 }
 

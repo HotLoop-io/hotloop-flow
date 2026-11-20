@@ -186,6 +186,21 @@ func newInject(def *node.Definition) (node.Node, error) {
 					continue
 				}
 			}
+			// The payload row of an export made by Node-RED 1.x onward says only
+			// {"p":"payload"} and leaves the value on the node, as payload and
+			// payloadType. Node-RED reads it from there, and so must this: before
+			// it did, every Inject in such a file sent an empty payload.
+			if p == engine.PropPayload {
+				if _, hasV := m["v"]; !hasV {
+					if _, onNode := def.Node.Raw["payloadType"]; onNode {
+						n.props = append(n.props, injectProp{
+							Prop: engine.PropPayload,
+							TV:   ReadTypedValue(def.Node.Raw, "payload", "payloadType", node.TypeDate),
+						})
+						continue
+					}
+				}
+			}
 			n.props = append(n.props, injectProp{
 				Prop: p,
 				TV:   ReadTypedValue(m, "v", "vt", node.TypeStr),
@@ -412,7 +427,10 @@ func newDebug(def *node.Definition) (node.Node, error) {
 		nodeID:     def.Node.ID,
 		nodeName:   def.Node.Name,
 	}
-	if n.complete == "" {
+	// Node-RED's own exports before 1.0, and every example it ships, write the
+	// default as "false": show msg.payload. Read as a property name it showed
+	// "(undefined)" for every Debug node of an imported flow.
+	if n.complete == "" || n.complete == "false" {
 		n.complete = "payload"
 	}
 	if n.targetType == node.TypeJSONata {

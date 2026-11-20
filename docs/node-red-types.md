@@ -170,3 +170,28 @@ bound to each interface by its tab variable: a client in each VLAN reads its own
 server for 20 rounds with no crosstalk, and the same two servers with no
 interface set collide ("address already in use"). Not proven: a kernel older than 5.7 and 802.1Q tagging itself, which
 is the switch's and the VLAN subinterfaces' job.
+
+## Node-RED's own example flows
+
+The Node-RED project ships example flows for its core nodes. They are the
+flows people have most likely already imported somewhere, so they are the test:
+`testdata/nodered/examples` holds 71 of them (Apache-2.0, from
+node-red/node-red, with NOTICE), and every one imports and deploys. Each was also
+run in a real Node-RED 5.0.10 with every Inject pressed, and what its Debug nodes
+printed is recorded in `testdata/nodered/oracle.json`. 40 flows that do not depend
+on a clock give exactly the same output here, and a test fails when one stops.
+
+Three things in those files used to make an imported flow quietly do the wrong
+thing, and are fixed: a Debug node written with `complete: "false"` (the old
+spelling of "show the payload") showed `(undefined)`, an Inject written with a
+bare `payload` row sent an empty payload, and a CSV node with no columns listed
+refused to start. Concatenate mode of Batch with one topic listed twice panicked,
+and a Switch with "recreate message sequences" on did not rebuild its sequences.
+
+Where it still differs from Node-RED on those flows (read these before you rely on
+a flow that uses them): the Catch node's `msg.error` carries Flow's own fields, a
+Delay's reset and flush, a Delay or Rate limit per topic, a Trigger's `reset` and
+units, Link Call across a subflow, a Function node's `node.log` and `external
+modules`, a CSV node's per-message column names and `reset`, a Join node's
+reduce and timeout modes, JSON schema validation, and timing-based Batch. Flow does
+not hide any of it: `hotloop-flow import` lists what a file uses that is partial.

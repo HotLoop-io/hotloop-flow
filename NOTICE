@@ -33,6 +33,11 @@ Node-RED
 HotLoop Flow is not affiliated with or endorsed by the Node-RED project or the
 OpenJS Foundation.
 
+The files under testdata/nodered/examples are the example flows shipped with
+Node-RED (node-red/node-red, packages/node_modules/@node-red/nodes/examples),
+Copyright OpenJS Foundation and other contributors, https://openjsf.org/, under
+the Apache License 2.0. They are unmodified and used as test input.
+
 HotLoop Flow reads and writes the Node-RED v1 flow file format, and implements
 compatible semantics for property expressions, message routing, and the core node
 set. That interoperability is deliberate: it is what lets an existing flow be
