@@ -281,7 +281,14 @@ func (h *Hub) flush() {
 		h.layoutDirty = false
 		events = append(events, sse("layout", []byte("{}")))
 	}
-	if len(h.dirty) > 0 {
+	if len(h.dirty) > 0 && len(h.clients) == 0 {
+		// Nobody is connected, so there is no one to tell. A page that opens
+		// later is sent every widget's state, which is kept in h.states, so an
+		// update built now would only be thrown away, ten times a second.
+		h.dirty = map[string]bool{}
+		h.fresh = map[string][]point{}
+		h.cleared = map[string]bool{}
+	} else if len(h.dirty) > 0 {
 		type upd struct {
 			ID     string         `json:"id"`
 			Msg    map[string]any `json:"msg,omitempty"`

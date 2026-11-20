@@ -400,9 +400,11 @@ func (w *durableWire) offer(msg *engine.Msg, from *runner) {
 			// for a failure is made first.
 			orig := msg.Clone()
 			d := delivery{
-				msg:    msg,
-				divert: w.spilling.Load,
-				ack:    func(err error) { w.memDone(seq, orig, err) },
+				msg: msg,
+				wire: &wireDelivery{
+					divert: w.spilling.Load,
+					ack:    func(err error) { w.memDone(seq, orig, err) },
+				},
 			}
 			w.memInflight++
 			if t.tryPush(d) {
@@ -724,11 +726,13 @@ func (w *durableWire) deliverBatch(ctx context.Context, t *runner, es []store.En
 		result := make(chan error, 1)
 		var once sync.Once
 		d := delivery{
-			msg:       msg,
-			retry:     true,
-			batchable: true,
-			run:       br,
-			ack:       func(err error) { once.Do(func() { result <- err }) },
+			msg: msg,
+			wire: &wireDelivery{
+				retry:     true,
+				batchable: true,
+				run:       br,
+				ack:       func(err error) { once.Do(func() { result <- err }) },
+			},
 		}
 		if !t.pushDurable(ctx, d) {
 			if ctx.Err() != nil {
@@ -815,9 +819,11 @@ func (w *durableWire) deliver(ctx context.Context, e store.Entry) bool {
 		// Whatever failure got a message on disk has already been reported to
 		// the flow, so a failure here goes back to the wire and not to Catch.
 		d := delivery{
-			msg:   msg,
-			retry: true,
-			ack:   func(err error) { once.Do(func() { result <- err }) },
+			msg: msg,
+			wire: &wireDelivery{
+				retry: true,
+				ack:   func(err error) { once.Do(func() { result <- err }) },
+			},
 		}
 		if !t.pushDurable(ctx, d) {
 			if ctx.Err() != nil {

@@ -3,6 +3,7 @@ package js
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -360,5 +361,54 @@ func TestThrownErrorKeepsItsMessage(t *testing.T) {
 	_, err := run(t, p, nil, 1, newServices())
 	if err == nil || !strings.Contains(err.Error(), "sensor 4 offline") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A function node runs every few seconds, and a plant has thousands of them. The
+// runtimes they run on must survive a collection, or every message rebuilds one.
+func TestRuntimesSurviveACollectionAcrossManyFunctions(t *testing.T) {
+	svc := newServices()
+	progs := make([]*Program, 200)
+	for i := range progs {
+		progs[i] = compile(t, "msg.payload = msg.payload + 1; return msg;", Limits{Timeout: time.Second})
+	}
+	for _, p := range progs { // warm: the first pass builds what it needs
+		if _, err := run(t, p, float64(1), 1, svc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := runtimesBuilt.Load()
+	for round := 0; round < 5; round++ {
+		runtime.GC()
+		runtime.GC()
+		for _, p := range progs {
+			if _, err := run(t, p, float64(1), 1, svc); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if built := runtimesBuilt.Load() - before; built != 0 {
+		t.Fatalf("%d runtimes were rebuilt across 5 collections and 1000 runs; they should have been reused", built)
+	}
+}
+
+// A global one node makes must not be seen by the next node that borrows the
+// same runtime. A function body is strict, so an undeclared name is an error and
+// the way to make one is a property on globalThis.
+func TestAGlobalOneFunctionMakesIsNotSeenByAnother(t *testing.T) {
+	svc := newServices()
+	leaky := compile(t, "globalThis.leaked = 'from the first'; return msg;", Limits{Timeout: time.Second})
+	spy := compile(t, "msg.payload = typeof leaked; return msg;", Limits{Timeout: time.Second})
+	for i := 0; i < 20; i++ {
+		if _, err := run(t, leaky, "x", 1, svc); err != nil {
+			t.Fatal(err)
+		}
+		res, err := run(t, spy, "x", 1, svc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := payloadOf(t, res.ByPort[0][0]); got != "undefined" {
+			t.Fatalf("round %d: the second function saw typeof leaked = %v", i, got)
+		}
 	}
 }

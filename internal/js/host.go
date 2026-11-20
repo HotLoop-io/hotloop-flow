@@ -24,8 +24,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
@@ -76,11 +78,6 @@ type Program struct {
 	onStop  *goja.Program
 	limits  Limits
 	name    string
-
-	// pool reuses runtimes. A goja.Runtime is not safe for concurrent use, and
-	// building one plus its globals costs far more than running a short
-	// function, so they are recycled rather than rebuilt.
-	pool sync.Pool
 
 	// timed is true when the source names a timer function. Such a program runs
 	// on one dedicated runtime (see timers.go) because a callback has to live in
@@ -166,8 +163,9 @@ func (p *Program) Run(ctx context.Context, sb Sandbox) (*Result, error) {
 	if p.timed {
 		return p.runTimed(ctx, sb)
 	}
-	vm := p.acquire()
-	defer p.release(vm)
+	pr := p.acquire()
+	defer p.release(pr)
+	vm := pr.vm
 	setClock(vm, sb)
 
 	res := &Result{ByPort: make([][]*engine.Msg, sb.Outputs)}
@@ -233,8 +231,9 @@ func (p *Program) RunLifecycle(ctx context.Context, sb Sandbox, which string) (*
 		return &Result{}, nil
 	}
 
-	vm := p.acquire()
-	defer p.release(vm)
+	pr := p.acquire()
+	defer p.release(pr)
+	vm := pr.vm
 	setClock(vm, sb)
 
 	res := &Result{ByPort: make([][]*engine.Msg, sb.Outputs)}
@@ -282,17 +281,61 @@ func setClock(vm *goja.Runtime, sb Sandbox) {
 	vm.SetTimeSource(node.ClockOf(sb.Services).Now)
 }
 
-// acquire returns a runtime from the pool, or a fresh one.
-func (p *Program) acquire() *goja.Runtime {
-	if v := p.pool.Get(); v != nil {
-		return v.(*goja.Runtime)
-	}
-	return newRuntime()
+// Runtimes are recycled, because a goja.Runtime is not safe for concurrent use
+// and building one plus its Buffer shim costs far more than running a short
+// function. They are kept in one list for the whole process, not one pool for
+// each function node. A sync.Pool per node is emptied by the collector, and a
+// plant flow with 3,600 function nodes, each running every few seconds, found
+// its node's pool empty on nearly every message: the profile of a 12,000 node
+// flow spent 41% of its CPU rebuilding runtimes, and the garbage that made
+// triggered the next collection, which emptied the pools again.
+//
+// A runtime goes back only if the function left its global object as it was
+// found. A function that sets a property on globalThis makes a global, and one
+// node must not see another's; a runtime that was changed that way is dropped.
+var runtimes struct {
+	sync.Mutex
+	free []*pooledRuntime
 }
 
-func (p *Program) release(vm *goja.Runtime) {
-	vm.ClearInterrupt()
-	p.pool.Put(vm)
+// runtimesBuilt counts the runtimes made since the process started. The tests
+// read it to see that a collection does not make the next message rebuild one.
+var runtimesBuilt atomic.Int64
+
+type pooledRuntime struct {
+	vm      *goja.Runtime
+	globals int // own property names on the global object when it was built
+}
+
+// maxIdleRuntimes is how many idle runtimes are kept. Only as many functions
+// run at once as there are CPUs, so more than a few for each is never wanted.
+func maxIdleRuntimes() int { return 4*runtime.GOMAXPROCS(0) + 8 }
+
+// acquire returns an idle runtime, or a fresh one.
+func (p *Program) acquire() *pooledRuntime {
+	runtimes.Lock()
+	if n := len(runtimes.free); n > 0 {
+		pr := runtimes.free[n-1]
+		runtimes.free[n-1] = nil
+		runtimes.free = runtimes.free[:n-1]
+		runtimes.Unlock()
+		return pr
+	}
+	runtimes.Unlock()
+	vm := newRuntime()
+	return &pooledRuntime{vm: vm, globals: len(vm.GlobalObject().GetOwnPropertyNames())}
+}
+
+func (p *Program) release(pr *pooledRuntime) {
+	pr.vm.ClearInterrupt()
+	if len(pr.vm.GlobalObject().GetOwnPropertyNames()) != pr.globals {
+		return
+	}
+	runtimes.Lock()
+	if len(runtimes.free) < maxIdleRuntimes() {
+		runtimes.free = append(runtimes.free, pr)
+	}
+	runtimes.Unlock()
 }
 
 // newRuntime builds a bare runtime.
@@ -302,6 +345,7 @@ func (p *Program) release(vm *goja.Runtime) {
 // function can reach is passed in as an argument on each call. That is the
 // whole security story, and it is why it fits in one short function.
 func newRuntime() *goja.Runtime {
+	runtimesBuilt.Add(1)
 	vm := goja.New()
 	installBuffer(vm)
 	// Field names are used verbatim rather than lowercased, so msg.payload in
