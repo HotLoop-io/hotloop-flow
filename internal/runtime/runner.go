@@ -148,16 +148,30 @@ type Snapshot struct {
 
 // delivery is one message queued for a node, carrying the port it arrived on so
 // that nodes with several inputs — subflow instances — can tell them apart.
+//
+// A delivery is what sits in every node's inbox, and a node's inbox is a channel
+// that is allocated at its full capacity when the node starts: 1,024 of these for
+// each of a plant's 12,000 nodes. So it is kept to three words. The fields only a
+// durable wire sets are behind one pointer, which is nil for every other
+// message, and the time is a number and not a time.Time (three words by itself).
+// At 64 bytes the inboxes of a 12,000 node flow were 800 MB of heap that the
+// collector scanned on every cycle.
 type delivery struct {
 	msg *engine.Msg
-	// enqueued is when the message entered the inbox, used to report queue
-	// latency.
-	enqueued time.Time
+	// enqueued is when the message entered the inbox, in Unix nanoseconds, used
+	// to report queue latency.
+	enqueued int64
 
-	// ack, set on a message a durable wire is delivering, is called exactly
-	// once with how it went: nil when the node's handler returned without
-	// error, the error otherwise, and an error too if the message is dropped
-	// before the node sees it. The wire marks the message done only on nil.
+	// wire is set only on a message a durable wire is delivering.
+	wire *wireDelivery
+}
+
+// wireDelivery is what a durable wire attaches to the message it delivers.
+type wireDelivery struct {
+	// ack is called exactly once with how it went: nil when the node's handler
+	// returned without error, the error otherwise, and an error too if the
+	// message is dropped before the node sees it. The wire marks the message
+	// done only on nil.
 	ack func(error)
 
 	// divert, set with ack on a message a durable wire sent straight from
@@ -182,6 +196,35 @@ type delivery struct {
 	// calls after it: the wire retries from the first failure, and a later message
 	// taken meanwhile would arrive ahead of it.
 	run *batchRun
+}
+
+func (d delivery) ack() func(error) {
+	if d.wire == nil {
+		return nil
+	}
+	return d.wire.ack
+}
+
+func (d delivery) divert() func() bool {
+	if d.wire == nil {
+		return nil
+	}
+	return d.wire.divert
+}
+
+func (d delivery) retry() bool     { return d.wire != nil && d.wire.retry }
+func (d delivery) batchable() bool { return d.wire != nil && d.wire.batchable }
+
+func (d delivery) run() *batchRun {
+	if d.wire == nil {
+		return nil
+	}
+	return d.wire.run
+}
+
+// queuedFor is how long the message has waited since it entered the inbox.
+func (r *runner) queuedFor(d delivery) time.Duration {
+	return time.Duration(r.rt.opts.Now().UnixNano() - d.enqueued)
 }
 
 // batchRun is shared by the deliveries of one drain run.
@@ -287,7 +330,7 @@ func (r *runner) enqueue(ctx context.Context, msg *engine.Msg, from *runner) {
 // enqueueDelivery is enqueue for a delivery that may carry an ack.
 func (r *runner) enqueueDelivery(ctx context.Context, d delivery, from *runner) {
 	msg := d.msg
-	d.enqueued = r.rt.opts.Now()
+	d.enqueued = r.rt.opts.Now().UnixNano()
 
 	// Counted before the node can see it, and taken back on every path below
 	// where it never reaches the inbox. See Runtime.outstanding.
@@ -386,8 +429,8 @@ func (r *runner) recordQueueDepth() {
 
 // reject tells a durable message's wire that the node never got it.
 func (d delivery) reject() {
-	if d.ack != nil {
-		d.ack(errDropped)
+	if ack := d.ack(); ack != nil {
+		ack(errDropped)
 	}
 }
 
@@ -398,7 +441,7 @@ func (r *runner) tryPush(d delivery) bool {
 	if r.exited.Load() {
 		return false
 	}
-	d.enqueued = r.rt.opts.Now()
+	d.enqueued = r.rt.opts.Now().UnixNano()
 	r.rt.outstanding.Add(1)
 	select {
 	case r.inbox <- d:
@@ -419,7 +462,7 @@ func (r *runner) tryPush(d delivery) bool {
 // instead of applying the overflow policy: the message is safe on disk, so
 // there is nothing to drop and nothing to hurry. It reports whether it went in.
 func (r *runner) pushDurable(ctx context.Context, d delivery) bool {
-	d.enqueued = r.rt.opts.Now()
+	d.enqueued = r.rt.opts.Now().UnixNano()
 	r.rt.outstanding.Add(1)
 	select {
 	case r.inbox <- d:
@@ -476,7 +519,7 @@ func (r *runner) batcher() node.BatchReceiver {
 // after it, so nothing overtakes anything.
 func (r *runner) dispatch(ctx context.Context, d delivery) {
 	b := r.batcher()
-	if !d.batchable || b == nil {
+	if !d.batchable() || b == nil {
 		r.handle(ctx, d)
 		return
 	}
@@ -486,7 +529,7 @@ group:
 	for len(batch) < durableBatchMax {
 		select {
 		case n := <-r.inbox:
-			if !n.batchable {
+			if !n.batchable() {
 				rest = &n
 				break group
 			}
@@ -509,22 +552,22 @@ func (r *runner) handleBatch(ctx context.Context, b node.BatchReceiver, ds []del
 	defer r.rt.outstanding.Add(-int64(len(ds)))
 	defer func() {
 		for i, d := range ds {
-			if d.ack != nil {
-				d.ack(results[i])
+			if ack := d.ack(); ack != nil {
+				ack(results[i])
 			}
 		}
 	}()
 
 	// An earlier call in this run failed: none of these may be taken before the
 	// message that did not go.
-	if run := ds[0].run; run != nil && run.failed.Load() {
+	if run := ds[0].run(); run != nil && run.failed.Load() {
 		for i := range results {
 			results[i] = errNotAttempted
 		}
 		return
 	}
 	defer func() {
-		if run := ds[0].run; run != nil {
+		if run := ds[0].run(); run != nil {
 			for _, err := range results {
 				if err != nil {
 					run.failed.Store(true)
@@ -552,7 +595,7 @@ func (r *runner) handleBatch(ctx context.Context, b node.BatchReceiver, ds []del
 			o.Received(r.id, d.msg.Clone())
 		}
 		tr, hop := r.rt.tracer.Receive(d.msg, r.id, r.typ, r.rt.opts.Now())
-		r.rt.observeQueueLatency(r, r.rt.opts.Now().Sub(d.enqueued))
+		r.rt.observeQueueLatency(r, r.queuedFor(d))
 		if err := r.ports.CheckIn(d.msg); err != nil {
 			results[i] = err
 			tr.Finish(hop, 0, err)
@@ -620,10 +663,10 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 	// after anything it sent on has been handed over, which is why this sits
 	// above the recover below and runs after it.
 	var result error
-	if d.ack != nil {
-		defer func() { d.ack(result) }()
+	if ack := d.ack(); ack != nil {
+		defer func() { ack(result) }()
 	}
-	if d.divert != nil && d.divert() {
+	if divert := d.divert(); divert != nil && divert() {
 		result = errDropped
 		return
 	}
@@ -637,7 +680,7 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 	r.stats.Received.Add(1)
 	r.inFlight.Add(1)
 	defer r.inFlight.Add(-1)
-	r.rt.observeQueueLatency(r, r.rt.opts.Now().Sub(d.enqueued))
+	r.rt.observeQueueLatency(r, r.queuedFor(d))
 
 	start := r.rt.opts.Now()
 	defer func() {
@@ -650,7 +693,7 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 			err := fmt.Errorf("node %s (%s) panicked: %v", r.id, r.typ, p)
 			tr.Finish(hop, r.rt.opts.Now().Sub(start), err)
 			result = err
-			if !d.retry {
+			if !d.retry() {
 				r.rt.raiseError(r, err, d.msg)
 			}
 		}
@@ -670,7 +713,7 @@ func (r *runner) handle(ctx context.Context, d delivery) {
 	result = err
 	if err != nil {
 		r.stats.Errors.Add(1)
-		if !d.retry {
+		if !d.retry() {
 			r.rt.raiseError(r, err, d.msg)
 		}
 	}
