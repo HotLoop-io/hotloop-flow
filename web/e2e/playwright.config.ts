@@ -12,6 +12,10 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 60_000,
+  // The page is judged by what it shows, so every expect waits on the real event
+  // for as long as the test may run. The default 5 s is a guess at how fast the
+  // browser and the runtime are, and a box carrying other work is slower than that.
+  expect: { timeout: 20_000 },
   reporter: process.env.CI ? [['list'], ['github']] : 'list',
   use: {
     baseURL: `http://127.0.0.1:${port}`,
