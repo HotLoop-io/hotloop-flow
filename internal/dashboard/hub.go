@@ -72,8 +72,19 @@ type point struct {
 }
 
 type state struct {
-	Msg    map[string]any `json:"msg,omitempty"`
-	Points []point        `json:"points,omitempty"`
+	Msg map[string]any `json:"msg,omitempty"`
+	// series holds each chart line's points oldest first. A point goes on the
+	// end and the old ones come off the front by re-slicing, so adding one costs
+	// the same whether the line holds ten points or five thousand.
+	series map[string][]point
+	// order is the series in the order they first appeared, so a page that
+	// opens later gets the same ordering every time.
+	order []string
+	// keep and latest let a page that opens later leave out a line's old points
+	// even when that line has gone quiet: a point older than keep before the
+	// newest one on the chart has aged out.
+	keep   time.Duration
+	latest int64
 	// Switch and numeric widgets keep what they show apart from the last message.
 	Value any `json:"value,omitempty"`
 }
@@ -205,11 +216,55 @@ func (h *Hub) AddPoint(id, series string, t time.Time, v float64, keep time.Dura
 		h.states[id] = st
 	}
 	p := point{Series: series, T: t.UnixMilli(), V: v}
-	st.Points = append(st.Points, p)
-	st.Points = trimPoints(st.Points, t, keep, maxPoints)
+	st.addPoint(p, t, keep, maxPoints)
 	h.fresh[id] = append(h.fresh[id], p)
 	h.dirty[id] = true
 	h.kick()
+}
+
+// addPoint puts p on the end of its series and drops what that series no longer
+// keeps. Only the series that got the point can have grown, so only it is
+// trimmed.
+func (st *state) addPoint(p point, now time.Time, keep time.Duration, maxPoints int) {
+	if st.series == nil {
+		st.series = map[string][]point{}
+	}
+	st.keep = keep
+	if p.T > st.latest {
+		st.latest = p.T
+	}
+	ps, seen := st.series[p.Series]
+	if !seen {
+		st.order = append(st.order, p.Series)
+	}
+	st.series[p.Series] = trimPoints(append(ps, p), now, keep, maxPoints)
+}
+
+// points is every series' points, in the order the series first appeared.
+func (st *state) points() []point {
+	n := 0
+	for _, ps := range st.series {
+		n += len(ps)
+	}
+	if n == 0 {
+		return nil
+	}
+	out := make([]point, 0, n)
+	cut := int64(0)
+	if st.keep > 0 {
+		cut = st.latest - st.keep.Milliseconds()
+	}
+	for _, name := range st.order {
+		for _, p := range st.series[name] {
+			if p.T >= cut {
+				out = append(out, p)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // ClearChart empties a chart.
@@ -217,7 +272,7 @@ func (h *Hub) ClearChart(id string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if st := h.states[id]; st != nil {
-		st.Points = nil
+		st.series, st.order = nil, nil
 	}
 	delete(h.fresh, id)
 	h.cleared[id] = true
@@ -225,6 +280,10 @@ func (h *Hub) ClearChart(id string) {
 	h.kick()
 }
 
+// trimPoints drops the points of one series that are older than keep or over
+// the count it keeps. The oldest are at the front, so they come off by
+// re-slicing: nothing is copied, and the array is replaced by append once it is
+// full.
 func trimPoints(ps []point, now time.Time, keep time.Duration, maxPoints int) []point {
 	if keep > 0 {
 		cut := now.Add(-keep).UnixMilli()
@@ -232,44 +291,16 @@ func trimPoints(ps []point, now time.Time, keep time.Duration, maxPoints int) []
 		for i < len(ps) && ps[i].T < cut {
 			i++
 		}
-		if i > 0 {
-			ps = append([]point(nil), ps[i:]...)
-		}
+		ps = ps[i:]
 	}
 	limit := MaxChartPoints
 	if maxPoints > 0 && maxPoints < limit {
 		limit = maxPoints
 	}
-	// The limit is per series, so one busy series cannot push another's points out.
-	counts := map[string]int{}
-	for _, p := range ps {
-		counts[p.Series]++
+	if len(ps) > limit {
+		ps = ps[len(ps)-limit:]
 	}
-	over := false
-	for _, n := range counts {
-		if n > limit {
-			over = true
-			break
-		}
-	}
-	if !over {
-		return ps
-	}
-	skip := map[string]int{}
-	for s, n := range counts {
-		if n > limit {
-			skip[s] = n - limit
-		}
-	}
-	out := ps[:0:0]
-	for _, p := range ps {
-		if skip[p.Series] > 0 {
-			skip[p.Series]--
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
+	return ps
 }
 
 // flush sends what changed since the last one to every browser.
@@ -582,7 +613,7 @@ func (h *Hub) serveEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	snaps := make([]snap, 0, len(h.states))
 	for id, st := range h.states {
-		snaps = append(snaps, snap{ID: id, Msg: st.Msg, Value: st.Value, Points: st.Points})
+		snaps = append(snaps, snap{ID: id, Msg: st.Msg, Value: st.Value, Points: st.points()})
 	}
 	h.mu.Unlock()
 	sort.Slice(snaps, func(i, j int) bool { return snaps[i].ID < snaps[j].ID })
