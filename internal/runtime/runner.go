@@ -283,6 +283,11 @@ type runner struct {
 	// comment, a button nobody presses, logic behind an operator's click), and
 	// a full-size inbox for each was about 170 MB of memory the collector had to
 	// scan every cycle. woke tells the goroutine the inbox now exists.
+	// timerDriven is set when the flow is wired: every path into this node
+	// starts at an inject node. A node that implements node.TimerRooted merges
+	// its queue only while it is true.
+	timerDriven atomic.Bool
+
 	inboxp   atomic.Pointer[chan delivery]
 	woke     chan struct{}
 	capacity int
@@ -557,6 +562,10 @@ func (r *runner) loop() {
 func (r *runner) dispatchMerged(ctx context.Context, d delivery) {
 	co, ok := r.node.(node.Coalescer)
 	if !ok || d.wire != nil || r.depth() == 0 {
+		r.dispatch(ctx, d)
+		return
+	}
+	if tr, ok := r.node.(node.TimerRooted); ok && tr.RequiresTimerRoot() && !r.timerDriven.Load() {
 		r.dispatch(ctx, d)
 		return
 	}
