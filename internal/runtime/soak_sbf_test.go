@@ -3,9 +3,11 @@ package runtime_test
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"strconv"
 	"testing"
 	"time"
 
@@ -31,6 +33,9 @@ type soakSample struct {
 func soakRun(t *testing.T, scale float64, keepSeconds string, windows int, window time.Duration, profileAt int) []soakSample {
 	t.Helper()
 	raw, _ := loadFlow(scale)
+	if n, _ := strconv.Atoi(os.Getenv("HOTLOOP_FLOW_SOAK_SLOW")); n > 0 {
+		raw = addSlowChains(raw, n)
+	}
 	raw = bytes.ReplaceAll(raw, []byte(`"removeOlder":1,"removeOlderPoints":"","removeOlderUnit":"3600"`),
 		[]byte(`"removeOlder":1,"removeOlderPoints":"","removeOlderUnit":"`+keepSeconds+`"`))
 	flows, err := engine.ParseFlows(raw)
@@ -78,8 +83,9 @@ func soakRun(t *testing.T, scale float64, keepSeconds string, windows int, windo
 			Goroutines: runtime.NumGoroutine(), HeapMB: float64(m1.HeapAlloc) / 1e6,
 			GCPerS: float64(m1.NumGC-m0.NumGC) / wall,
 		}
-		t.Logf("SOAK at=%s msgs/s=%.0f cpu_cores=%.3f cpu_ms_per_1k=%.1f goroutines=%d heap_MB=%.0f gc_per_s=%.2f",
-			s.At, s.Msgs, s.Cores, s.CPUPer1k, s.Goroutines, s.HeapMB, s.GCPerS)
+		qd, full := queued(r)
+		t.Logf("SOAK queued=%d full=%d at=%s msgs/s=%.0f cpu_cores=%.3f cpu_ms_per_1k=%.1f goroutines=%d heap_MB=%.0f gc_per_s=%.2f",
+			qd, full, s.At, s.Msgs, s.Cores, s.CPUPer1k, s.Goroutines, s.HeapMB, s.GCPerS)
 		out = append(out, s)
 	}
 	return out
@@ -104,4 +110,52 @@ func TestSoakPlantShapedFlow(t *testing.T) {
 	window := envDur("HOTLOOP_FLOW_SOAK_WINDOW", time.Minute)
 	n := int(total / window)
 	soakRun(t, 1, keep, n, window, n-2)
+}
+
+// slowSink stands in for a device that answers slower than it is asked: a
+// Modbus read against a dryer that is off takes seconds, and the inject in
+// front of it keeps asking.
+type slowSink struct{ d time.Duration }
+
+func (s slowSink) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
+	select {
+	case <-time.After(s.d):
+	case <-ctx.Done():
+	}
+	return nil
+}
+
+func init() {
+	err := node.Default.Register(node.Descriptor{
+		Type: "soak-slow-sink", Category: node.CategoryCommon, Color: "#E31837", Icon: "cog",
+		Inputs: 1, Outputs: 0, Compatibility: node.Compatibility{Level: node.CompatOnly},
+	}, func(def *node.Definition) (node.Node, error) { return slowSink{d: 2 * time.Second}, nil })
+	if err != nil {
+		panic(err)
+	}
+}
+
+// addSlowChains appends n inject -> function -> slow sink chains to a flow.
+func addSlowChains(raw []byte, n int) []byte {
+	var b bytes.Buffer
+	b.Write(bytes.TrimSuffix(raw, []byte("]")))
+	b.WriteString(`,{"id":"slowtab","type":"tab","label":"slow"}`)
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&b, `,{"id":"si%d","type":"inject","z":"slowtab","name":"ask","repeat":"0.75","once":true,"onceDelay":"1","props":[{"p":"payload","v":"[1,2]","vt":"json"}],"wires":[["sf%d"]]}`, i, i)
+		fmt.Fprintf(&b, `,{"id":"sf%d","type":"function","z":"slowtab","name":"p","func":"msg.reg = 1;\nreturn msg;","outputs":1,"wires":[["ss%d"]]}`, i, i)
+		fmt.Fprintf(&b, `,{"id":"ss%d","type":"soak-slow-sink","z":"slowtab","wires":[]}`, i)
+	}
+	b.WriteString("]")
+	return b.Bytes()
+}
+
+// queued is how many messages sit in inboxes, and how many inboxes are full.
+func queued(r *rt.Runtime) (msgs, full int) {
+	for _, s := range r.Snapshots() {
+		msgs += int(s.QueueLen)
+		if s.QueueLen >= s.QueueCap && s.QueueCap > 0 {
+			full++
+		}
+	}
+	return
 }

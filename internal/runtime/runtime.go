@@ -598,7 +598,7 @@ func (rt *Runtime) newRunner(g *graph, n *engine.Node) *runner {
 		rt:       rt,
 		ctx:      ctx,
 		cancel:   cancel,
-		inbox:    make(chan delivery, capacity),
+		woke:     make(chan struct{}, 1),
 		capacity: capacity,
 		overflow: overflow,
 		quit:     make(chan struct{}),
@@ -823,7 +823,7 @@ func (rt *Runtime) quiesce(ctx context.Context, runners []*runner) {
 func (rt *Runtime) salvage(old *runner) {
 	for {
 		select {
-		case d := <-old.inbox:
+		case d := <-old.peek():
 			if next, ok := rt.graph().runners[old.id]; ok && next != old && !next.exited.Load() {
 				// enqueue counts it again for the runner it moves to.
 				next.enqueueDelivery(rt.ctx, d, nil)
