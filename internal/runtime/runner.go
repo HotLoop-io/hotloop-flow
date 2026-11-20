@@ -274,7 +274,13 @@ type runner struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	inbox    chan delivery
+	// inboxp is the node's inbox, made when the first message is offered to
+	// it. A flow file has thousands of nodes that never take a message (a
+	// comment, a button nobody presses, logic behind an operator's click), and
+	// a full-size inbox for each was about 170 MB of memory the collector had to
+	// scan every cycle. woke tells the goroutine the inbox now exists.
+	inboxp   atomic.Pointer[chan delivery]
+	woke     chan struct{}
 	capacity int
 	overflow OverflowPolicy
 
@@ -319,6 +325,36 @@ type runner struct {
 	quitOnce sync.Once
 }
 
+// q is the inbox, made now if nothing has needed it yet. It is the one a sender
+// uses.
+func (r *runner) q() chan delivery {
+	if p := r.inboxp.Load(); p != nil {
+		return *p
+	}
+	ch := make(chan delivery, r.capacity)
+	if r.inboxp.CompareAndSwap(nil, &ch) {
+		select {
+		case r.woke <- struct{}{}:
+		default:
+		}
+		return ch
+	}
+	return *r.inboxp.Load()
+}
+
+// peek is the inbox if it exists, and a nil channel, which never has anything
+// to receive, if no message has ever been offered. It is the one a reader uses,
+// so reading never makes an inbox.
+func (r *runner) peek() chan delivery {
+	if p := r.inboxp.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+// depth is how many messages are queued.
+func (r *runner) depth() int { return len(r.peek()) }
+
 // enqueue offers a message to this node's inbox, applying the overflow policy.
 //
 // from identifies the sending node, so that an overflow error is attributed to
@@ -349,7 +385,7 @@ func (r *runner) enqueueDelivery(ctx context.Context, d delivery, from *runner) 
 
 	// Fast path: room available right now.
 	select {
-	case r.inbox <- d:
+	case r.q() <- d:
 		r.recordQueueDepth()
 		return
 	default:
@@ -368,7 +404,7 @@ func (r *runner) enqueueDelivery(ctx context.Context, d delivery, from *runner) 
 		// goroutine drained it first, in which case the send below succeeds
 		// anyway.
 		select {
-		case old := <-r.inbox:
+		case old := <-r.peek():
 			r.rt.outstanding.Add(-1)
 			r.stats.Dropped.Add(1)
 			r.rt.onDropped(r, old.msg, "drop-oldest")
@@ -376,7 +412,7 @@ func (r *runner) enqueueDelivery(ctx context.Context, d delivery, from *runner) 
 		default:
 		}
 		select {
-		case r.inbox <- d:
+		case r.q() <- d:
 			r.recordQueueDepth()
 		case <-ctx.Done():
 			r.rt.outstanding.Add(-1)
@@ -397,7 +433,7 @@ func (r *runner) enqueueDelivery(ctx context.Context, d delivery, from *runner) 
 		timer := time.NewTimer(r.rt.opts.BlockTimeout)
 		defer timer.Stop()
 		select {
-		case r.inbox <- d:
+		case r.q() <- d:
 			r.recordQueueDepth()
 		case <-ctx.Done():
 			r.rt.outstanding.Add(-1)
@@ -418,7 +454,7 @@ func (r *runner) enqueueDelivery(ctx context.Context, d delivery, from *runner) 
 // recordQueueDepth tracks the high-water mark, which is what tells an operator a
 // flow is close to overflowing before it actually does.
 func (r *runner) recordQueueDepth() {
-	depth := int64(len(r.inbox))
+	depth := int64(r.depth())
 	for {
 		high := r.stats.QueueHigh.Load()
 		if depth <= high || r.stats.QueueHigh.CompareAndSwap(high, depth) {
@@ -444,7 +480,7 @@ func (r *runner) tryPush(d delivery) bool {
 	d.enqueued = r.rt.opts.Now().UnixNano()
 	r.rt.outstanding.Add(1)
 	select {
-	case r.inbox <- d:
+	case r.q() <- d:
 	default:
 		r.rt.outstanding.Add(-1)
 		return false
@@ -465,7 +501,7 @@ func (r *runner) pushDurable(ctx context.Context, d delivery) bool {
 	d.enqueued = r.rt.opts.Now().UnixNano()
 	r.rt.outstanding.Add(1)
 	select {
-	case r.inbox <- d:
+	case r.q() <- d:
 	case <-ctx.Done():
 		r.rt.outstanding.Add(-1)
 		return false
@@ -491,12 +527,14 @@ func (r *runner) loop() {
 
 	for {
 		select {
-		case d := <-r.inbox:
+		case d := <-r.peek():
 			r.dispatch(ctx, d)
+		case <-r.woke:
+			// the inbox was just made; read it on the next turn
 		case <-r.quit:
 			for {
 				select {
-				case d := <-r.inbox:
+				case d := <-r.peek():
 					r.dispatch(ctx, d)
 				default:
 					return
@@ -528,7 +566,7 @@ func (r *runner) dispatch(ctx context.Context, d delivery) {
 group:
 	for len(batch) < durableBatchMax {
 		select {
-		case n := <-r.inbox:
+		case n := <-r.peek():
 			if !n.batchable() {
 				rest = &n
 				break group
@@ -735,7 +773,7 @@ func (r *runner) emitterIn(tr *engine.Trace, hop int) node.Emitter {
 // The last of those is the reason a Delay node's contents survive a redeploy:
 // an empty inbox is not the same as no work outstanding.
 func (r *runner) idle() bool {
-	if len(r.inbox) != 0 || r.inFlight.Load() != 0 {
+	if r.depth() != 0 || r.inFlight.Load() != 0 {
 		return false
 	}
 	return r.deferred == nil || r.deferred.Pending() == 0
@@ -751,7 +789,7 @@ func (r *runner) Snapshot() Snapshot {
 		Errors:    r.stats.Errors.Load(),
 		Dropped:   r.stats.Dropped.Load(),
 		Blocked:   r.stats.Blocked.Load(),
-		QueueLen:  len(r.inbox),
+		QueueLen:  r.depth(),
 		QueueCap:  r.capacity,
 		QueueHigh: r.stats.QueueHigh.Load(),
 
