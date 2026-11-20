@@ -31,6 +31,7 @@ type NodeStat struct {
 	Sent      int64
 	Errors    int64
 	Dropped   int64
+	Coalesced int64
 	Blocked   int64
 	QueueLen  int
 	QueueCap  int
@@ -122,6 +123,10 @@ func (h *Handler) Write(w io.Writer) {
 			"Messages discarded because a node's inbox was full. Node-RED cannot " +
 				"report this because its queue is unbounded.",
 			func(s NodeStat) float64 { return float64(s.Dropped) }},
+		{"hotloop_flow_node_messages_coalesced_total",
+			"Queued messages merged into a newer one that asks a device the same " +
+				"question, because the device answers slower than it is asked.",
+			func(s NodeStat) float64 { return float64(s.Coalesced) }},
 		{"hotloop_flow_node_sends_blocked_total",
 			"Times a sender waited for space in a node's inbox. Sustained " +
 				"back-pressure, which is the signal that a flow cannot keep up.",

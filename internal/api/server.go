@@ -280,7 +280,7 @@ func (s *Server) routes() {
 				out = append(out, metrics.NodeStat{
 					NodeID: sn.NodeID, Type: sn.Type,
 					Received: sn.Received, Sent: sn.Sent, Errors: sn.Errors,
-					Dropped: sn.Dropped, Blocked: sn.Blocked,
+					Dropped: sn.Dropped, Coalesced: sn.Coalesced, Blocked: sn.Blocked,
 					QueueLen: sn.QueueLen, QueueCap: sn.QueueCap, QueueHigh: sn.QueueHigh, SchemaMismatches: sn.SchemaMismatches,
 				})
 			}

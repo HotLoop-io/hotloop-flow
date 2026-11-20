@@ -118,10 +118,13 @@ func (o Options) withDefaults() Options {
 // Stats are the per-node counters the metrics endpoint and the editor's status
 // badge read. Counters are read with atomics so a scrape never blocks delivery.
 type Stats struct {
-	Received  atomic.Int64
-	Sent      atomic.Int64
-	Errors    atomic.Int64
-	Dropped   atomic.Int64
+	Received atomic.Int64
+	Sent     atomic.Int64
+	Errors   atomic.Int64
+	Dropped  atomic.Int64
+	// Coalesced counts queued messages merged into a newer one with the same
+	// key, for a node that reads and asks the same thing again.
+	Coalesced atomic.Int64
 	Blocked   atomic.Int64
 	QueueHigh atomic.Int64
 
@@ -138,6 +141,7 @@ type Snapshot struct {
 	Sent      int64  `json:"sent"`
 	Errors    int64  `json:"errors"`
 	Dropped   int64  `json:"dropped"`
+	Coalesced int64  `json:"coalesced"`
 	Blocked   int64  `json:"blocked"`
 	QueueLen  int    `json:"queueLen"`
 	QueueCap  int    `json:"queueCap"`
@@ -528,7 +532,7 @@ func (r *runner) loop() {
 	for {
 		select {
 		case d := <-r.peek():
-			r.dispatch(ctx, d)
+			r.dispatchMerged(ctx, d)
 		case <-r.woke:
 			// the inbox was just made; read it on the next turn
 		case <-r.quit:
@@ -541,6 +545,49 @@ func (r *runner) loop() {
 				}
 			}
 		}
+	}
+}
+
+// dispatchMerged handles a delivery for a node that merges queued messages
+// (node.Coalescer). The messages already waiting behind it are taken, of those
+// with the same key only the newest is kept, and what is kept is handled in the
+// order it arrived. A node that reads from a device slower than it is asked
+// then never holds a backlog of asks nobody will use. A durable wire's message
+// is never merged, and a node that does not implement it takes the plain path.
+func (r *runner) dispatchMerged(ctx context.Context, d delivery) {
+	co, ok := r.node.(node.Coalescer)
+	if !ok || d.wire != nil || r.depth() == 0 {
+		r.dispatch(ctx, d)
+		return
+	}
+	batch := []delivery{d}
+	for n := r.depth(); n > 0; n-- {
+		select {
+		case x := <-r.peek():
+			batch = append(batch, x)
+		default:
+			n = 0
+		}
+	}
+	keys := make([]string, len(batch))
+	mergeable := make([]bool, len(batch))
+	last := make(map[string]int, len(batch))
+	for i, x := range batch {
+		if x.wire != nil {
+			continue
+		}
+		if k, ok := co.CoalesceKey(x.msg); ok {
+			keys[i], mergeable[i] = k, true
+			last[k] = i
+		}
+	}
+	for i, x := range batch {
+		if mergeable[i] && last[keys[i]] != i {
+			r.rt.outstanding.Add(-1)
+			r.stats.Coalesced.Add(1)
+			continue
+		}
+		r.dispatch(ctx, x)
 	}
 }
 
@@ -788,6 +835,7 @@ func (r *runner) Snapshot() Snapshot {
 		Sent:      r.stats.Sent.Load(),
 		Errors:    r.stats.Errors.Load(),
 		Dropped:   r.stats.Dropped.Load(),
+		Coalesced: r.stats.Coalesced.Load(),
 		Blocked:   r.stats.Blocked.Load(),
 		QueueLen:  r.depth(),
 		QueueCap:  r.capacity,

@@ -541,6 +541,18 @@ type Node interface {
 	Receive(ctx context.Context, msg *engine.Msg, out Emitter) error
 }
 
+// Coalescer is implemented by a node whose messages, while they wait behind a
+// slower one, can be merged: a read that asks the device the same question again
+// is answered by the newest ask, and the older ones add nothing. The key says
+// which messages ask the same thing. Of the messages with one key that are
+// queued when the node takes its next, only the newest is handled; the rest are
+// counted as coalesced. A message that returns false is never merged.
+//
+// A node that must see every message, a write above all, does not implement it.
+type Coalescer interface {
+	CoalesceKey(m *engine.Msg) (key string, ok bool)
+}
+
 // BatchReceiver is implemented by a node that can take several messages in one
 // go, and gains from it: a node that writes to a database makes one round trip
 // for a hundred messages instead of a hundred. Only a durable wire's drain uses
