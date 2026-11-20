@@ -19,9 +19,6 @@
   "function__change__03 - Set value using JSONata.json": [
    "Hello,World!"
   ],
-  "function__change__04 - Set value from env var.json": [
-   "/home/emberadmin"
-  ],
   "function__change__06 - Delete message property.json": [
    "(undefined)"
   ],
