@@ -15,7 +15,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.16.1
-    created: "2026-11-20T06:57:10.151503589Z"
+    created: "2026-11-20T07:55:58.410562342Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: aec8fba8caf03584a8e33acec342bd66c8c84dc59d3b6337942328d7bc1e5763
@@ -36,4 +36,1114 @@ entries:
     urls:
     - https://hotloop.io/hotloop-flow/hotloop-flow-2.16.1.tgz
     version: 2.16.1
-generated: "2026-11-20T06:57:10.150119291Z"
+  - annotations:
+      artifacthub.io/license: LicenseRef-HotLoop-Source-1.0
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.16.0
+    created: "2026-11-20T07:55:58.408236331Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 1d57f9d60bea56c33e307120001f8e750c3125eb247a39a58c44de82aa85ad96
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: helpdesk@fireballz.ai
+      name: HotLoop LLC
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.16.0.tgz
+    version: 2.16.0
+  - annotations:
+      artifacthub.io/license: LicenseRef-HotLoop-Source-1.0
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.15.1
+    created: "2026-11-20T07:55:58.405809566Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 33e211b8c2e225a43b86090bc1e66a584485b8422467e203f7898c424cd845e0
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: helpdesk@fireballz.ai
+      name: HotLoop LLC
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.15.1.tgz
+    version: 2.15.1
+  - annotations:
+      artifacthub.io/license: LicenseRef-HotLoop-Source-1.0
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.15.0
+    created: "2026-11-20T07:55:58.403589512Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: dbacde64a8c47dba9fe9081f07d0e22fbb09fda0f31607f39aaae86aae440211
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: helpdesk@fireballz.ai
+      name: HotLoop LLC
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.15.0.tgz
+    version: 2.15.0
+  - annotations:
+      artifacthub.io/license: LicenseRef-EmberNet-Source-1.0
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.14.1
+    created: "2026-11-20T07:55:58.40147238Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 92921077bb9cad84bd2abde343bec79821cb7a4621e85f049bdfd994c1eddb05
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.14.1.tgz
+    version: 2.14.1
+  - annotations:
+      artifacthub.io/license: LicenseRef-EmberNet-Source-1.0
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.14.0
+    created: "2026-11-20T07:55:58.399357814Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 0cfb35440834df5924977ce187d79416e0008a0dfe3a9c86edf0c4855ba41e9b
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.14.0.tgz
+    version: 2.14.0
+  - annotations:
+      artifacthub.io/license: LicenseRef-EmberNet-Source-1.0
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.13.1
+    created: "2026-11-20T07:55:58.397163025Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: a3735e99f44de014a49b552f25fccc3cc90b7aa032d03c155ab3ff7dead5b642
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.13.1.tgz
+    version: 2.13.1
+  - annotations:
+      artifacthub.io/license: LicenseRef-EmberNet-Source-1.0
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.13.0
+    created: "2026-11-20T07:55:58.394484051Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 8b80174095906c13f360bb41fba90a55d128367cc87913438f2341124a04d1ba
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.13.0.tgz
+    version: 2.13.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.12.1
+    created: "2026-11-20T07:55:58.392459671Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 2a57cde1205c4a43b26acce65ffdc7aee08145bb3edce5491988faed2944395c
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.12.1.tgz
+    version: 2.12.1
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.12.0
+    created: "2026-11-20T07:55:58.391100949Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 90281b94d3922a66d374d9a34005fc185603f9182620337d1ffbdefb098768c7
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.12.0.tgz
+    version: 2.12.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.11.1
+    created: "2026-11-20T07:55:58.389789869Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: a6befd6eb3083205cad6aa96c60e0a729681f422eb238c2513189d322873fe2d
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.11.1.tgz
+    version: 2.11.1
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.11.0
+    created: "2026-11-20T07:55:58.388503048Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: e61c83d70650351d4f64e7f5b125c50387428a5e651a0e57524150b368b8bf5e
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.11.0.tgz
+    version: 2.11.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.10.2
+    created: "2026-11-20T07:55:58.387008318Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 951d8b83754e1f658f048ba8eefc686bca7dfbc5a6081071eba7ca514b68f152
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.10.2.tgz
+    version: 2.10.2
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.10.1
+    created: "2026-11-20T07:55:58.385223182Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: f5e12c189377173aab74db842b9cf4ad0daf4f40207e2f1401944e073c1543d9
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.10.1.tgz
+    version: 2.10.1
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.10.0
+    created: "2026-11-20T07:55:58.38230544Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 4c9363eea158c83dfbbae2cc8e0cb609cddab53655d50a8789166b0ce96e19e9
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.10.0.tgz
+    version: 2.10.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.9.1
+    created: "2026-11-20T07:55:58.426619843Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 7599a0b243c63e82b966a6be0eb8e88471dc0f25c5194fe046af8313428ccb9e
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.9.1.tgz
+    version: 2.9.1
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.9.0
+    created: "2026-11-20T07:55:58.424208901Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 612d2964f120b7f6e2c1595d6b0a4936fc51c080e8a5079ff40acd0956c5aeec
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.9.0.tgz
+    version: 2.9.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.8.1
+    created: "2026-11-20T07:55:58.422893398Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 073c28c577a16894799f49596c8a8312e088a080afbffb3cd946edf8d6eb7ad2
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.8.1.tgz
+    version: 2.8.1
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.8.0
+    created: "2026-11-20T07:55:58.421650604Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 014b35596f646553a6f5ab53f483e9c28fd72c88db3926cf6463d2fdf40ddf44
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.8.0.tgz
+    version: 2.8.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.7.1
+    created: "2026-11-20T07:55:58.420434307Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: fc239ad584c5e969ff1df6301d762cd50bbae6de925e6aba09df7b7d74d74607
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.7.1.tgz
+    version: 2.7.1
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.7.0
+    created: "2026-11-20T07:55:58.419190195Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: c53555038d6e2a9e9ec3d6ea03b34f2f134f35cf687fc079b5000d0bcc60be86
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.7.0.tgz
+    version: 2.7.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.6.0
+    created: "2026-11-20T07:55:58.417489809Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: bec5f5a380b5d1bbe11b0f2a7c7f6a77c543428a112b3335ec32cff2f166b436
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.6.0.tgz
+    version: 2.6.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.5.0
+    created: "2026-11-20T07:55:58.415483637Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 8fb6cef7a470caf18808e6e052f49289232ea2411f44e16b0af122e5b876fd3a
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.5.0.tgz
+    version: 2.5.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.4.0
+    created: "2026-11-20T07:55:58.414228267Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 6ad4d6d6233eace48c01495d1f4e65f262f8fe37ab419d7792fb9dee85899462
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.4.0.tgz
+    version: 2.4.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.3.0
+    created: "2026-11-20T07:55:58.412878335Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 9c1d1580c9c7df3f9e70492306dfaa07b6e9866a5809228c84b241c7290de2eb
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.3.0.tgz
+    version: 2.3.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.2.0
+    created: "2026-11-20T07:55:58.411714412Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 1ad8c6a6d1566e973f54a73b50c2cc65a349fb6ab45c3744c834edb1a44f3c7a
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.2.0.tgz
+    version: 2.2.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.1.0
+    created: "2026-11-20T07:55:58.380911285Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 85a3f48b5d291a82cc9d449f6c479208c8fd07e0b5bac6870453eae885a2ed8a
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.1.0.tgz
+    version: 2.1.0
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
+    appVersion: 2.0.5
+    created: "2026-11-20T07:55:58.379918095Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: ce3a9f3b4319fd72d47582fa60cbb500f41c028a5ee850fb19d53156c35afba3
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.0.5.tgz
+    version: 2.0.5
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+      embernet.ai/documentation-url: https://github.com/HotLoop-io/hotloop-flow#readme
+      embernet.ai/maintainer: Patrick Ryan
+      embernet.ai/vendor: HotLoop
+    apiVersion: v2
+    appVersion: 2.0.4
+    created: "2026-11-20T07:55:58.378963904Z"
+    description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
+    digest: 92a65da1d4a1644dc80b78ddf8cb79fad9ca4d161a0c514e94f174ca68edc038
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - embernet
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.0.4.tgz
+    version: 2.0.4
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+      embernet.ai/documentation-url: https://github.com/HotLoop-io/hotloop-flow#readme
+      embernet.ai/maintainer: Patrick Ryan
+      embernet.ai/vendor: HotLoop
+    apiVersion: v2
+    appVersion: 2.0.3
+    created: "2026-11-20T07:55:58.378049001Z"
+    description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
+    digest: 3170339030c95e34eecf07d2e274d125182d87cfd591a7323cd8e52617ae57e4
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - embernet
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.0.3.tgz
+    version: 2.0.3
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+      embernet.ai/documentation-url: https://github.com/HotLoop-io/hotloop-flow#readme
+      embernet.ai/maintainer: Patrick Ryan
+      embernet.ai/vendor: HotLoop
+    apiVersion: v2
+    appVersion: 2.0.2
+    created: "2026-11-20T07:55:58.376966063Z"
+    description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
+    digest: 25d5c0b9b7564f5a77255d08d9c614badb4528ebfa6f80a0b219149409616a73
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - embernet
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.0.2.tgz
+    version: 2.0.2
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+      embernet.ai/documentation-url: https://github.com/HotLoop-io/hotloop-flow#readme
+      embernet.ai/maintainer: Patrick Ryan
+      embernet.ai/vendor: HotLoop
+    apiVersion: v2
+    appVersion: 2.0.1
+    created: "2026-11-20T07:55:58.375873072Z"
+    description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
+    digest: a98a2a06e5c3f10ea49dcc8ea067569a7ec7e860849e109c6d9afcaddda627bc
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - embernet
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.0.1.tgz
+    version: 2.0.1
+  - annotations:
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+      embernet.ai/documentation-url: https://github.com/HotLoop-io/hotloop-flow#readme
+      embernet.ai/maintainer: Patrick Ryan
+      embernet.ai/vendor: HotLoop
+    apiVersion: v2
+    appVersion: 2.0.0
+    created: "2026-11-20T07:55:58.374666862Z"
+    description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
+    digest: c0a41abb543e5da13516fd36f815ff7129cdcf352d3ea0cb0ad4e5cb5eb4126a
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - embernet
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: patrick@fireballz.ai
+      name: Patrick Ryan
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.0.0.tgz
+    version: 2.0.0
+generated: "2026-11-20T07:55:58.371490214Z"
