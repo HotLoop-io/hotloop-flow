@@ -167,15 +167,43 @@ jobs:
             --version "$VERSION" --app-version "$VERSION"
 
       - name: Build the index
-        # Current-version-only: do NOT merge the live index. Merging carries
-        # forward stale versions whose tarballs may 404, and a chart renamed in
-        # place gets resurrected under its old name forever. Prior versions
-        # predate the App Store contract and must not be resolvable.
+        # Every published version stays in the index, so a Fleet HelmOp or a
+        # `helm upgrade --version` pinned to an older chart can still resolve
+        # and re-render. This used to rebuild from the new version alone, and a
+        # customer pinned to 2.13.1 could not re-render once 2.16.1 was out.
+        #
+        # Two things feed the index. The live index is merged in (--merge keeps
+        # its entries and adds ours), and every hotloop-flow tarball that Pages
+        # already holds is indexed too, because the live index had lost all but
+        # the newest version while Pages kept serving the tarballs. A tarball
+        # that is already published is the published one: a version number is
+        # spent once it is public, so re-running this for an existing tag never
+        # replaces what customers already pulled.
         run: |
-          helm repo index .deploy --url https://hotloop.io/hotloop-flow/
+          mkdir served
+          code=$(curl -sS --retry 4 --retry-all-errors -o old-index.yaml -w '%{http_code}' https://hotloop.io/hotloop-flow/index.yaml)
+          case "$code" in
+            200) merge=(--merge old-index.yaml) ;;
+            404) merge=() ;;
+            *) echo "::error::the live index answered $code; not publishing one that forgets versions"; exit 1 ;;
+          esac
+          for f in $(git ls-tree --name-only origin/gh-pages | grep -E '^hotloop-flow-[0-9]+\.[0-9]+\.[0-9]+\.tgz$'); do
+            git show "origin/gh-pages:$f" > "served/$f"
+          done
+          for f in .deploy/hotloop-flow-*.tgz; do
+            [ -e "served/$(basename "$f")" ] || cp "$f" served/
+          done
+          helm repo index served --url https://hotloop.io/hotloop-flow/ "${merge[@]}"
+          # The tagged version must be in it, and so must every tarball we hold.
+          V='${{ inputs.tag || github.ref_name }}'; V="${V#v}"
+          grep -q "^    version: $V\$" served/index.yaml || { echo "::error::$V is not in the index"; exit 1; }
+          have=$(ls served/hotloop-flow-*.tgz | wc -l)
+          listed=$(grep -c '^    version: ' served/index.yaml)
+          [ "$have" -eq "$listed" ] || { echo "::error::$have tarballs but $listed versions in the index"; exit 1; }
+          cat served/index.yaml
 
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .deploy
+          publish_dir: served
           keep_files: true
