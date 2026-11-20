@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -251,7 +252,7 @@ func TestChartPointsAreTrimmedByAgeAndByCountPerSeries(t *testing.T) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	counts := map[string]int{}
-	for _, p := range h.states["c"].Points {
+	for _, p := range h.states["c"].points() {
 		counts[p.Series]++
 	}
 	if counts["a"] != 1 || counts["b"] != 4 {
@@ -289,5 +290,54 @@ func TestAFlushWithNoBrowserKeepsNothingAndALaterBrowserStillGetsTheState(t *tes
 	ev, data := s.next(t)
 	if ev != "state" || !strings.Contains(data, `"id":"w1"`) || !strings.Contains(data, `"temp"`) {
 		t.Fatalf("first event = %s %s", ev, data)
+	}
+}
+
+// A chart line kept its points by trimming the whole chart on every one it was
+// given, copying thousands of points per message. Adding a point must cost the
+// same on a full line as on an empty one, so the allocation a point costs is
+// held to a small number of bytes.
+func TestAddingAPointToAFullChartAllocatesNextToNothing(t *testing.T) {
+	h := New()
+	h.Add(&Member{ID: "c", Kind: KindWidget, Type: "ui_chart"})
+	start := time.Now().Add(-time.Hour)
+	for i := 0; i < 4000; i++ {
+		for _, s := range []string{"a", "b", "c", "d"} {
+			h.AddPoint("c", s, start.Add(time.Duration(i)*900*time.Millisecond), 1, time.Hour, 0)
+		}
+	}
+	at := start.Add(time.Hour)
+	i := 0
+	per := testing.AllocsPerRun(2000, func() {
+		i++
+		h.AddPoint("c", "a", at.Add(time.Duration(i)*time.Second), 1, time.Hour, 0)
+	})
+	var m0, m1 runtime.MemStats
+	runtime.ReadMemStats(&m0)
+	for n := 0; n < 2000; n++ {
+		i++
+		h.AddPoint("c", "a", at.Add(time.Duration(i)*time.Second), 1, time.Hour, 0)
+	}
+	runtime.ReadMemStats(&m1)
+	if bytes := float64(m1.TotalAlloc-m0.TotalAlloc) / 2000; bytes > 4096 {
+		t.Fatalf("a point on a full 16,000 point chart allocated %.0f bytes (the whole chart was copied)", bytes)
+	}
+	if per > 3 {
+		t.Fatalf("a point allocated %.1f times", per)
+	}
+}
+
+// A line that has gone quiet still ages out of what a new page is sent.
+func TestAQuietChartLineAgesOutOfTheStateAPageGets(t *testing.T) {
+	h := New()
+	h.Add(&Member{ID: "c", Kind: KindWidget, Type: "ui_chart"})
+	now := time.Now()
+	h.AddPoint("c", "quiet", now.Add(-3*time.Hour), 1, time.Hour, 0)
+	h.AddPoint("c", "busy", now, 2, time.Hour, 0)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ps := h.states["c"].points()
+	if len(ps) != 1 || ps[0].Series != "busy" {
+		t.Fatalf("points = %v, want only the busy line's", ps)
 	}
 }
