@@ -6,7 +6,7 @@ looks at and change what the editor changes, with the token's own permissions an
 nothing past them. There is no read only mode: a server an agent can look at and
 not touch is a status page.
 
-There are 44 tools of Flow's own, beside the tools each flow serves through its
+There are 45 tools of Flow's own, beside the tools each flow serves through its
 `mcp tool` nodes. Every one is a route of the admin API. A call goes through the
 route's own handler, as the caller the endpoint signed in, so the validation, the
 change, the deployment history and the audit row are the route's, and a refusal
@@ -44,6 +44,7 @@ changed, with the `rev` it gave you.
 | `diff_deployments` | `GET /deployments/{from}/diff/{to}` | `flows.read` | What changed between two deployments, node by node, with a text summary. |
 | `diff_pending` | `POST /flows/diff` | `flows.read` | What deploying a flow set would change against what is deployed now, without deploying it. The body is the flow document, as deploy_flows takes it. Nothing is changed. |
 | `export_flows` | `GET /flows/export` | `flows.read` | The deployed flow set as an export file, the way the editor's Export does it. |
+| `import_vi` | `POST /flows/import-vi` | `flows.read` | Read a LabVIEW VI and answer what it holds (name, description, front panel names, the VIs it calls), the flow file that carries it, and the list of what did not come across (the block diagram's wires and primitives are not read). Nothing is saved or deployed. |
 | `check_flow_types` | `POST /flows/types` | `flows.read` | Whether the wires of a flow set agree about what travels on them, with every problem named. The body is the flow document. Nothing is changed. |
 | `get_tests` | `GET /tests` | `flows.read` | The flow tests this instance keeps, as the suite document. |
 | `put_tests` | `PUT /tests` | `flows.write` | REPLACE the whole flow test suite with the one you send. It is parsed first and refused whole if it does not parse. Read it with get_tests, change it, send it back. |

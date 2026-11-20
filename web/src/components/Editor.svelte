@@ -1024,7 +1024,7 @@
   }
 
   async function doImport(): Promise<void> {
-    const result = await openDialog<ImportResult | null, { graph: Graph; at: { x: number; y: number } }>(Import, { graph, at: canvas.lastPointer() ?? canvas.viewCenter() });
+    const result = await openDialog<ImportResult | null, { graph: Graph; at: { x: number; y: number }; api: Api }>(Import, { graph, at: canvas.lastPointer() ?? canvas.viewCenter(), api });
     if (result) afterImport(result);
   }
 

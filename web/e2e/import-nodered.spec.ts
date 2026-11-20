@@ -39,3 +39,22 @@ test('a Node-RED example imports through the dialog, deploys, and prints what No
   await page.screenshot({ path: 'shots/import-nodered-3-ran.png' });
   expect(readFileSync(example, 'utf8')).toContain('Hello World!');
 });
+
+const vi = path.resolve(here, '..', '..', 'internal', 'vi', 'testdata', 'Get_Grayscale_Value.vi');
+
+test('a LabVIEW VI imports through the dialog and lists what did not come across before anything is added', async ({ page, request }) => {
+  await seed(request, threeNodes());
+  await signIn(page);
+  await page.locator('[data-test="import-open"]').click();
+  await page.locator('[data-test="import-file"]').setInputFiles(vi);
+  const list = page.locator('[data-test="import-unmapped"]');
+  await expect(list).toContainText("the block diagram's wires");
+  await expect(list).toContainText('Color to RGB.vi');
+  await page.screenshot({ path: 'shots/import-vi-1-dialog.png' });
+  // Nothing has been added yet.
+  await expect(allNodes(page)).toHaveCount(3);
+  await page.locator('[data-test="import-go"]').click();
+  // The VI comes in as a flow of its own, holding the note.
+  await expect(allNodes(page)).toHaveCount(1);
+  await page.screenshot({ path: 'shots/import-vi-2-canvas.png' });
+});

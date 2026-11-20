@@ -434,14 +434,12 @@ Reading an instrument changes nothing and is always open. Writing one can: a sup
 - **Audit.** Every switch change is `instrument.switch`, and every write a diagram makes is `instrument.write` or, when refused, `instrument.refused`, with the diagram, the node, the instrument and the command.
 - **Deploy says.** A node that would write to an instrument is a note on the diagram (the bar's **notes**, and the list `hotloop-flow test` prints), naming the instrument and saying its writes are off until someone turns them on. Flow files that only read are unchanged.
 
-## Bringing a LabVIEW program
+## Bringing a LabVIEW VI
 
-FlowLab does not import LabVIEW VIs, and this page says so because a feature that
-looks like it works and drops the wiring is worse than none. A `.vi` is a binary
-file whose layout NI does not publish. The text NI does document, the file
-LabVIEW's *Export Strings* writes, holds the labels and captions of a VI's front
-panel and says nothing of the block diagram or its wires, so a diagram cannot be
-rebuilt from it. What carries over is the method: draw the same acquisition,
-parse, decide and log chain on a FlowLab diagram, with the same instruments (VISA
-and SCPI, serial, NI DAQ through NI's own service), and write TDMS from it, which
-LabVIEW reads.
+Import a `.vi` in the editor's Import dialog (or `import_vi` over MCP, or
+`POST /flows/import-vi`) and FlowLab reads what it can and lists, before anything
+is added, what it could not. Read [docs/labview-import.md](labview-import.md): it
+says exactly what comes across and what does not. The short version: the VI's
+name, description, version, front panel names and the VIs it calls come across, as
+a note on a flow of its own. The block diagram's wires and primitives do not, so
+the diagram is yours to draw with those names beside it.
