@@ -4,12 +4,14 @@
 
 import { expect, test } from '@playwright/test';
 import { allNodes, deployed, press, seed, signIn, tabState, topDeploy, threeNodes } from './helpers';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const example = path.resolve(here, '..', '..', 'testdata', 'nodered', 'examples', 'function__change__01 - Set payload value.json');
+
+mkdirSync('shots', { recursive: true });
 
 test('a Node-RED example imports through the dialog, deploys, and prints what Node-RED prints', async ({ page, request }) => {
   await seed(request, threeNodes());
