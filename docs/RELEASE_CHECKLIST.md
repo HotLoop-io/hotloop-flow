@@ -15,7 +15,7 @@ only on a tag, side by side, neither waiting for the other:
 | Workflow | What it does | Where it lands |
 |---|---|---|
 | `image-publish.yml` | Builds the one `Containerfile` with Podman, one platform at a time into one manifest list for the platforms in its `PLATFORMS` line, checks the list and each binary, and pushes `X.Y.Z`, `X.Y` and `X` (`build/publish-tags.sh`) | `ghcr.io/hotloop-io/hotloop-flow` |
-| `helm-publish.yml` | Lints the chart, packages it at the tag's version, rebuilds `index.yaml` from that version alone | gh-pages, served at `https://hotloop.io/hotloop-flow/` |
+| `helm-publish.yml` | Lints the chart, packages it at the tag's version, merges that version into `index.yaml`, which keeps every published version | gh-pages, served at `https://hotloop.io/hotloop-flow/` |
 
 They share nothing to race on: one writes ghcr, the other writes gh-pages.
 Neither runs the test suite, and neither makes a GitHub release. So the gates
@@ -406,10 +406,11 @@ curl -s https://hotloop.io/hotloop-flow/index.yaml | grep -E '^    version:|\.tg
 curl -s -o /dev/null -w '%{http_code}\n' https://hotloop.io/hotloop-flow/hotloop-flow-X.Y.Z.tgz
 ```
 
-One entry, at `X.Y.Z` and only `X.Y.Z`, its URL under
-`https://hotloop.io/hotloop-flow/`, and a `200`. The index is rebuilt from this
-version alone on purpose: earlier versions predate the App Store contract and
-must not be resolvable. The Pages CDN caches `index.yaml` for up to ten minutes
+Every published version is listed, with `X.Y.Z` among them, its URL under
+`https://hotloop.io/hotloop-flow/`, and a `200` for its tarball. The index is
+merged into, never rebuilt from one version, so a HelmOp or `helm upgrade
+--version` pinned to an older chart still resolves. A published tarball is
+never replaced. The Pages CDN caches `index.yaml` for up to ten minutes
 (`Cache-Control: max-age=600`), so an old index right after the chart job is the
 cache, not the release.
 
