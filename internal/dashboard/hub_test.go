@@ -268,3 +268,26 @@ func TestRemovingAMemberDropsItsState(t *testing.T) {
 		t.Fatalf("state %v, len %d", m, h.Len())
 	}
 }
+
+// With no browser connected a flush has nobody to tell, so it builds nothing and
+// keeps nothing, and a browser that connects afterwards still starts from the
+// full state, points included.
+func TestAFlushWithNoBrowserKeepsNothingAndALaterBrowserStillGetsTheState(t *testing.T) {
+	h := New()
+	fixture(h)
+	srv := serve(t, h)
+	h.SetState("w1", map[string]any{"payload": 7.0}, nil)
+	h.AddPoint("w1", "temp", time.Now(), 3, time.Hour, 0)
+	time.Sleep(400 * time.Millisecond) // the flush runs 100 ms after the first change
+	h.mu.Lock()
+	left := len(h.dirty) + len(h.fresh) + len(h.cleared)
+	h.mu.Unlock()
+	if left != 0 {
+		t.Fatalf("a flush with no browser left %d entries behind", left)
+	}
+	s := openStream(t, srv)
+	ev, data := s.next(t)
+	if ev != "state" || !strings.Contains(data, `"id":"w1"`) || !strings.Contains(data, `"temp"`) {
+		t.Fatalf("first event = %s %s", ev, data)
+	}
+}
