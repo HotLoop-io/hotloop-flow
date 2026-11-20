@@ -946,6 +946,27 @@ func (n *nrModbusNode) request(m *engine.Msg) (nrRequest, error) {
 	return req, nil
 }
 
+// CoalesceKey says which queued messages ask the device the same question. A
+// read that is asked again while the device is still answering the one before
+// is answered by the newest ask, so a poll faster than the device never stacks.
+// A write is never merged: each one has to reach the device, in order.
+func (n *nrModbusNode) CoalesceKey(m *engine.Msg) (string, bool) {
+	if n.kind == nrWrite || n.kind == nrFlexWrite {
+		return "", false
+	}
+	req, err := n.request(m)
+	if err != nil || req.isWrite() {
+		return "", false
+	}
+	unit := -1
+	if req.unit != nil {
+		unit = int(*req.unit)
+	}
+	return fmt.Sprintf("%d/%d/%d/%d", req.fc, unit, req.address, req.quantity), true
+}
+
+var _ node.Coalescer = (*nrModbusNode)(nil)
+
 func (n *nrModbusNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
 	n.run(m, out)
 	return nil
