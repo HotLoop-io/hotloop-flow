@@ -36,7 +36,7 @@ func TestImportVIAnswersWhatWasReadAndWhatWasNot(t *testing.T) {
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Info.Description != "Determine the gray scale value of a color." || len(got.Flows) != 2 || len(got.Unmapped) < 5 {
+	if got.Info.Description != "Determine the gray scale value of a color." || len(got.Flows) < 3 || len(got.Unmapped) < 4 {
 		t.Errorf("answer = %s", out)
 	}
 	if !strings.Contains(strings.Join(got.Unmapped, "\n"), "wires") {

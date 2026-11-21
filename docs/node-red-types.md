@@ -178,8 +178,13 @@ flows people have most likely already imported somewhere, so they are the test:
 `testdata/nodered/examples` holds 71 of them (Apache-2.0, from
 node-red/node-red, with NOTICE), and every one imports and deploys. Each was also
 run in a real Node-RED 5.0.10 with every Inject pressed, and what its Debug nodes
-printed is recorded in `testdata/nodered/oracle.json`. 40 flows that do not depend
-on a clock give exactly the same output here, and a test fails when one stops.
+printed is recorded in `testdata/nodered/oracle.json` by a harness that lives in the
+repo (`testdata/nodered/oracle`, with its README): it runs each flow twice on real
+Node-RED and keeps what does not depend on a clock. 62 flows are recorded; 49 give
+exactly the same output here, and a test fails when one stops. The other 13 are the
+`gaps` list in `oracle.json`, run and compared every time, and a flow on that list that matches
+is said in the test's log so it can be taken off. Two
+more flows print the machine the oracle ran on and are kept out as `environment`.
 
 Three things in those files used to make an imported flow quietly do the wrong
 thing, and are fixed: a Debug node written with `complete: "false"` (the old
