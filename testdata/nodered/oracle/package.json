@@ -1,0 +1,10 @@
+{
+  "name": "nodered-oracle",
+  "version": "1.0.0",
+  "private": true,
+  "description": "records what real Node-RED prints for each example flow",
+  "dependencies": {
+    "node-red": "5.0.10",
+    "ws": "8.18.0"
+  }
+}

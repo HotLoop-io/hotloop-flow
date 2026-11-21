@@ -1,14 +1,26 @@
 {
+ "source": "real Node-RED 5.0.10, each example flow of node-red/node-red @nodes/examples deployed, every Inject pressed, every Debug output recorded",
  "outputs": {
+  "common__catch__01 - Catch error.json": [
+   "{\"_error\":{\"__enc__\":true,\"data\":{\"message\":\"ErrorOccured!\",\"name\":\"Error\",\"stack\":\"Error:ErrorOccured!\\natFunctionnode:7bab9134.35ad[Error]:2:7\\natFunctionnode:7bab9134.35ad[Error]:3:3\\natScript.runInContext(node:vm:149:12)\\natprocessMessage(/r/testdata/nodered/oracle/node_modules/@node-red/nodes/core/function/10-function.js:504:37)\\natFunctionNode._inputCallback(/r/testdata/nodered/oracle/node_modules/@node-red/nodes/core/function/10-function.js:422:17)\\nat/r/testdata/nodered/oracle/node_modules/@node-red/runtime/lib/nodes/Node.js:214:26\\natObject.trigger(/r/testdata/nodered/oracle/node_modules/@node-red/util/lib/hooks.js:166:13)\\natNode._emitInput(/r/testdata/nodered/oracle/node_modules/@node-red/runtime/lib/nodes/Node.js:206:11)\\natNode.emit(/r/testdata/nodered/oracle/node_modules/@node-red/runtime/lib/nodes/Node.js:190:25)\"},\"type\":\"error\"},\"error\":{\"message\":\"Error:ErrorOccured!\",\"source\":{\"count\":1,\"id\":\"7bab9134.35ad\",\"name\":\"Error\",\"type\":\"function\"},\"stack\":\"Error:ErrorOccured!\\natFunctionnode:7bab9134.35ad[Error]:2:7\\natFunctionnode:7bab9134.35ad[Error]:3:3\\natScript.runInContext(node:vm:149:12)\\natprocessMessage(/r/testdata/nodered/oracle/node_modules/@node-red/nodes/core/function/10-function.js:504:37)\\natFunctionNode._inputCallback(/r/testdata/nodered/oracle/node_modules/@node-red/nodes/core/function/10-function.js:422:17)\\nat/r/testdata/nodered/oracle/node_modules/@node-red/runtime/lib/nodes/Node.js:214:26\\natObject.trigger(/r/testdata/nodered/oracle/node_modules/@node-red/util/lib/hooks.js:166:13)\\natNode._emitInput(/r/testdata/nodered/oracle/node_modules/@node-red/runtime/lib/nodes/Node.js:206:11)\\natNode.emit(/r/testdata/nodered/oracle/node_modules/@node-red/runtime/lib/nodes/Node.js:190:25)\"},\"payload\":\"Hello,World!\",\"topic\":\"\"}"
+  ],
   "common__inject__01 - Trigger a flow at startup.json": [
    "Started!",
    "Started!"
+  ],
+  "common__inject__03 - Trigger a flow at a specific time.json": [
+   "Itis4pmonaweekday!"
   ],
   "common__link__01 - Link within a tab.json": [
    "Hello,World!"
   ],
   "common__link__02 - Link across tabs.json": [
    "Hello,World!"
+  ],
+  "common__link__03 - Link call.json": [
+   "Hello,fromsubroutine-1",
+   "Hello,fromsubroutine-1",
+   "Hello,fromsubroutine-1"
   ],
   "function__change__01 - Set payload value.json": [
    "HelloWorld!"
@@ -19,12 +31,33 @@
   "function__change__03 - Set value using JSONata.json": [
    "Hello,World!"
   ],
+  "function__change__05 - Set flow context.json": [
+   "(undefined)",
+   "0"
+  ],
   "function__change__06 - Delete message property.json": [
    "(undefined)"
   ],
   "function__change__07 - Move message property.json": [
    "Hello"
   ],
+  "function__delay__01 - Delay message.json": [
+   "Hello,World!"
+  ],
+  "function__delay__02 - Delay message by message property.json": [
+   "Goodbye,World!",
+   "delay10s",
+   "delay1s"
+  ],
+  "function__delay__03 - Reset or flush pending message.json": [
+   "Goodbye,World!",
+   "Hello,World!"
+  ],
+  "function__delay__04 - Limit message rate.json": [
+   "0",
+   "1"
+  ],
+  "function__delay__05 - Limit message rate for each topic.json": [],
   "function__function__01 - Send message to output port.json": [
    "Hello,World!"
   ],
@@ -34,11 +67,17 @@
    "secondoutofoutput1",
    "thirdoutofoutput1"
   ],
+  "function__function__03 - Send messages asynchronously.json": [],
   "function__function__06 - Storing data in context.json": [
    "1"
   ],
+  "function__function__07 - Showing status information.json": [],
   "function__function__09 - Setup and close.json": [
    "1"
+  ],
+  "function__function__10 - Asynchronous setup.json": [
+   "Hello,World!",
+   "Hello,World!"
   ],
   "function__range__01 - Scale input value.json": [
    "0",
@@ -88,11 +127,16 @@
    "even",
    "odd"
   ],
+  "function__switch__07 - Recreate message sequence.json": [
+   "[-2,-1,-3]",
+   "[3,1,2]"
+  ],
   "function__switch__08 - Route message based on properties.json": [
    "1001",
    "27",
    "45"
   ],
+  "function__switch__09 - Route message based on context value.json": [],
   "function__template__01 - Use mustache syntax.json": [
    "#PriceListofFruits-apple:100-orange:80-banana:210"
   ],
@@ -101,6 +145,12 @@
   ],
   "function__template__03 - Parse result as YAML.json": [
    "{\"key\":\"message\",\"value\":\"Hello,World!\"}"
+  ],
+  "function__trigger__01 - Outputs two value with interval.json": [
+   "1"
+  ],
+  "function__trigger__04 - Timeout processing using trigger node.json": [
+   "done:1s"
   ],
   "parser__csv__01 - Parse CSV with default column name as message sequence.json": [
    "{\"col1\":\"Apple\",\"col2\":100,\"col3\":\"Canada\"}",
@@ -129,10 +179,25 @@
   "parser__csv__07 - Convert array of JavaScript objects to CSV with column name header.json": [
    "kind,priceApple,100Orange,120Banana,80"
   ],
+  "parser__csv__08 - Specify column names in input message.json": [
+   "kind,priceApple,100Orange,120Banana,80"
+  ],
+  "parser__csv__09 - Send column name when reset property set.json": [
+   "Orange,120",
+   "kind,priceApple,100",
+   "kind,priceBanana,80"
+  ],
+  "parser__csv__10 - Join parsed CSV message sequence using join node.json": [
+   "Apple,100Orange,120Banana,80"
+  ],
   "parser__json__01 - Convert JSON string to JavaScript object.json": [
    "{\"kind\":\"Apple\",\"origin\":\"Canada\",\"price\":100}"
   ],
   "parser__json__02 - Convert JavaScript object to JSON string.json": [
+   "{\"kind\":\"Apple\",\"origin\":\"Canada\",\"price\":100}"
+  ],
+  "parser__json__03 - Validate input JSON string.json": [
+   "JSONSchemaerror:data/pricemustbenumber",
    "{\"kind\":\"Apple\",\"origin\":\"Canada\",\"price\":100}"
   ],
   "sequence__batch__01 - Number-based group mode.json": [
@@ -149,6 +214,33 @@
    "[4,5,6,7,8]",
    "[5,6,7,8,9]",
    "[8,9,10,11,12]"
+  ],
+  "sequence__batch__02 - Time-based group mode.json": [],
+  "sequence__batch__03 - Concatenate mode.json": [
+   "[-6,-8,-3,1,7,2]",
+   "[1,2,3,4,5,1,2,3,4,5]"
+  ],
+  "sequence__join__01 - Automatic join mode.json": [
+   "AppleOrangeBananaKiwi",
+   "[{\"name\":\"Apple\",\"price\":100},{\"name\":\"Banana\",\"price\":120}]",
+   "[{\"name\":\"Apple\",\"price\":100},{\"name\":\"Orange\",\"price\":80},{\"name\":\"Banana\",\"price\":120},{\"name\":\"Kiwi\",\"price\":50}]"
+  ],
+  "sequence__join__02 - Manual join mode.json": [
+   "Apple,Orange",
+   "Apple,Orange,Banana",
+   "Banana,Kiwi",
+   "Kiwi",
+   "[\"Apple\",\"Orange\"]",
+   "[\"Banana\",\"Kiwi\"]",
+   "{\"Apple\":100,\"Orange\":20}",
+   "{\"Banana\":80,\"Kiwi\":120}",
+   "{\"name\":\"Apple\",\"order\":1,\"price\":100}",
+   "{\"name\":\"Apple\",\"order\":20,\"price\":100}",
+   "{\"name\":\"Apple\",\"order\":5,\"price\":100}",
+   "{\"name\":\"Apple\",\"price\":100}",
+   "{\"name\":\"Banana\",\"price\":80}",
+   "{\"name\":\"Kiwi\",\"price\":120}",
+   "{\"name\":\"Orange\",\"price\":20}"
   ],
   "sequence__join__03 - Reduce sequence mode.json": [
    "5.5",
@@ -197,5 +289,33 @@
    "{\"name\":\"pear\",\"price\":200}"
   ]
  },
- "source": "real Node-RED 5.0.10, each example flow of node-red/node-red @nodes/examples deployed, every Inject pressed, every Debug output recorded"
+ "volatile": [
+  "common__inject__02 - Trigger a flow at regular intervals.json",
+  "function__function__04 - Logging events.json",
+  "function__function__05 - Handling errors.json",
+  "function__trigger__02 - Trigger a flow if message is not received after defined time.json",
+  "function__trigger__03 - Send placeholder message when a stream stops sending.json",
+  "sequence__split__01 - Split message payload.json"
+ ],
+ "failed": {},
+ "environment": [
+  "function__change__04 - Set value from env var.json",
+  "function__function__08 - Using external modules.json"
+ ],
+ "gaps": [
+  "common__catch__01 - Catch error.json",
+  "common__link__03 - Link call.json",
+  "function__change__05 - Set flow context.json",
+  "function__delay__03 - Reset or flush pending message.json",
+  "function__function__10 - Asynchronous setup.json",
+  "function__switch__07 - Recreate message sequence.json",
+  "function__switch__09 - Route message based on context value.json",
+  "function__trigger__04 - Timeout processing using trigger node.json",
+  "parser__csv__08 - Specify column names in input message.json",
+  "parser__csv__09 - Send column name when reset property set.json",
+  "parser__csv__10 - Join parsed CSV message sequence using join node.json",
+  "parser__json__03 - Validate input JSON string.json",
+  "sequence__batch__03 - Concatenate mode.json",
+  "sequence__join__01 - Automatic join mode.json"
+ ]
 }
