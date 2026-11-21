@@ -136,7 +136,6 @@
    "27",
    "45"
   ],
-  "function__switch__09 - Route message based on context value.json": [],
   "function__template__01 - Use mustache syntax.json": [
    "#PriceListofFruits-apple:100-orange:80-banana:210"
   ],
@@ -295,7 +294,8 @@
   "function__function__05 - Handling errors.json",
   "function__trigger__02 - Trigger a flow if message is not received after defined time.json",
   "function__trigger__03 - Send placeholder message when a stream stops sending.json",
-  "sequence__split__01 - Split message payload.json"
+  "sequence__split__01 - Split message payload.json",
+  "function__switch__09 - Route message based on context value.json"
  ],
  "failed": {},
  "environment": [
@@ -309,7 +309,6 @@
   "function__delay__03 - Reset or flush pending message.json",
   "function__function__10 - Asynchronous setup.json",
   "function__switch__07 - Recreate message sequence.json",
-  "function__switch__09 - Route message based on context value.json",
   "function__trigger__04 - Timeout processing using trigger node.json",
   "parser__csv__08 - Specify column names in input message.json",
   "parser__csv__09 - Send column name when reset property set.json",

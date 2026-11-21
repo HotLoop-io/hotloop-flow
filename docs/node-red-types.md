@@ -180,7 +180,7 @@ node-red/node-red, with NOTICE), and every one imports and deploys. Each was als
 run in a real Node-RED 5.0.10 with every Inject pressed, and what its Debug nodes
 printed is recorded in `testdata/nodered/oracle.json` by a harness that lives in the
 repo (`testdata/nodered/oracle`, with its README): it runs each flow twice on real
-Node-RED and keeps what does not depend on a clock. 63 flows are recorded; 50 give
+Node-RED and keeps what does not depend on a clock. 62 flows are recorded; 49 give
 exactly the same output here, and a test fails when one stops. The other 13 are the
 `gaps` list in `oracle.json`, run and compared every time: a flow on that list that
 starts to match fails the test until it is taken off, so the list only shrinks. Two
