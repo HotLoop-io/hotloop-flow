@@ -19,6 +19,7 @@ on:
 permissions:
   contents: write
   pages: write
+  packages: read
 
 jobs:
   lint:
@@ -153,6 +154,40 @@ jobs:
             v[0-9]*) echo "publishing $REF" ;;
             *) echo "::error::refusing to publish '$REF' — charts are published from version tags only"; exit 1 ;;
           esac
+
+      - name: Wait for the image this chart points at
+        # The image workflow runs beside this one on the same tag and nothing
+        # ordered them, so a chart could reach the index while its image was
+        # still building. A box that follows the chart (a Fleet HelmOp with a
+        # version range) would then roll a Recreate pod onto an image that is
+        # not there yet, with the old pod already gone. The image's version tag
+        # is the last thing the image workflow pushes, after the platform list
+        # and each binary pass, so the chart is published only once that tag
+        # answers. A build that never finishes fails this step and publishes
+        # nothing; rerun this workflow with workflow_dispatch once the image is up.
+        env:
+          GH_USER: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION='${{ inputs.tag || github.ref_name }}'
+          VERSION="${VERSION#v}"
+          REPO=hotloop-io/hotloop-flow
+          ACCEPT='application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json'
+          for i in $(seq 1 90); do
+            TOKEN=$(curl -fsS --retry 3 --retry-all-errors -u "$GH_USER:$GH_TOKEN" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:$REPO:pull" | jq -r '.token // empty') || TOKEN=
+            if [ -n "$TOKEN" ]; then
+              CODE=$(curl -s -o /dev/null -w '%{http_code}' -I -H "Authorization: Bearer $TOKEN" -H "Accept: $ACCEPT" \
+                "https://ghcr.io/v2/$REPO/manifests/$VERSION" || true)
+              echo "try $i: ghcr.io/$REPO:$VERSION answers $CODE"
+              [ "$CODE" = 200 ] && exit 0
+            else
+              echo "try $i: no registry token yet"
+            fi
+            sleep 30
+          done
+          echo "::error::ghcr.io/$REPO:$VERSION is not there after 45 minutes, so the chart is not published"
+          exit 1
 
       - name: Package at the tagged version
         # --version and --app-version rather than editing Chart.yaml in the

@@ -10,15 +10,19 @@ you're releasing, `PREV` the last one published.
 
 Nothing publishes on a merge. `ci.yml` runs on every push to `main` and every
 pull request, and publishes nothing. Two other workflows run on a `v*` tag and
-only on a tag, side by side, neither waiting for the other:
+only on a tag, side by side:
 
 | Workflow | What it does | Where it lands |
 |---|---|---|
 | `image-publish.yml` | Builds the one `Containerfile` with Podman, one platform at a time into one manifest list for the platforms in its `PLATFORMS` line, checks the list and each binary, and pushes `X.Y.Z`, `X.Y` and `X` (`build/publish-tags.sh`) | `ghcr.io/hotloop-io/hotloop-flow` |
 | `helm-publish.yml` | Lints the chart, packages it at the tag's version, merges that version into `index.yaml`, which keeps every published version | gh-pages, served at `https://hotloop.io/hotloop-flow/` |
 
-They share nothing to race on: one writes ghcr, the other writes gh-pages.
-Neither runs the test suite, and neither makes a GitHub release. So the gates
+They write different places (ghcr and gh-pages), but the chart waits for the
+image: `helm-publish.yml` polls ghcr for the version tag, which the image
+workflow pushes last, and publishes the chart only once it answers (up to 45
+minutes, then it fails and publishes nothing; rerun it with `workflow_dispatch`
+after the image is up). A box that follows the chart with a version range never
+sees a chart whose image is missing. Neither runs the test suite, and neither makes a GitHub release. So the gates
 in section 4 are the only gates, and the GitHub release in section 7 is a step
 you do by hand.
 
