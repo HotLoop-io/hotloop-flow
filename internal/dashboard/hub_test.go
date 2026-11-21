@@ -279,11 +279,16 @@ func TestAFlushWithNoBrowserKeepsNothingAndALaterBrowserStillGetsTheState(t *tes
 	srv := serve(t, h)
 	h.SetState("w1", map[string]any{"payload": 7.0}, nil)
 	h.AddPoint("w1", "temp", time.Now(), 3, time.Hour, 0)
-	time.Sleep(400 * time.Millisecond) // the flush runs 100 ms after the first change
-	h.mu.Lock()
-	left := len(h.dirty) + len(h.fresh) + len(h.cleared)
-	h.mu.Unlock()
-	if left != 0 {
+	// The flush runs 100 ms after the first change; wait for it to have run, which
+	// is the pending count going back to nothing, however long a loaded box takes.
+	pending := func() int {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		return len(h.dirty) + len(h.fresh) + len(h.cleared)
+	}
+	for end := time.Now().Add(10 * time.Second); pending() != 0 && time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
+	}
+	if left := pending(); left != 0 {
 		t.Fatalf("a flush with no browser left %d entries behind", left)
 	}
 	s := openStream(t, srv)

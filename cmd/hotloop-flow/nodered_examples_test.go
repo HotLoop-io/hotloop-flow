@@ -62,15 +62,23 @@ func TestNodeREDExampleFlowsGiveWhatNodeREDGives(t *testing.T) {
 					}
 				}
 			}
-			time.Sleep(1500 * time.Millisecond)
-			var got []string
-			rec.mu.Lock()
-			for _, e := range rec.events {
-				if e.Topic == runtime.TopicDebug {
-					got = append(got, canonicalDebug(e.Data["msg"]))
+			// Wait for the outputs Node-RED gave, as long as a flow with a delay
+			// node takes, and then a moment more for any it should not have given: a
+			// fixed 1.5 s guessed at how long a loaded box would need.
+			debugs := func() (got []string) {
+				rec.mu.Lock()
+				defer rec.mu.Unlock()
+				for _, e := range rec.events {
+					if e.Topic == runtime.TopicDebug {
+						got = append(got, canonicalDebug(e.Data["msg"]))
+					}
 				}
+				return got
 			}
-			rec.mu.Unlock()
+			for end := time.Now().Add(30 * time.Second); len(debugs()) < len(want) && time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+			}
+			time.Sleep(300 * time.Millisecond)
+			got := debugs()
 			sort.Strings(got)
 			if len(got) != len(want) {
 				t.Fatalf("%d outputs, Node-RED gave %d\n got  %v\n want %v", len(got), len(want), got, want)
