@@ -934,7 +934,16 @@ jobs:
         # document the parser accepts. If that ever fails, every review and
         # every rollback built on the diff is showing somebody a change that
         # isn't there.
-        run: go test ./internal/flowdiff/ -run=XXX -fuzz=FuzzDiffOfAFlowWithItselfIsEmpty -fuzztime=30s
+        #
+        # The budget is a count of runs, not seconds. A time budget puts a
+        # deadline on the whole fuzz run, and on 2026-11-21 the 30 second one
+        # ended this step with "context deadline exceeded" at 31.02 s, four
+        # seconds after the last run was counted, with no input to blame and
+        # nothing in the property failing. A count has no deadline to hit. A
+        # million runs took 6 to 9 seconds on the Beast and 40 seconds with its
+        # cores shared with three busy loops, against the 1.7 million the
+        # runner got in its 27 good seconds.
+        run: go test ./internal/flowdiff/ -run=XXX -fuzz=FuzzDiffOfAFlowWithItselfIsEmpty -fuzztime=1000000x
 
   editor:
     name: Editor
