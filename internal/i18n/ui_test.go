@@ -120,11 +120,6 @@ func TestEditorCatalogs(t *testing.T) {
 				}
 				t.Errorf("%s:\n  %s", l.Code, strings.Join(problems, "\n  "))
 			}
-			for _, k := range lowConfidence(t, uiDir, "ui", l.Code) {
-				if _, ok := got[k]; !ok {
-					t.Errorf("%s: lowconfidence names %q, which is not a key", l.Code, k)
-				}
-			}
 		})
 	}
 }

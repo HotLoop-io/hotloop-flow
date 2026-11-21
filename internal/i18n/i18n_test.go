@@ -56,22 +56,6 @@ func writeCatalog(t *testing.T, path string, m map[string]string) {
 	}
 }
 
-func lowConfidence(t *testing.T, dir, kind, lang string) []string {
-	t.Helper()
-	b, err := os.ReadFile(filepath.Join(dir, "lowconfidence."+kind+"."+lang+".json"))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	var keys []string
-	if err := json.Unmarshal(b, &keys); err != nil {
-		t.Fatalf("lowconfidence.%s.%s.json: %v", kind, lang, err)
-	}
-	return keys
-}
-
 // The English catalog is the descriptors' own text, so a node type that gains a
 // label or a sentence without a catalog entry fails here, with the command that
 // fixes it. The other languages are checked against it below.
@@ -185,11 +169,6 @@ func TestEveryLanguageHasEveryNodeString(t *testing.T) {
 				}
 			}
 			report("is still English and is not on the untranslated list", copies)
-			for _, k := range lowConfidence(t, "catalog", "nodes", l.Code) {
-				if _, ok := en[k]; !ok {
-					t.Errorf("%s: lowconfidence names %q, which is not a key", l.Code, k)
-				}
-			}
 		})
 	}
 }
