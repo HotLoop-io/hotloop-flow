@@ -6,6 +6,7 @@
 export const SYMBOLS: Record<string, string> = {
   const: 'M6 6h12v12H6z M9 12h6',
   math: 'M12 6v12 M6 12h12',
+  lv: 'M6 6h12v12H6z M6 18L18 6',
   compare: 'M6 9h12 M6 15h12 M10 5l4 14',
   logic: 'M6 6h6a6 6 0 010 12H6z',
   control: 'M5 12h14 M9.5 9.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z',

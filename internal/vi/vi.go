@@ -2,16 +2,14 @@
 //
 // NI does not publish the VI format. What is read here is the container (the
 // RSRC file, whose layout the LabVIEW community has documented), the blocks in it
-// that are plain data (the library name, the description, the version, the
-// connector pane), and the text found in the compressed front panel and block
-// diagram heaps. The heaps themselves are a tree of tagged objects whose tag
-// numbers mean something only to LabVIEW's own tables, which are not in the file,
-// so the wires, the structures and the primitives of a block diagram are not read.
-// Read returns that as a list, and an importer must show the list: a diagram
-// rebuilt from a guess at those tags would run, and be wrong.
-//
-// Written from the file's bytes and the community's description of the container.
-// No code from GPL readers was used.
+// that are plain data (the library name, the description, the version), and the
+// front panel and block diagram, which are a compressed tree of tagged objects.
+// The layout of that tree and the numbers of its tags and classes are from
+// pylabview (MIT, see NOTICE); the block diagram is read from it as a graph of
+// nodes, terminals and wires (diagram.go). Which primitive a primitive node is,
+// and what a compound arithmetic node computes, is LabVIEW's own table and is not
+// in the file, so those are named by number and reported as not mapped: a
+// diagram rebuilt from a guess at them would run, and be wrong.
 package vi
 
 import (
@@ -49,6 +47,10 @@ type Info struct {
 	Texts []string `json:"texts"`
 	// Blocks are the resource names the file holds, for the record.
 	Blocks []string `json:"blocks"`
+	// Diagram is the block diagram as a graph: nodes, structures and wires. Nil
+	// when the diagram could not be read, and Why says why.
+	Diagram *Diagram `json:"diagram,omitempty"`
+	Why     string   `json:"why,omitempty"`
 }
 
 // section is one entry of a block.
@@ -224,6 +226,7 @@ func Read(b []byte, name string) (*Info, error) {
 	if err != nil {
 		return in, err
 	}
+	in.Diagram, in.Why = diagramOf(fp, bd, bl)
 	for _, w := range words(fp) {
 		in.PanelLabels = append(in.PanelLabels, clean(w))
 	}
@@ -261,14 +264,25 @@ func typeCount(d []byte) int {
 
 // Unmapped is what a VI holds that a FlowLab diagram does not take from it, and why.
 func (in *Info) Unmapped() []string {
-	u := []string{
-		"the block diagram's wires: LabVIEW stores them in a tagged heap whose tag numbers are not in the file, so no wire is read",
-		"the block diagram's primitives, structures and their settings (loops, cases, math, comparisons), for the same reason",
-		"which panel items are controls and which are indicators, and each one's data type and default",
+	var u []string
+	if in.Diagram == nil {
+		why := in.Why
+		if why == "" {
+			why = "it is not in the file"
+		}
+		u = append(u, "the block diagram's wires, primitives and structures: "+why)
+	} else {
+		_, d := in.diagramTabs("x")
+		u = append(u, d...)
+		u = append(u,
+			"the front panel's default values, ranges and number formats: only each control's name, whether it is a control or an indicator, and its kind (number, boolean, text) come across",
+			"the settings inside the nodes (a compound arithmetic node's operation, a structure's case selector values, a loop's conditions)")
+	}
+	u = append(u,
 		"the front panel's layout, fonts, colors and decorations",
 		"the icon and the connector pane's terminal pattern",
-	}
-	if len(in.SubVIs) > 0 {
+	)
+	if len(in.SubVIs) > 0 && in.Diagram == nil {
 		u = append(u, fmt.Sprintf("the %d VI(s) the diagram calls (%s): a call is named here and its contents are another file", len(in.SubVIs), strings.Join(in.SubVIs, ", ")))
 	}
 	return u
@@ -299,10 +313,15 @@ func (in *Info) Flows() []map[string]any {
 	for _, u := range in.Unmapped() {
 		b.WriteString("- " + u + "\n")
 	}
-	return []map[string]any{
+	flows := []map[string]any{
 		{"id": id, "type": "tab", "label": clipLabel(strings.TrimSuffix(in.Name, ".vi")), "disabled": false, "info": b.String()},
 		{"id": id + "-note", "type": "comment", "z": id, "name": "From LabVIEW: " + clipLabel(in.Name), "info": b.String(), "x": 200, "y": 60, "wires": []any{}},
 	}
+	if in.Diagram != nil {
+		tabs, _ := in.diagramTabs(id + "-bd")
+		flows = append(flows, tabs...)
+	}
+	return flows
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -323,4 +342,26 @@ func clipLabel(s string) string {
 		return s[:60]
 	}
 	return s
+}
+
+// diagramOf reads the block diagram's graph from the inflated heaps.
+func diagramOf(fp, bd []byte, bl map[string][]section) (*Diagram, string) {
+	if len(bd) == 0 {
+		return nil, "the VI has no block diagram heap"
+	}
+	bt, err := parseHeap(bd)
+	if err != nil {
+		return nil, "the block diagram heap does not read: " + err.Error()
+	}
+	var ft *hnode = &hnode{}
+	if len(fp) > 0 {
+		if ft, err = parseHeap(fp); err != nil {
+			ft = &hnode{}
+		}
+	}
+	d, _, err := readDiagram(bt, ft, readTypes(bl["VCTP"], bl["DTHP"]))
+	if err != nil {
+		return nil, err.Error()
+	}
+	return d, ""
 }

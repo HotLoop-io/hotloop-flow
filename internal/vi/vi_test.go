@@ -52,7 +52,7 @@ func TestReadsEveryFixtureAndSaysWhatItDidNotRead(t *testing.T) {
 		if len(in.Blocks) < 15 {
 			t.Errorf("%s: only blocks %v", f, in.Blocks)
 		}
-		if len(in.Unmapped()) < 5 {
+		if len(in.Unmapped()) < 4 {
 			t.Errorf("%s: unmapped list is too short to be honest: %v", f, in.Unmapped())
 		}
 	}
@@ -94,11 +94,11 @@ func TestRefusesWhatIsNotAVIWithAReason(t *testing.T) {
 func TestTheFlowsCarryWhatWasReadAndWhatWasNot(t *testing.T) {
 	in, _ := Read(load(t, "Get_Grayscale_Value.vi"), "Get Grayscale Value.vi")
 	f := in.Flows()
-	if len(f) != 2 || f[0]["type"] != "tab" || f[1]["z"] != f[0]["id"] {
+	if len(f) < 3 || f[0]["type"] != "tab" || f[1]["z"] != f[0]["id"] || f[2]["ew_diagram"] == nil {
 		t.Fatalf("flows = %v", f)
 	}
 	info, _ := f[1]["info"].(string)
-	for _, want := range []string{"Determine the gray scale value", "Color to RGB.vi", "Not imported:", "block diagram's wires"} {
+	for _, want := range []string{"Determine the gray scale value", "Color to RGB.vi", "Not imported:", "primitive node(s)"} {
 		if !strings.Contains(info, want) {
 			t.Errorf("the note lacks %q:\n%s", want, info)
 		}

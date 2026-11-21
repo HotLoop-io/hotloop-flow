@@ -48,7 +48,7 @@ test('a LabVIEW VI imports through the dialog and lists what did not come across
   await page.locator('[data-test="import-open"]').click();
   await page.locator('[data-test="import-file"]').setInputFiles(vi);
   const list = page.locator('[data-test="import-unmapped"]');
-  await expect(list).toContainText("the block diagram's wires");
+  await expect(list).toContainText('primitive node(s)');
   await expect(list).toContainText('Color to RGB.vi');
   await page.screenshot({ path: 'shots/import-vi-1-dialog.png' });
   // Nothing has been added yet.
