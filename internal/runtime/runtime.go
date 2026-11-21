@@ -627,6 +627,71 @@ func (rt *Runtime) wire(g *graph) {
 		}
 		r.wires.Store(&wires)
 	}
+	rt.markTimerDriven(g)
+}
+
+// markTimerDriven decides, for every node that merges its queue only when it is
+// timer driven, whether every path into it starts at an inject node. It walks
+// the wires backwards, and a link out reaches the link in nodes it names. A
+// node with no way in, a root that is anything but an inject (a button, a
+// switch, a dashboard control, an input from the network, a Catch node), or a
+// path that cannot be followed, makes it not timer driven, and a node reachable
+// from both kinds counts as driven by an operator. It runs when the flow is
+// wired, so a deploy that changes the wiring changes the answer.
+func (rt *Runtime) markTimerDriven(g *graph) {
+	var needs []*runner
+	for _, r := range g.runners {
+		r.timerDriven.Store(false)
+		if tr, ok := r.node.(node.TimerRooted); ok && tr.RequiresTimerRoot() {
+			needs = append(needs, r)
+		}
+	}
+	if len(needs) == 0 {
+		return
+	}
+	in := make(map[string][]string, len(g.runners))
+	for id := range g.runners {
+		n := g.flows.Nodes[id]
+		for _, targets := range n.Wires {
+			for _, tid := range targets {
+				if _, ok := g.runners[tid]; ok {
+					in[tid] = append(in[tid], id)
+				}
+			}
+		}
+		if n.Type == "link out" {
+			if links, ok := n.Raw["links"].([]any); ok {
+				for _, l := range links {
+					if tid, ok := l.(string); ok {
+						if _, ok := g.runners[tid]; ok {
+							in[tid] = append(in[tid], id)
+						}
+					}
+				}
+			}
+		}
+	}
+	for _, w := range needs {
+		seen := map[string]bool{w.id: true}
+		stack := []string{w.id}
+		ok := len(in[w.id]) > 0
+		for ok && len(stack) > 0 {
+			id := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			ups := in[id]
+			if len(ups) == 0 && g.runners[id].typ != "inject" {
+				ok = false
+				break
+			}
+			for _, u := range ups {
+				if !seen[u] {
+					seen[u] = true
+					stack = append(stack, u)
+				}
+			}
+		}
+		w.timerDriven.Store(ok)
+	}
 }
 
 // buildRoutingTables collects the Catch, Status and Complete nodes.

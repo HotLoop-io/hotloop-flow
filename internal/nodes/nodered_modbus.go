@@ -946,16 +946,18 @@ func (n *nrModbusNode) request(m *engine.Msg) (nrRequest, error) {
 	return req, nil
 }
 
-// CoalesceKey says which queued messages ask the device the same question. A
-// read that is asked again while the device is still answering the one before
-// is answered by the newest ask, so a poll faster than the device never stacks.
-// A write is never merged: each one has to reach the device, in order.
+// CoalesceKey says which queued messages ask the device the same thing. A read
+// that is asked again while the device is still answering the one before is
+// answered by the newest ask, so a poll faster than the device never stacks. A
+// write is keyed by the register it writes, so the newest value for a register
+// replaces an older one that has not gone out, but only where RequiresTimerRoot
+// lets the runner merge it at all.
 func (n *nrModbusNode) CoalesceKey(m *engine.Msg) (string, bool) {
-	if n.kind == nrWrite || n.kind == nrFlexWrite {
+	req, err := n.request(m)
+	if err != nil {
 		return "", false
 	}
-	req, err := n.request(m)
-	if err != nil || req.isWrite() {
+	if req.isWrite() != (n.kind == nrWrite || n.kind == nrFlexWrite) {
 		return "", false
 	}
 	unit := -1
@@ -965,6 +967,12 @@ func (n *nrModbusNode) CoalesceKey(m *engine.Msg) (string, bool) {
 	return fmt.Sprintf("%d/%d/%d/%d", req.fc, unit, req.address, req.quantity), true
 }
 
+// RequiresTimerRoot is true for the write nodes: they merge only when every
+// path into them starts at an inject, because a write an operator sends is a
+// command that has to arrive.
+func (n *nrModbusNode) RequiresTimerRoot() bool { return n.kind == nrWrite || n.kind == nrFlexWrite }
+
+var _ node.TimerRooted = (*nrModbusNode)(nil)
 var _ node.Coalescer = (*nrModbusNode)(nil)
 
 func (n *nrModbusNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {

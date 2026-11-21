@@ -548,9 +548,22 @@ type Node interface {
 // queued when the node takes its next, only the newest is handled; the rest are
 // counted as coalesced. A message that returns false is never merged.
 //
-// A node that must see every message, a write above all, does not implement it.
+// A node that must see every message does not implement it. A write is the
+// exception that needs a condition: see TimerRooted.
 type Coalescer interface {
 	CoalesceKey(m *engine.Msg) (key string, ok bool)
+}
+
+// TimerRooted is implemented by a Coalescer whose merging is only safe when
+// nothing an operator drives can reach it. A write that mirrors a value read
+// every second is the same register written again with the newest value, and
+// losing an old one changes nothing; the same write from a button is a command,
+// and every press has to arrive. When RequiresTimerRoot reports true the runner
+// merges the node's queue only if every path into it, back to where messages
+// enter the flow, starts at an inject node. It is decided from the graph when
+// the flow is deployed, never from a message.
+type TimerRooted interface {
+	RequiresTimerRoot() bool
 }
 
 // BatchReceiver is implemented by a node that can take several messages in one
