@@ -182,8 +182,8 @@ printed is recorded in `testdata/nodered/oracle.json` by a harness that lives in
 repo (`testdata/nodered/oracle`, with its README): it runs each flow twice on real
 Node-RED and keeps what does not depend on a clock. 62 flows are recorded; 49 give
 exactly the same output here, and a test fails when one stops. The other 13 are the
-`gaps` list in `oracle.json`, run and compared every time: a flow on that list that
-starts to match fails the test until it is taken off, so the list only shrinks. Two
+`gaps` list in `oracle.json`, run and compared every time, and a flow on that list that matches
+is said in the test's log so it can be taken off. Two
 more flows print the machine the oracle ran on and are kept out as `environment`.
 
 Three things in those files used to make an imported flow quietly do the wrong
