@@ -303,7 +303,7 @@ func SetTypedTarget(ec EvalContext, targetType, target string, value any) error 
 			if err := engine.SetProperty(root, rest, value); err != nil {
 				return nil, err
 			}
-			return engine.Denormalise(root), nil
+			return engine.DenormaliseChecked(root)
 		})
 		return err
 
@@ -341,7 +341,7 @@ func DeleteTypedTarget(ec EvalContext, targetType, target string) error {
 			if err := engine.DeleteProperty(root, rest); err != nil {
 				return nil, err
 			}
-			return engine.Denormalise(root), nil
+			return engine.DenormaliseChecked(root)
 		})
 		return err
 	default:

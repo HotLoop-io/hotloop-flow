@@ -139,8 +139,10 @@ func (m *Msg) Set(expr string, v any) error {
 	}
 	// Mutation uses pointer slices internally so that growth propagates up the
 	// walk; normalise them away before anything else observes the message.
-	Denormalise(m.Data)
-	return nil
+	// A value that now contains itself is cut there and reported, so the
+	// message stays finite and the node that wrote it fails like any other.
+	_, err := DenormaliseChecked(m.Data)
+	return err
 }
 
 // Delete removes a property expression. Removing an absent property is a no-op.
