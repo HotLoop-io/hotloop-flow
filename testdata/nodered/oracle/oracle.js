@@ -13,6 +13,11 @@ const express = require("express");
 
 const [, , examplesDir, outFile] = process.argv;
 const PORT = 18800;
+// How long after the last Inject the debug output is read, in milliseconds. A flow that waits
+// longer than that (a Trigger's timeout) says more when this is raised for it:
+//   SETTLE=12000 ONLY="trigger__04" node oracle.js ../examples /tmp/trigger.json
+const SETTLE = Number(process.env.SETTLE || 1500);
+const ONLY = process.env.ONLY || "";
 // Flows whose output is the machine the oracle ran on (its home directory, the modules
 // installed beside it), so they say nothing about Flow and are kept out of "outputs".
 const ENVIRONMENT = ["function__change__04 - Set value from env var.json", "function__function__08 - Using external modules.json"];
@@ -72,17 +77,20 @@ async function runOnce(flows) {
   if (r.status !== 204 && r.status !== 200) throw new Error("deploy " + r.status + " " + r.body);
   await sleep(500);
   for (const n of flows) if (n.type === "inject") await request("POST", "/inject/" + n.id, {});
-  await sleep(1500);
+  await sleep(SETTLE);
   ws.close();
   await RED.stop();
   await new Promise((r) => server.close(r));
   fs.rmSync(userDir, { recursive: true, force: true });
-  return got.map((d) => canon(d.msg)).sort();
+  // A node's error that no Catch node took reaches the debug sidebar as a log line with a
+  // level (10 fatal, 20 error). It is recorded as "[error] <text>" so a test can tell it from
+  // a Debug node's output: Flow words its own errors, so only that the line exists is compared.
+  return got.map((d) => (typeof d.level === "number" && d.level <= 20 ? "[error] " : "") + canon(d.msg)).sort();
 }
 
 (async () => {
   const outputs = {}, volatile = [], environment = [], failed = {};
-  for (const f of fs.readdirSync(examplesDir).filter((x) => x.endsWith(".json")).sort()) {
+  for (const f of fs.readdirSync(examplesDir).filter((x) => x.endsWith(".json") && x.includes(ONLY)).sort()) {
     const flows = withTabForLooseNodes(JSON.parse(fs.readFileSync(path.join(examplesDir, f), "utf8")));
     try {
       const a = await runOnce(JSON.parse(JSON.stringify(flows)));

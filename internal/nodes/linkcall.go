@@ -42,6 +42,12 @@ const linkSourceKey = "_linkSource"
 // Node-RED.
 const defaultLinkCallTimeout = 30 * time.Second
 
+// linkCaller is whatever can wait for a return: a Link Call node, or a Function
+// node that called node.linkcall.
+type linkCaller interface {
+	returned(callID string, m *engine.Msg)
+}
+
 type linkCallNode struct {
 	id      string
 	flow    string

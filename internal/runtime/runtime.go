@@ -1009,11 +1009,6 @@ func (rt *Runtime) raiseError(from *runner, err error, msg *engine.Msg) {
 		return
 	}
 
-	rt.emit(Event{Topic: TopicError, At: rt.opts.Now(), Data: map[string]any{
-		"nodeId": from.id, "type": from.typ, "name": from.name,
-		"error": err.Error(),
-	}})
-
 	g := rt.graph()
 	targets := rt.selectHandlers(g.catches, from)
 	if len(targets) == 0 {
@@ -1023,6 +1018,12 @@ func (rt *Runtime) raiseError(from *runner, err error, msg *engine.Msg) {
 		// Catch node the author put on the tab never fires.
 		targets = rt.selectHandlersInCallingFlow(g, from)
 	}
+	// handled says whether a Catch node took it. Node-RED shows an error in the
+	// debug sidebar only when nothing caught it, and so does the sidebar here.
+	rt.emit(Event{Topic: TopicError, At: rt.opts.Now(), Data: map[string]any{
+		"nodeId": from.id, "type": from.typ, "name": from.name,
+		"error": err.Error(), "handled": len(targets) > 0,
+	}})
 	for _, h := range targets {
 		var out *engine.Msg
 		if msg != nil {

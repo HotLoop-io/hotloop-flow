@@ -83,9 +83,12 @@ type Program struct {
 	// on one dedicated runtime (see timers.go) because a callback has to live in
 	// the runtime that scheduled it.
 	timed bool
-	sess  *session
-	smu   sync.Mutex
-	async func(*Result)
+	// promised is true when the source uses await, async, Promise or
+	// node.linkcall (async.go). It runs on the same dedicated runtime as timed.
+	promised bool
+	sess     *session
+	smu      sync.Mutex
+	async    func(*Result)
 }
 
 // Compile prepares a function body.
@@ -95,8 +98,14 @@ type Program struct {
 func Compile(name, body, onStart, onStop string, limits Limits) (*Program, error) {
 	p := &Program{limits: limits.withDefaults(), name: name}
 	p.timed = usesTimers(body) || usesTimers(onStart) || usesTimers(onStop)
+	p.promised = usesAsync(body) || usesAsync(onStart) || usesAsync(onStop)
+	p.timed = p.timed || p.promised
+	fnWord := "function"
+	if p.promised {
+		fnWord = "async function"
+	}
 
-	main, err := goja.Compile(name, "(function(msg, node, context, flow, global, env, util){"+body+"\n})", true)
+	main, err := goja.Compile(name, "("+fnWord+"(msg, node, context, flow, global, env, util){"+body+"\n})", true)
 	if err != nil {
 		return nil, fmt.Errorf("compiling function: %w", cleanCompileError(err))
 	}
@@ -104,7 +113,7 @@ func Compile(name, body, onStart, onStop string, limits Limits) (*Program, error
 
 	if strings.TrimSpace(onStart) != "" {
 		prog, err := goja.Compile(name+":onStart",
-			"(function(node, context, flow, global, env, util){"+onStart+"\n})", true)
+			"("+fnWord+"(node, context, flow, global, env, util){"+onStart+"\n})", true)
 		if err != nil {
 			return nil, fmt.Errorf("compiling setup code: %w", cleanCompileError(err))
 		}
@@ -112,7 +121,7 @@ func Compile(name, body, onStart, onStop string, limits Limits) (*Program, error
 	}
 	if strings.TrimSpace(onStop) != "" {
 		prog, err := goja.Compile(name+":onStop",
-			"(function(node, context, flow, global, env, util){"+onStop+"\n})", true)
+			"("+fnWord+"(node, context, flow, global, env, util){"+onStop+"\n})", true)
 		if err != nil {
 			return nil, fmt.Errorf("compiling cleanup code: %w", cleanCompileError(err))
 		}
@@ -156,6 +165,9 @@ type Sandbox struct {
 	Msg      *engine.Msg
 	Services node.Services
 	Outputs  int
+	// LinkCall starts node.linkcall's call to a Link In. A function that never
+	// calls it needs none.
+	LinkCall LinkCaller
 }
 
 // Run executes the function against a message.

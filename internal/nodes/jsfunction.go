@@ -2,7 +2,11 @@ package nodes
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/HotLoop-io/hotloop-flow/internal/engine"
@@ -19,6 +23,21 @@ type functionNode struct {
 	prog    *js.Program
 	outputs int
 	svc     node.Services
+
+	// id and flow place the node for node.linkcall, which finds its Link In
+	// the way a dynamic Link Call does.
+	id    string
+	flow  string
+	clock node.Clock
+
+	mu      sync.Mutex
+	waiting map[string]*functionLinkWait
+}
+
+// functionLinkWait is one node.linkcall waiting for its return.
+type functionLinkWait struct {
+	deliver func(*engine.Msg, error)
+	timer   node.Timer
 }
 
 func registerFunction() {
@@ -43,7 +62,12 @@ func registerFunction() {
 				"clock, and every one is cleared when the flow stops or is redeployed. Buffer " +
 				"is there (alloc, from, concat, the read and write methods for integers and " +
 				"floats in both byte orders, slice, toString and toJSON). A byte slice " +
-				"in a message arrives as a byte array, so wrap it with Buffer.from.",
+				"in a message arrives as a byte array, so wrap it with Buffer.from. await " +
+				"works at the top level of the body, a promise the body returns is waited " +
+				"for, a promise the Setup code returns is settled before the first message " +
+				"runs, and node.linkcall(target, msg, {timeout, clone}) calls a Link In by " +
+				"id or name and resolves with what its Link Out in return mode sends back " +
+				"(5 second wait unless the call says otherwise).",
 			UnsupportedProps: []string{"libs", "require"},
 		},
 		Props: []node.Prop{
@@ -61,7 +85,7 @@ func registerFunction() {
 		},
 		Help: "Runs JavaScript against each message. Return a message to send it on, " +
 			"an array to address several outputs, or nothing to stop it here.\n\n" +
-			"Available: msg, node (send, done, error, status, log, warn, debug), " +
+			"Available: msg, node (send, done, error, status, log, warn, debug, linkcall), " +
 			"context, flow, global, env and util. Not available: require, npm modules, " +
 			"the Node standard library.",
 	}, newFunction)
@@ -104,7 +128,69 @@ func newFunction(def *node.Definition) (node.Node, error) {
 		return nil, err
 	}
 
-	return &functionNode{prog: prog, outputs: slots, svc: def.Services}, nil
+	n := &functionNode{
+		prog: prog, outputs: slots, svc: def.Services,
+		id: def.Node.ID, flow: def.Node.Z, clock: node.ClockOf(def.Services),
+		waiting: map[string]*functionLinkWait{},
+	}
+	if prog.UsesPromises() {
+		Links.registerCall(n.id, n)
+	}
+	return n, nil
+}
+
+// linkCall is node.linkcall: send a copy of the message to a Link In and hand
+// the message a Link Out in return mode sends back to deliver. Node-RED's
+// RED.nodes.linkcallTargets finds the target the same way a dynamic Link Call
+// does, by id or by name.
+func (n *functionNode) linkCall(target string, m *engine.Msg, timeout time.Duration, deliver func(*engine.Msg, error)) error {
+	in, err := Links.target(n.flow, target, true)
+	if err != nil {
+		return err
+	}
+	var raw [14]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return fmt.Errorf("generating a call id: %w", err)
+	}
+	callID := hex.EncodeToString(raw[:])
+	stack, _ := m.Data[linkSourceKey].([]any)
+	m.Data[linkSourceKey] = append(stack, map[string]any{"id": callID, "node": n.id})
+
+	w := &functionLinkWait{deliver: deliver}
+	n.mu.Lock()
+	n.waiting[callID] = w
+	w.timer = n.clock.AfterFunc(timeout, func() {
+		n.mu.Lock()
+		_, ok := n.waiting[callID]
+		delete(n.waiting, callID)
+		n.mu.Unlock()
+		if ok {
+			deliver(nil, errors.New("timeout"))
+		}
+	})
+	n.mu.Unlock()
+
+	if !in.deliver(m) {
+		n.mu.Lock()
+		delete(n.waiting, callID)
+		w.timer.Stop()
+		n.mu.Unlock()
+		return fmt.Errorf("target link in node %q is not running", target)
+	}
+	return nil
+}
+
+// returned is the way back for a call this node made.
+func (n *functionNode) returned(callID string, m *engine.Msg) {
+	n.mu.Lock()
+	w, ok := n.waiting[callID]
+	delete(n.waiting, callID)
+	n.mu.Unlock()
+	if !ok {
+		return
+	}
+	w.timer.Stop()
+	w.deliver(m, nil)
 }
 
 func (n *functionNode) Receive(ctx context.Context, m *engine.Msg, out node.Emitter) error {
@@ -112,6 +198,7 @@ func (n *functionNode) Receive(ctx context.Context, m *engine.Msg, out node.Emit
 		Msg:      m,
 		Services: n.svc,
 		Outputs:  n.outputs,
+		LinkCall: n.linkCall,
 	})
 
 	// Emit whatever the function produced before reporting the failure. A
@@ -155,6 +242,7 @@ func (n *functionNode) Start(ctx context.Context, out node.Emitter) error {
 	res, err := n.prog.RunLifecycle(ctx, js.Sandbox{
 		Services: n.svc,
 		Outputs:  n.outputs,
+		LinkCall: n.linkCall,
 	}, "start")
 	n.emit(res, out)
 	if err != nil {
@@ -170,6 +258,12 @@ func (n *functionNode) Start(ctx context.Context, out node.Emitter) error {
 // and still allows fifteen seconds of.
 func (n *functionNode) Close(ctx context.Context, _ bool) error {
 	defer n.prog.Stop()
+	Links.unregisterCall(n.id, n)
+	n.mu.Lock()
+	for _, w := range n.waiting {
+		w.timer.Stop()
+	}
+	n.mu.Unlock()
 	res, err := n.prog.RunLifecycle(ctx, js.Sandbox{
 		Services: n.svc,
 		Outputs:  n.outputs,

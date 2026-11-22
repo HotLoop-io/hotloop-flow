@@ -56,6 +56,11 @@ type session struct {
 	nextID int
 	timers map[int]*timerEntry
 
+	// ready is open while the Setup code's promise is pending, and setupErr is
+	// what a rejected one failed with (async.go).
+	ready    chan struct{}
+	setupErr error
+
 	nodeObj, ctxObj, flowObj, globalObj, envObj, utilObj goja.Value
 	mainFn, startFn, stopFn                              goja.Callable
 }
@@ -129,6 +134,9 @@ func (p *Program) getSession(sb Sandbox) (*session, error) {
 	s.globalObj = p.contextAPI(s.vm, sb.Services, node.ScopeGlobal)
 	s.envObj = p.envAPI(s.vm, sb.Services)
 	s.utilObj = p.utilAPI(s.vm)
+	if p.promised {
+		s.installLinkCall(p, s.nodeObj)
+	}
 
 	var err error
 	if s.mainFn, err = p.callable(s.vm, p.main); err != nil {
@@ -166,6 +174,12 @@ func (p *Program) runTimed(ctx context.Context, sb Sandbox) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	if p.promised {
+		// Behind a Setup promise that has not settled, the message waits.
+		if err := s.waitSetup(ctx); err != nil {
+			return &Result{ByPort: make([][]*engine.Msg, sb.Outputs)}, err
+		}
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.begin(sb.Msg)
@@ -181,8 +195,14 @@ func (p *Program) runTimed(ctx context.Context, sb Sandbox) (*Result, error) {
 	if err != nil {
 		return s.finish(), translateError(err)
 	}
-	if err := p.collectReturn(s.vm, out, &s.sb, &s.res); err != nil {
-		return s.finish(), err
+	var rerr error
+	if p.promised {
+		rerr = p.finishMain(s, out, sb.Msg)
+	} else {
+		rerr = p.collectReturn(s.vm, out, &s.sb, &s.res)
+	}
+	if rerr != nil {
+		return s.finish(), rerr
 	}
 	res := s.finish()
 	if err := p.checkSize(res); err != nil {
@@ -215,10 +235,15 @@ func (p *Program) lifecycleTimed(ctx context.Context, sb Sandbox, which string) 
 	defer timer.Stop()
 	stop := context.AfterFunc(ctx, func() { s.vm.Interrupt(ctx.Err()) })
 	defer stop()
-	_, err = fn(goja.Undefined(), s.nodeObj, s.ctxObj, s.flowObj, s.globalObj, s.envObj, s.utilObj)
+	out, err := fn(goja.Undefined(), s.nodeObj, s.ctxObj, s.flowObj, s.globalObj, s.envObj, s.utilObj)
 	s.vm.ClearInterrupt()
 	if err != nil {
 		return s.finish(), translateError(err)
+	}
+	if p.promised && which == "start" {
+		if err := s.startSetup(out); err != nil {
+			return s.finish(), err
+		}
 	}
 	return s.finish(), nil
 }

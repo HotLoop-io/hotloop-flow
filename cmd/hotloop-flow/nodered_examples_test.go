@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,7 +52,23 @@ func TestNodeREDExampleFlowsGiveWhatNodeREDGives(t *testing.T) {
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		want := oracle.Outputs[name]
+		want := make([]string, 0, len(oracle.Outputs[name])+1)
+		for _, w := range oracle.Outputs[name] {
+			// Flow words its own errors (a schema's violations, a parser's position), so
+			// of an error line only that it appeared is compared. A line that is a message
+			// is compared as the Debug node's canonical form, which leaves out what is the
+			// engine's own (see canonicalDebug).
+			if strings.HasPrefix(w, errorLine+" ") {
+				w = errorLine
+			} else {
+				w = canonicalDebug(w)
+			}
+			want = append(want, w)
+		}
+		if _, ok := deliberate[name]; ok {
+			want = append(want, errorLine)
+		}
+		sort.Strings(want)
 		t.Run(name, func(t *testing.T) {
 			src, err := os.ReadFile(filepath.Join("../../testdata/nodered/examples", name))
 			if err != nil {
@@ -75,33 +92,82 @@ func TestNodeREDExampleFlowsGiveWhatNodeREDGives(t *testing.T) {
 					time.Sleep(60 * time.Millisecond)
 				}
 			}
-			time.Sleep(1500 * time.Millisecond)
-			var got []string
-			rec.mu.Lock()
-			for _, e := range rec.events {
-				if e.Topic == runtime.TopicDebug {
-					got = append(got, canonicalDebug(e.Data["msg"]))
+			// What the flow has printed so far, in the oracle's form.
+			collect := func() []string {
+				var out []string
+				rec.mu.Lock()
+				for _, e := range rec.events {
+					switch {
+					case e.Topic == runtime.TopicDebug:
+						out = append(out, canonicalDebug(e.Data["msg"]))
+					case e.Topic == runtime.TopicError && e.Data["handled"] == false:
+						// A node's error that no Catch node took is a line in Node-RED's debug
+						// sidebar, and the oracle records it as "[error]".
+						out = append(out, errorLine)
+					}
 				}
+				rec.mu.Unlock()
+				sort.Strings(out)
+				return out
 			}
-			rec.mu.Unlock()
-			sort.Strings(got)
-			differs := len(got) != len(want)
-			for i := 0; !differs && i < len(want); i++ {
-				differs = got[i] != want[i]
+			same := func(a, b []string) bool {
+				if len(a) != len(b) {
+					return false
+				}
+				for i := range a {
+					if a[i] != b[i] {
+						return false
+					}
+				}
+				return true
 			}
+			// Node-RED was read 1.5 s after the last Inject. Waiting a fixed 1.5 s here makes
+			// a flow whose answer comes a second in (a Trigger, a Delay) pass or fail with the
+			// runner's load, so the wait is for the recorded output to appear, up to 10 s, and
+			// then for a quiet 400 ms, and for 1.5 s in all, that nothing more comes. A flow that gives more than the
+			// oracle did is seen at once, and one that never gives it runs out the 10 s.
+			var got []string
+			start := time.Now()
+			deadline := start.Add(10 * time.Second)
+			for {
+				got = collect()
+				if len(got) > len(want) || time.Now().After(deadline) {
+					break
+				}
+				if same(got, want) {
+					// Never less than the 1.5 s Node-RED was given, so a flow that should
+					// print nothing more is still watched for that long.
+					time.Sleep(max(400*time.Millisecond, time.Until(start.Add(1500*time.Millisecond))))
+					got = collect()
+					break
+				}
+				time.Sleep(25 * time.Millisecond)
+			}
+			differs := !same(got, want)
 			switch {
 			case gap[name] && !differs:
 				// Several gaps are timing flows that match or miss by a few milliseconds on a
 				// loaded runner, so a match is said, not enforced.
 				t.Logf("%s: this flow gave what Node-RED gives this time: if it does every time, take it off the gaps list in oracle.json", name)
 			case gap[name]:
-				t.Logf("known gap %s: %d outputs, Node-RED gave %d", name, len(got), len(want))
+				t.Logf("known gap %s: %d outputs, Node-RED gave %d\n Flow gave %v\n Node-RED gave %v", name, len(got), len(want), got, want)
 			case differs:
 				t.Errorf("Flow gave %v\n Node-RED gave %v", got, want)
 			}
 		})
 	}
 }
+
+// deliberate lists the example flows where Flow differs from Node-RED on purpose, and says why.
+// Each one is still compared, with the one difference expected, so a change in it is noticed.
+var deliberate = map[string]string{
+	"common__link__02 - Link across tabs.json": "its Link Out names a Link In that is not in the file; " +
+		"Node-RED drops the message without a word and Flow raises an error a Catch node can see " +
+		"(docs/compatibility.md, link out)",
+}
+
+// errorLine stands for an error no Catch node took, as the oracle records it.
+const errorLine = "[error]"
 
 var (
 	msgIDKey = regexp.MustCompile(`"_msgid":\s*"[0-9a-f]+",?`)
@@ -115,6 +181,17 @@ func canonicalDebug(v any) string {
 	s = spaces.ReplaceAllString(msgIDKey.ReplaceAllString(s, ""), "")
 	var j any
 	if json.Unmarshal([]byte(s), &j) == nil {
+		// What a Catch node's message carries that is the engine's own and not the flow's:
+		// Node-RED keeps the Error object itself in msg._error and a stack that names its
+		// own source files; Flow keeps a hop count in msg._errorDepth to break error loops.
+		// None of them is something a flow reads, so none is compared.
+		if m, ok := j.(map[string]any); ok {
+			delete(m, "_error")
+			delete(m, "_errorDepth")
+			if e, ok := m["error"].(map[string]any); ok {
+				delete(e, "stack")
+			}
+		}
 		if b, err := json.Marshal(j); err == nil {
 			return string(b)
 		}

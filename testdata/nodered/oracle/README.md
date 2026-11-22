@@ -11,3 +11,9 @@ clock or a random number and is listed under `volatile`, not in `outputs`.
 Copy `/tmp/oracle.json` over `../oracle.json`. The Go test
 `TestNodeREDExampleFlowsGiveWhatNodeREDGives` holds Flow to it. Checked 2026-11-21: the harness
 reproduced all 39 entries the earlier hand-run recorded, byte for byte, before it was trusted.
+
+A flow that waits longer than the 1.5 s the output is read after (a Trigger's timeout) says more when the wait is
+raised for that flow: `SETTLE=12000 ONLY="trigger__04" node oracle.js ../examples /tmp/trigger.json`.
+
+An error that no Catch node took reaches Node-RED's debug sidebar as a log line, and it is recorded as `[error] <text>`.
+The Go test compares only that such a line appeared, because Flow words its own errors.

@@ -196,7 +196,7 @@
    "{\"kind\":\"Apple\",\"origin\":\"Canada\",\"price\":100}"
   ],
   "parser__json__03 - Validate input JSON string.json": [
-   "JSONSchemaerror:data/pricemustbenumber",
+   "[error] JSONSchemaerror:data/pricemustbenumber",
    "{\"kind\":\"Apple\",\"origin\":\"Canada\",\"price\":100}"
   ],
   "sequence__batch__01 - Number-based group mode.json": [
@@ -302,11 +302,5 @@
   "function__change__04 - Set value from env var.json",
   "function__function__08 - Using external modules.json"
  ],
- "gaps": [
-  "common__catch__01 - Catch error.json",
-  "common__link__03 - Link call.json",
-  "function__function__10 - Asynchronous setup.json",
-  "function__trigger__04 - Timeout processing using trigger node.json",
-  "parser__json__03 - Validate input JSON string.json"
- ]
+ "gaps": []
 }
