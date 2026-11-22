@@ -441,7 +441,7 @@ func (n *csvNode) parse(text string, m *engine.Msg, out node.Emitter) error {
 			return err
 		}
 		cp.Data[engine.PropParts] = partsInfo{
-			ID: seqID, Index: i, Count: len(rows), Type: "object",
+			ID: seqID, Index: i, Count: len(rows),
 		}.toMap()
 		out.Send(0, cp)
 	}
@@ -487,7 +487,18 @@ func (n *csvNode) render(value any, m *engine.Msg, out node.Emitter) error {
 		return fmt.Errorf("cannot render %T as CSV", value)
 	}
 
+	// A message that carries msg.reset starts the header over, and one that carries msg.columns names the
+	// columns for this message, as Node-RED's CSV node does.
+	if _, reset := m.Data["reset"]; reset {
+		n.wroteHeader = false
+	}
 	columns := n.columns
+	if list, ok := m.Data["columns"].(string); ok && strings.TrimSpace(list) != "" {
+		columns = columns[:0:0]
+		for _, c := range strings.Split(list, ",") {
+			columns = append(columns, strings.Trim(strings.TrimSpace(c), `"`))
+		}
+	}
 	if len(columns) == 0 && len(rows) > 0 {
 		// Sorted, so repeated messages produce the same column order. Go map
 		// iteration is randomised, and a CSV whose columns move between rows is

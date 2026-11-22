@@ -180,8 +180,8 @@ node-red/node-red, with NOTICE), and every one imports and deploys. Each was als
 run in a real Node-RED 5.0.10 with every Inject pressed, and what its Debug nodes
 printed is recorded in `testdata/nodered/oracle.json` by a harness that lives in the
 repo (`testdata/nodered/oracle`, with its README): it runs each flow twice on real
-Node-RED and keeps what does not depend on a clock. 62 flows are recorded; 49 give
-exactly the same output here, and a test fails when one stops. The other 13 are the
+Node-RED and keeps what does not depend on a clock. 62 flows are recorded; 57 give
+exactly the same output here, and a test fails when one stops. The other 5 are the
 `gaps` list in `oracle.json`, run and compared every time, and a flow on that list that matches
 is said in the test's log so it can be taken off. Two
 more flows print the machine the oracle ran on and are kept out as `environment`.
@@ -194,9 +194,13 @@ refused to start. Concatenate mode of Batch with one topic listed twice panicked
 and a Switch with "recreate message sequences" on did not rebuild its sequences.
 
 Where it still differs from Node-RED on those flows (read these before you rely on
-a flow that uses them): the Catch node's `msg.error` carries Flow's own fields, a
-Delay's reset and flush, a Delay or Rate limit per topic, a Trigger's `reset` and
-units, Link Call across a subflow, a Function node's `node.log` and `external
-modules`, a CSV node's per-message column names and `reset`, a Join node's
-reduce and timeout modes, JSON schema validation, and timing-based Batch. Flow does
+a flow that uses them): the Catch node's `msg.error` carries Flow's own fields (Node-RED's has the error's
+message, name and stack), a Link Call across a subflow, a Function node whose Setup returns a promise (Flow runs
+the message before the promise settles), a JSON node that checks a schema sent in `msg.schema` (Node-RED also
+prints the schema error in the debug sidebar), and a Trigger's one second timer, which gives Node-RED's answer
+or misses it by a few milliseconds on a loaded box. The Delay's reset and flush, a Join in automatic mode behind a
+CSV or a Switch, the CSV node's `msg.columns` and `msg.reset`, and Batch's concatenate behind a Switch now give
+Node-RED's output on its own examples. Also partial, from the earlier list: a Delay or Rate limit per topic, a
+Trigger's units, a Function node's `node.log` and `external modules`, a Join node's reduce and timeout modes, and
+timing-based Batch. Flow does
 not hide any of it: `hotloop-flow import` lists what a file uses that is partial.

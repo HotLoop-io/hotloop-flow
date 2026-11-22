@@ -305,16 +305,8 @@
  "gaps": [
   "common__catch__01 - Catch error.json",
   "common__link__03 - Link call.json",
-  "function__change__05 - Set flow context.json",
-  "function__delay__03 - Reset or flush pending message.json",
   "function__function__10 - Asynchronous setup.json",
-  "function__switch__07 - Recreate message sequence.json",
   "function__trigger__04 - Timeout processing using trigger node.json",
-  "parser__csv__08 - Specify column names in input message.json",
-  "parser__csv__09 - Send column name when reset property set.json",
-  "parser__csv__10 - Join parsed CSV message sequence using join node.json",
-  "parser__json__03 - Validate input JSON string.json",
-  "sequence__batch__03 - Concatenate mode.json",
-  "sequence__join__01 - Automatic join mode.json"
+  "parser__json__03 - Validate input JSON string.json"
  ]
 }

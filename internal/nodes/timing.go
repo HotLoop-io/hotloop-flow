@@ -342,6 +342,21 @@ func (n *delayNode) Receive(_ context.Context, m *engine.Msg, out node.Emitter) 
 		if f, ok := asFloat(raw); ok && f > 0 {
 			count = int(f)
 		}
+		// A flush that carries other properties (an Inject with a topic and a flush, say) is a message too,
+		// and Node-RED holds it with the rest and so lets it go with the rest: it comes out behind what
+		// it released. One that is only a flush is only a flush.
+		if len(m.Data) > 1 && (n.mode == delayFixed || n.mode == delayVariable || n.mode == delayRandom) {
+			delete(m.Data, "flush")
+			var held error
+			switch n.mode {
+			case delayFixed:
+				held = n.pause(n.fixed, m, out)
+			default:
+				held = n.pause(n.fixed, m, out)
+			}
+			n.flush(out, count)
+			return held
+		}
 		n.flush(out, count)
 		return nil
 	}
@@ -614,12 +629,27 @@ func (n *delayNode) flush(out node.Emitter, count int) int {
 		}
 		due, n.queue = n.queue[:count], n.queue[count:]
 	}
+	held := make([]*pausedMsg, 0, len(n.paused))
+	for p := range n.paused {
+		held = append(held, p)
+	}
 	n.mu.Unlock()
 
 	for _, m := range due {
 		out.Send(0, m)
 	}
-	return len(due)
+	// The messages held on a timer of their own go too, oldest first, as many as were asked for.
+	sort.Slice(held, func(i, j int) bool { return held[i].due.Before(held[j].due) })
+	released := 0
+	for _, p := range held {
+		if count > 0 && len(due)+released >= count {
+			break
+		}
+		p.timer.Stop()
+		n.letGo(p, out)
+		released++
+	}
+	return len(due) + released
 }
 
 // reset empties the queue without sending. This is the one place a message is
@@ -630,6 +660,17 @@ func (n *delayNode) reset(out node.Emitter) {
 	n.queue = nil
 	n.byTopic = map[string]*engine.Msg{}
 	n.order = nil
+	timers := make([]*pausedMsg, 0, len(n.paused))
+	for p := range n.paused {
+		timers = append(timers, p)
+	}
+	for _, p := range timers {
+		p.timer.Stop()
+		delete(n.paused, p)
+		n.timers--
+		n.wg.Done()
+		dropped++
+	}
 	n.mu.Unlock()
 	if dropped > 0 {
 		out.Log(node.LogInfo, "msg.reset discarded %d queued message(s)", dropped)

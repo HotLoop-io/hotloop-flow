@@ -560,7 +560,7 @@ func (n *switchNode) hold(id string, count int, byPort [][]*engine.Msg, out node
 			for k, v := range parts {
 				np[k] = v
 			}
-			np["id"], np["index"], np["count"] = ids[j], index[j], counts[j]
+			np["id"], np["index"], np["count"] = ids[j], float64(index[j]), float64(counts[j])
 			cp.Data[engine.PropParts] = np
 			index[j]++
 			repaired[j] = []*engine.Msg{cp}
