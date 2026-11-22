@@ -860,13 +860,14 @@ jobs:
         # to 42 MiB in 2.9.0 for the native Node-RED connector nodes (Modbus, the
         # dashboard, PostgreSQL, e-mail), by Patrick's call. Moved from 42 to
         # 46 MiB in 2.13.0 for Kafka out, by Patrick's call, 2026-11-16. Moved from 46
-        # to 50 MiB for the 13 language catalogs, 3.4 MB of text, by Patrick's call, 2026-11-19.
+        # to 50 MiB for the 13 language catalogs, 3.4 MB of text, by Patrick's call, 2026-11-19. Moved
+        # from 50 to 58 MiB for the Node-RED import gaps, by Patrick's call, 2026-11-22.
         run: |
           SIZE=$(stat -c%s hotloop-flow)
           echo "hotloop-flow: $SIZE bytes ($((SIZE/1024/1024)) MiB)"
           echo "### Binary size: $((SIZE/1024/1024)) MiB" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$SIZE" -gt 52428800 ]; then
-            echo "::error::binary exceeds the 50 MiB budget"
+          if [ "$SIZE" -gt 60817408 ]; then
+            echo "::error::binary exceeds the 58 MiB budget"
             exit 1
           fi
 

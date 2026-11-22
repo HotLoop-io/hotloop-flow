@@ -689,14 +689,14 @@ type LinkRegistry struct {
 	pending map[string][]*linkOutNode
 	// calls holds the Link Call nodes by id, so a Link Out in return mode can
 	// find the one a message came from.
-	calls map[string]*linkCallNode
+	calls map[string]linkCaller
 }
 
 // Links is the process-wide link registry.
 var Links = &LinkRegistry{
 	inputs:  map[string]*linkInNode{},
 	pending: map[string][]*linkOutNode{},
-	calls:   map[string]*linkCallNode{},
+	calls:   map[string]linkCaller{},
 }
 
 // Reset clears the registry. Called on redeploy, and by tests.
@@ -705,10 +705,10 @@ func (lr *LinkRegistry) Reset() {
 	defer lr.mu.Unlock()
 	lr.inputs = map[string]*linkInNode{}
 	lr.pending = map[string][]*linkOutNode{}
-	lr.calls = map[string]*linkCallNode{}
+	lr.calls = map[string]linkCaller{}
 }
 
-func (lr *LinkRegistry) registerCall(id string, n *linkCallNode) {
+func (lr *LinkRegistry) registerCall(id string, n linkCaller) {
 	lr.mu.Lock()
 	defer lr.mu.Unlock()
 	lr.calls[id] = n
@@ -716,7 +716,7 @@ func (lr *LinkRegistry) registerCall(id string, n *linkCallNode) {
 
 // unregisterCall removes a Link Call, only if the registry still points at that
 // instance, for the same reason unregisterIn checks.
-func (lr *LinkRegistry) unregisterCall(id string, n *linkCallNode) {
+func (lr *LinkRegistry) unregisterCall(id string, n linkCaller) {
 	lr.mu.Lock()
 	defer lr.mu.Unlock()
 	if lr.calls[id] == n {
@@ -724,7 +724,7 @@ func (lr *LinkRegistry) unregisterCall(id string, n *linkCallNode) {
 	}
 }
 
-func (lr *LinkRegistry) lookupCall(id string) (*linkCallNode, bool) {
+func (lr *LinkRegistry) lookupCall(id string) (linkCaller, bool) {
 	lr.mu.RLock()
 	defer lr.mu.RUnlock()
 	n, ok := lr.calls[id]

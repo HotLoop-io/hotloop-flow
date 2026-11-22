@@ -180,10 +180,8 @@ node-red/node-red, with NOTICE), and every one imports and deploys. Each was als
 run in a real Node-RED 5.0.10 with every Inject pressed, and what its Debug nodes
 printed is recorded in `testdata/nodered/oracle.json` by a harness that lives in the
 repo (`testdata/nodered/oracle`, with its README): it runs each flow twice on real
-Node-RED and keeps what does not depend on a clock. 62 flows are recorded; 57 give
-exactly the same output here, and a test fails when one stops. The other 5 are the
-`gaps` list in `oracle.json`, run and compared every time, and a flow on that list that matches
-is said in the test's log so it can be taken off. Two
+Node-RED and keeps what does not depend on a clock. 62 flows are recorded; all 62 give
+exactly the same output here, and a test fails when one stops. Two
 more flows print the machine the oracle ran on and are kept out as `environment`.
 
 Three things in those files used to make an imported flow quietly do the wrong
@@ -193,14 +191,19 @@ bare `payload` row sent an empty payload, and a CSV node with no columns listed
 refused to start. Concatenate mode of Batch with one topic listed twice panicked,
 and a Switch with "recreate message sequences" on did not rebuild its sequences.
 
-Where it still differs from Node-RED on those flows (read these before you rely on
-a flow that uses them): the Catch node's `msg.error` carries Flow's own fields (Node-RED's has the error's
-message, name and stack), a Link Call across a subflow, a Function node whose Setup returns a promise (Flow runs
-the message before the promise settles), a JSON node that checks a schema sent in `msg.schema` (Node-RED also
-prints the schema error in the debug sidebar), and a Trigger's one second timer, which gives Node-RED's answer
-or misses it by a few milliseconds on a loaded box. The Delay's reset and flush, a Join in automatic mode behind a
-CSV or a Switch, the CSV node's `msg.columns` and `msg.reset`, and Batch's concatenate behind a Switch now give
-Node-RED's output on its own examples. Also partial, from the earlier list: a Delay or Rate limit per topic, a
+All 62 recorded flows now give Node-RED's output here, with two kinds of difference written down and
+checked by the test. What the test leaves out of a message on purpose: Node-RED's `msg._error` (the Error object
+itself) and the `stack` in `msg.error` name Node-RED's own source files, and Flow's `msg._errorDepth` is the hop
+count that breaks an error loop, so none of them is compared; a flow that reads `msg.error.stack` gets nothing
+from Flow. And one flow where Flow differs on purpose: "Link across tabs" has a Link Out naming a Link In that is
+not in the file, which Node-RED drops without a word and Flow raises as an error a Catch node can see
+(`link out` in docs/compatibility.md). What closed on the last pass: a Function node's `await`, a promise its body
+returns and a promise its Setup returns (the first message waits for it), `node.linkcall` to a Link In by id or
+name, a node's error that no Catch node took (the oracle now records those as `[error]` lines, and Flow's own error
+event carries `handled`, so the debug sidebar and the test agree on which ones are uncaught), and a Trigger whose
+timeout answer comes a second in (the test waits for the recorded output instead of a fixed 1.5 s). The Delay's
+reset and flush, a Join in automatic mode behind a CSV or a Switch, the CSV node's `msg.columns` and `msg.reset`,
+and Batch's concatenate behind a Switch give Node-RED's output on their examples too. Also partial, from the earlier list: a Delay or Rate limit per topic, a
 Trigger's units, a Function node's `node.log` and `external modules`, a Join node's reduce and timeout modes, and
 timing-based Batch. Flow does
 not hide any of it: `hotloop-flow import` lists what a file uses that is partial.
