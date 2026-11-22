@@ -24,7 +24,7 @@ func TestSwitchRepairBuildsASequenceForEachOutput(t *testing.T) {
 	}
 	for i, m := range pos {
 		p := parts(t, m)
-		if p["count"] != 2 || p["index"] != i || p["id"] == "S" {
+		if p["count"] != 2.0 || p["index"] != float64(i) || p["id"] == "S" {
 			t.Errorf("positive part %d = %v", i, p)
 		}
 	}

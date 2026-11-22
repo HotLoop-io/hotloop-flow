@@ -36,7 +36,9 @@ func (p partsInfo) toMap() map[string]any {
 	m := map[string]any{
 		"id":    p.ID,
 		"index": float64(p.Index),
-		"type":  p.Type,
+	}
+	if p.Type != "" {
+		m["type"] = p.Type
 	}
 	if p.Count > 0 {
 		m["count"] = float64(p.Count)

@@ -70,6 +70,9 @@ func TestNodeREDExampleFlowsGiveWhatNodeREDGives(t *testing.T) {
 					if err := app.currentRuntime().Inject(id, engine.NewMsg()); err != nil {
 						t.Fatal(err)
 					}
+					// Node-RED presses them one after another; so do we, or two flows that share a
+					// node's state see the presses in whatever order the scheduler picks.
+					time.Sleep(60 * time.Millisecond)
 				}
 			}
 			time.Sleep(1500 * time.Millisecond)
@@ -90,9 +93,9 @@ func TestNodeREDExampleFlowsGiveWhatNodeREDGives(t *testing.T) {
 			case gap[name] && !differs:
 				// Several gaps are timing flows that match or miss by a few milliseconds on a
 				// loaded runner, so a match is said, not enforced.
-				t.Logf("this flow gave what Node-RED gives this time: if it does every time, take it off the gaps list in oracle.json")
+				t.Logf("%s: this flow gave what Node-RED gives this time: if it does every time, take it off the gaps list in oracle.json", name)
 			case gap[name]:
-				t.Logf("known gap: %d outputs, Node-RED gave %d", len(got), len(want))
+				t.Logf("known gap %s: %d outputs, Node-RED gave %d", name, len(got), len(want))
 			case differs:
 				t.Errorf("Flow gave %v\n Node-RED gave %v", got, want)
 			}

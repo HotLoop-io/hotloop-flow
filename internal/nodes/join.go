@@ -221,6 +221,14 @@ func jsNumberProp(v any) float64 {
 	switch t := v.(type) {
 	case float64:
 		return t
+	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case int32:
+		return float64(t)
+	case uint64:
+		return float64(t)
 	case bool:
 		if t {
 			return 1
