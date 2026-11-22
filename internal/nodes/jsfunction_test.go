@@ -485,3 +485,35 @@ func BenchmarkFunctionSimple(b *testing.B) {
 		}
 	}
 }
+
+func TestFunctionSelfReferenceDoesNotCrash(t *testing.T) {
+	// A function can make a message hold itself in one line. Whatever the node
+	// does with it, the process must live and the next message must go through.
+	svc := newTestServices()
+	for name, body := range map[string]string{
+		"list holds itself":    `msg.payload[0] = msg.payload; return msg;`,
+		"message holds itself": `msg.self = msg; return msg;`,
+		"setMessageProperty":   `RED.util.setMessageProperty(msg, "payload[0]", msg.payload); return msg;`,
+		"node.send":            `msg.payload[0] = msg.payload; node.send(msg); return null;`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			n := jsNode(t, body, svc)
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				if e, err := send(t, n, msg(t, `{"payload":[1,2,3]}`)); err == nil {
+					for _, m := range e.on(0) {
+						if _, err := json.Marshal(m.Data); err != nil {
+							t.Errorf("emitted message does not encode: %v", err)
+						}
+					}
+				}
+			}()
+			select {
+			case <-done:
+			case <-time.After(20 * time.Second):
+				t.Fatal("function did not finish on a self-referencing message")
+			}
+		})
+	}
+}

@@ -625,29 +625,155 @@ func normaliseContainer(v any) (any, bool) {
 	return v, false
 }
 
+// ErrCyclicValue is what Denormalise reports when a value contains itself.
+var ErrCyclicValue = errors.New("the value refers to itself")
+
+// ErrValueTooDeep is what Denormalise reports when a value nests deeper than
+// MaxValueDepth.
+var ErrValueTooDeep = errors.New("the value nests too deeply")
+
+// MaxValueDepth bounds how far Denormalise descends into a value. It is the
+// same bound Clone uses, so a value one accepts the other accepts.
+const MaxValueDepth = maxCloneDepth
+
 // Denormalise recursively converts *[]any back into []any. Mutation uses pointer
-// slices so that growth propagates; everything outside the engine — JSON
-// encoding, the JS bridge, node implementations — expects plain slices.
+// slices so that growth propagates; everything outside the engine (JSON
+// encoding, the JS bridge, node implementations) expects plain slices.
+//
+// It never recurses without end. A value that contains itself, which a change
+// node makes in one rule (set msg.payload[0] to msg.payload, and Node-RED lets
+// it), or that nests past MaxValueDepth, is cut at the point it turns back on
+// itself: that slot becomes nil, so what is returned is finite and safe to
+// encode. Callers that can report the problem use DenormaliseChecked.
 func Denormalise(v any) any {
+	out, _ := DenormaliseChecked(v)
+	return out
+}
+
+// DenormaliseChecked is Denormalise that also says when it had to cut the
+// value: the error is ErrCyclicValue or ErrValueTooDeep, wrapped with the path
+// to the first cut. The returned value is finite either way.
+func DenormaliseChecked(v any) (any, error) {
+	d := denormaliser{}
+	out := d.walk(v, 0)
+	return out, d.err
+}
+
+// CheckValue reports whether v is finite: ErrCyclicValue when it contains itself,
+// ErrValueTooDeep when it nests past MaxValueDepth, nil otherwise. It changes
+// nothing, so it is safe on a value another goroutine will still read.
+func CheckValue(v any) error {
+	d := denormaliser{check: true}
+	d.walk(v, 0)
+	return d.err
+}
+
+type denormaliser struct {
+	check bool      // look only, write nothing
+	path  []uintptr // the containers between the root and here
+	segs  []seg     // the key or index taken at each step, kept to name a cut
+	err   error     // the first cut
+}
+
+// seg is one step down: a map key, or an index when key is empty and isIdx.
+type seg struct {
+	key   string
+	idx   int
+	isIdx bool
+}
+
+// cut gives up on the current slot and remembers where it was, once.
+func (d *denormaliser) cut(err error) any {
+	if d.err == nil {
+		var b strings.Builder
+		b.WriteString("the value")
+		for _, s := range d.segs {
+			if s.isIdx {
+				b.WriteString("[" + strconv.Itoa(s.idx) + "]")
+			} else {
+				b.WriteString("." + s.key)
+			}
+		}
+		d.err = fmt.Errorf("%w (at %s)", err, b.String())
+	}
+	return nil
+}
+
+// enter records a container as being on the current path. It reports false when
+// the container is already on it, which is a cycle.
+func (d *denormaliser) enter(id uintptr) bool {
+	if id == 0 {
+		return true
+	}
+	for _, p := range d.path {
+		if p == id {
+			return false
+		}
+	}
+	d.path = append(d.path, id)
+	return true
+}
+
+func (d *denormaliser) leave(id uintptr) {
+	if id != 0 {
+		d.path = d.path[:len(d.path)-1]
+	}
+}
+
+func (d *denormaliser) walk(v any, depth int) any {
 	switch t := v.(type) {
 	case *[]any:
-		s := *t
-		out := make([]any, len(s))
-		for i := range s {
-			out[i] = Denormalise(s[i])
+		if t == nil {
+			return nil
 		}
-		return out
+		return d.slice(*t, depth, true)
 	case []any:
-		for i := range t {
-			t[i] = Denormalise(t[i])
-		}
-		return t
+		return d.slice(t, depth, false)
 	case map[string]any:
+		if depth > MaxValueDepth {
+			return d.cut(ErrValueTooDeep)
+		}
+		id := containerID(t)
+		if !d.enter(id) {
+			return d.cut(ErrCyclicValue)
+		}
+		defer d.leave(id)
 		for k, val := range t {
-			t[k] = Denormalise(val)
+			d.segs = append(d.segs, seg{key: k})
+			out := d.walk(val, depth+1)
+			if !d.check {
+				t[k] = out
+			}
+			d.segs = d.segs[:len(d.segs)-1]
 		}
 		return t
 	default:
 		return v
 	}
+}
+
+// slice handles both slice forms. fresh is true for *[]any, whose result is a
+// new plain slice; a plain slice is converted in place.
+func (d *denormaliser) slice(s []any, depth int, fresh bool) any {
+	if depth > MaxValueDepth {
+		return d.cut(ErrValueTooDeep)
+	}
+	id := containerID(s)
+	if !d.enter(id) {
+		return d.cut(ErrCyclicValue)
+	}
+	defer d.leave(id)
+	out := s
+	if fresh && !d.check {
+		out = make([]any, len(s))
+	}
+	for i := range s {
+		d.segs = append(d.segs, seg{idx: i, isIdx: true})
+		el := d.walk(s[i], depth+1)
+		if !d.check {
+			out[i] = el
+		}
+		d.segs = d.segs[:len(d.segs)-1]
+	}
+	return out
 }

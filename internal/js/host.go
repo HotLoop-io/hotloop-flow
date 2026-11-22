@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -381,6 +382,9 @@ func (p *Program) nodeAPI(vm *goja.Runtime, sb *Sandbox, res *Result) goja.Value
 		if len(call.Arguments) == 0 {
 			return goja.Undefined()
 		}
+		if err := engine.CheckValue(call.Argument(0).Export()); err != nil {
+			panic(vm.NewGoError(fmt.Errorf("node.send was given a message that is not finite: %w", err)))
+		}
 		p.routeSend(vm, call.Argument(0), sb, res)
 		return goja.Undefined()
 	})
@@ -474,6 +478,12 @@ func (p *Program) collectReturn(vm *goja.Runtime, v goja.Value, sb *Sandbox, res
 	}
 	exported := v.Export()
 
+	// A returned value that holds itself, or nests without end, fails this node
+	// like any other error instead of being walked until the stack runs out.
+	if err := engine.CheckValue(exported); err != nil {
+		return fmt.Errorf("a function returned a message that is not finite: %w", err)
+	}
+
 	// Node-RED errors when a function returns a bare number or string, because
 	// the author almost certainly meant to return a message and the silent
 	// alternative is a message with no payload appearing downstream.
@@ -537,14 +547,71 @@ func Normalise(v any) any {
 		return float64(t)
 	case float32:
 		return float64(t)
+	case map[string]any, []any:
+		var n normaliser
+		return n.walk(v, 0)
+	default:
+		return v
+	}
+}
+
+// normaliser is Normalise's walk. A function can hand back a value that holds
+// itself (msg.payload[0] = msg.payload, msg.self = msg), and goja exports that
+// as a cycle, so the walk keeps the containers on its path and stops at
+// engine.MaxValueDepth, cutting the slot that turns back (it becomes nil)
+// rather than recursing until the process dies.
+type normaliser struct {
+	path []uintptr
+}
+
+func (n *normaliser) enter(id uintptr) bool {
+	for _, p := range n.path {
+		if p == id {
+			return false
+		}
+	}
+	n.path = append(n.path, id)
+	return true
+}
+
+func (n *normaliser) walk(v any, depth int) any {
+	switch t := v.(type) {
+	case int64:
+		return float64(t)
+	case int:
+		return float64(t)
+	case int32:
+		return float64(t)
+	case uint64:
+		return float64(t)
+	case uint32:
+		return float64(t)
+	case float32:
+		return float64(t)
 	case map[string]any:
+		if len(t) == 0 {
+			return t
+		}
+		id := reflect.ValueOf(t).Pointer()
+		if depth > engine.MaxValueDepth || !n.enter(id) {
+			return nil
+		}
+		defer func() { n.path = n.path[:len(n.path)-1] }()
 		for k, val := range t {
-			t[k] = Normalise(val)
+			t[k] = n.walk(val, depth+1)
 		}
 		return t
 	case []any:
+		if len(t) == 0 {
+			return t
+		}
+		id := reflect.ValueOf(t).Pointer()
+		if depth > engine.MaxValueDepth || !n.enter(id) {
+			return nil
+		}
+		defer func() { n.path = n.path[:len(n.path)-1] }()
 		for i, val := range t {
-			t[i] = Normalise(val)
+			t[i] = n.walk(val, depth+1)
 		}
 		return t
 	default:
@@ -683,7 +750,9 @@ func (p *Program) utilAPI(vm *goja.Runtime) goja.Value {
 		if err := engine.SetProperty(root, call.Argument(1).String(), Normalise(call.Argument(2).Export())); err != nil {
 			panic(vm.NewGoError(err))
 		}
-		engine.Denormalise(root)
+		if _, err := engine.DenormaliseChecked(root); err != nil {
+			panic(vm.NewGoError(err))
+		}
 		return vm.ToValue(root)
 	})
 

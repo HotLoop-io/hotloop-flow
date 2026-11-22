@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -273,4 +274,80 @@ func FuzzParsePath(f *testing.F) {
 		root := map[string]any{"a": map[string]any{"b": []any{1.0}}, "msg": 0.0}
 		_, _, _ = GetProperty(root, expr)
 	})
+}
+
+func TestDenormaliseCutsASelfReferencingMessage(t *testing.T) {
+	// set msg.payload[0] to msg.payload, as SBF's change nodes do: the array
+	// now holds itself. Node-RED allows it; recursing into it without end
+	// overflowed the Go stack and took the whole process down.
+	for name, build := range map[string]func() map[string]any{
+		"slice": func() map[string]any {
+			list := []any{1.0, 2.0, 3.0}
+			list[0] = list
+			return map[string]any{"payload": list}
+		},
+		"map": func() map[string]any {
+			obj := map[string]any{"a": 1.0}
+			obj["self"] = obj
+			return map[string]any{"payload": obj}
+		},
+		"through a pointer slice": func() map[string]any {
+			root := map[string]any{"payload": []any{1.0, 2.0}}
+			if err := SetProperty(root, "payload[0]", root["payload"]); err != nil {
+				t.Fatalf("SetProperty: %v", err)
+			}
+			return root
+		},
+		"two keys back to the root": func() map[string]any {
+			root := map[string]any{}
+			root["a"], root["b"] = root, root
+			return root
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := build()
+			done := make(chan error, 1)
+			go func() {
+				_, err := DenormaliseChecked(root)
+				done <- err
+			}()
+			select {
+			case err := <-done:
+				if !errors.Is(err, ErrCyclicValue) {
+					t.Fatalf("err = %v, want ErrCyclicValue", err)
+				}
+			case <-timeoutAfterSeconds(10):
+				t.Fatal("Denormalise did not return on a value that contains itself")
+			}
+			// What is left is finite: Clone and JSON both finish.
+			if _, err := json.Marshal(root); err != nil {
+				t.Errorf("value still not encodable after the cut: %v", err)
+			}
+		})
+	}
+}
+
+func TestDenormaliseCutsRunawayDepth(t *testing.T) {
+	root := map[string]any{}
+	cur := root
+	for i := 0; i < MaxValueDepth+50; i++ {
+		next := map[string]any{}
+		cur["n"] = next
+		cur = next
+	}
+	if _, err := DenormaliseChecked(root); !errors.Is(err, ErrValueTooDeep) {
+		t.Fatalf("err = %v, want ErrValueTooDeep", err)
+	}
+}
+
+func TestDenormaliseLeavesAnOrdinaryValueAlone(t *testing.T) {
+	shared := []any{1.0}
+	root := map[string]any{"a": shared, "b": shared, "c": map[string]any{"d": []any{shared}}}
+	out, err := DenormaliseChecked(root)
+	if err != nil {
+		t.Fatalf("a value that shares a list without cycling failed: %v", err)
+	}
+	if !reflect.DeepEqual(out, root) {
+		t.Errorf("value changed: %#v", out)
+	}
 }

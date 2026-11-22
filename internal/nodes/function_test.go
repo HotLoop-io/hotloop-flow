@@ -1,6 +1,7 @@
 package nodes
 
 import (
+	"encoding/json"
 	"reflect"
 	"strconv"
 	"strings"
@@ -45,6 +46,64 @@ func TestChangeSet(t *testing.T) {
 	}
 	if got, _, _ := out.Get("cfg.a"); got != 1.0 {
 		t.Errorf("cfg.a = %#v", got)
+	}
+}
+
+func TestChangeSelfReferenceIsANodeErrorNotACrash(t *testing.T) {
+	// SBF's flows hold two change nodes that set msg.payload[0] to msg.payload.
+	// The list now holds itself. Node-RED shrugs; the Go engine recursed
+	// without end in Denormalise and the whole Flow died with a stack overflow.
+	// The node must fail like any node, and the next message must go through.
+	svc := newTestServices()
+	n := build(t, "change", `{"rules":[
+        {"t":"set","p":"payload[0]","pt":"msg","to":"payload","tot":"msg"}
+    ]}`, svc)
+
+	_, err := send(t, n, msg(t, `{"payload":[7,8,9]}`))
+	if err == nil {
+		t.Fatal("a rule that makes the payload contain itself reported no error")
+	}
+	if !strings.Contains(err.Error(), "refers to itself") {
+		t.Errorf("error = %q, want it to say the value refers to itself", err)
+	}
+
+	// The same node keeps working on the next message.
+	ok := build(t, "change", `{"rules":[
+        {"t":"set","p":"payload","pt":"msg","to":"payload[1]","tot":"msg"}
+    ]}`, svc)
+	e, err := send(t, ok, msg(t, `{"payload":[7,8,9]}`))
+	if err != nil {
+		t.Fatalf("next message: %v", err)
+	}
+	if got := e.on(0)[0].Payload(); got != 8.0 {
+		t.Errorf("payload = %#v, want 8", got)
+	}
+}
+
+func TestChangeSelfReferenceInContext(t *testing.T) {
+	// The same shape written into flow context: flow.stats.self = flow.stats.
+	// Context hands a rule a copy, so this one cannot cycle; what it must do is
+	// finish, and leave a value that still encodes.
+	svc := newTestServices()
+	seed := build(t, "change", `{"rules":[
+        {"t":"set","p":"stats","pt":"flow","to":"{\"n\":1}","tot":"json"}
+    ]}`, svc)
+	if _, err := send(t, seed, msg(t, `{}`)); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	n := build(t, "change", `{"rules":[
+        {"t":"set","p":"stats.self","pt":"flow","to":"stats","tot":"flow"}
+    ]}`, svc)
+	if _, err := send(t, n, msg(t, `{}`)); err != nil {
+		t.Fatalf("self write into flow context: %v", err)
+	}
+	// The stored value is readable and finite.
+	stored, ok, err := svc.Context(node.ScopeFlow).Get("stats")
+	if err != nil || !ok {
+		t.Fatalf("stats unreadable after the write: ok=%v err=%v", ok, err)
+	}
+	if _, err := json.Marshal(stored); err != nil {
+		t.Errorf("stored value does not encode: %v", err)
 	}
 }
 
