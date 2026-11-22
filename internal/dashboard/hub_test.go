@@ -279,7 +279,16 @@ func TestAFlushWithNoBrowserKeepsNothingAndALaterBrowserStillGetsTheState(t *tes
 	srv := serve(t, h)
 	h.SetState("w1", map[string]any{"payload": 7.0}, nil)
 	h.AddPoint("w1", "temp", time.Now(), 3, time.Hour, 0)
-	time.Sleep(400 * time.Millisecond) // the flush runs 100 ms after the first change
+	// The flush runs 100 ms after the first change; it is done when the hub says it is no longer waiting to flush,
+	// however long a starved box takes to get there.
+	for end := time.Now().Add(30 * time.Second); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
+		h.mu.Lock()
+		waiting := h.flushing
+		h.mu.Unlock()
+		if !waiting {
+			break
+		}
+	}
 	h.mu.Lock()
 	left := len(h.dirty) + len(h.fresh) + len(h.cleared)
 	h.mu.Unlock()
