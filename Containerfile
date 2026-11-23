@@ -52,6 +52,8 @@ COPY --from=editor /build/dist ./web/dist
 COPY --from=editor /build/THIRD_PARTY_LICENSES.editor /out/THIRD_PARTY_LICENSES.editor
 
 ARG VERSION=dev
+# The git commit the publish workflow builds from, so `version` can name it.
+ARG COMMIT=
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 
@@ -67,7 +69,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     go build \
       -trimpath \
       -buildvcs=false \
-      -ldflags="-s -w -X main.version=${VERSION}" \
+      -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
       -o /out/hotloop-flow \
       ./cmd/hotloop-flow
 

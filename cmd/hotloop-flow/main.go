@@ -48,6 +48,20 @@ import (
 // version is stamped at build time with -ldflags "-X main.version=...".
 var version = "dev"
 
+// commit is the git commit the image was built from, stamped with
+// -ldflags "-X main.commit=...". Empty for a build that was not stamped with
+// one, and then `version` says only the version.
+var commit = ""
+
+// versionLine is the version, then the commit in parentheses when the build
+// knows it. The first word is always the version.
+func versionLine() string {
+	if commit == "" {
+		return version
+	}
+	return version + " (commit " + commit + ")"
+}
+
 func main() {
 	if err := run(); err != nil {
 		// A command whose exit status is its answer, like diff, has already
@@ -93,7 +107,7 @@ func run() error {
 		case "bench":
 			return cmdBench(os.Args[2:])
 		case "version":
-			fmt.Println(version)
+			fmt.Println(versionLine())
 			return nil
 		default:
 			return fmt.Errorf("unknown command %q (try: serve, hash-password, token, plugin, import, diff, test, deploy, export, stations, bench, version)", os.Args[1])
