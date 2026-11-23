@@ -207,3 +207,21 @@ and Batch's concatenate behind a Switch give Node-RED's output on their examples
 Trigger's units, a Function node's `node.log` and `external modules`, a Join node's reduce and timeout modes, and
 timing-based Batch. Flow does
 not hide any of it: `hotloop-flow import` lists what a file uses that is partial.
+
+## Flows from the Node-RED library
+
+The library at flows.nodered.org holds what people actually built. Of the first 900 flows it lists, 35 use
+only Node-RED's own nodes (no MQTT broker, no HTTP, no dashboard, no node from npm) and have an Inject and a
+Debug, so they can be run on both sides. They were run on Node-RED 5.0.10 by the same harness as the examples and
+the output of each compared with Flow's (`HOTLOOP_NODERED_LIBRARY=<folder> go test ./cmd/hotloop-flow -run
+PublishedLibraryFlows`; the library states no license that lets this repository keep a copy, so the flows are
+fetched, not committed, and the folder holds the oracle's `oracle.json` beside them). Of the 24 whose output does
+not depend on a clock, 22 give what Node-RED gives, after three things were fixed that the examples had not shown: a
+Function body that declares its own `const context` (or `flow`, `global`, `env`, `util`) did not compile, which
+silenced the whole flow; the CSV node did not set `msg.columns` on what it sends, so a Change that adds a column and
+a CSV node that writes the header from it lost every column; and a CSV node's own column list yielded to
+`msg.columns`, when in Node-RED it comes first. A Function node with a syntax error is reported as a node that did
+not start, which is what Node-RED logs. Two differ and are written down: one needs an npm module in its Function node
+(`node-dualshock-controller`), which Flow cannot load (see `function` in compatibility.md), and one prints a prompt
+longer than a Debug node's Length setting, where Flow cuts the text at the length and Node-RED cuts each long string
+and array inside the message, so the two sidebars show a long message differently.
