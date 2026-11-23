@@ -424,10 +424,14 @@ func (n *csvNode) parse(text string, m *engine.Msg, out node.Emitter) error {
 		rows = append(rows, row)
 	}
 
+	// Node-RED says which columns it used in msg.columns, on every message it sends, so a Change or a CSV
+	// node further on can add to them (this is how the library flow that adds a column to a table does it).
+	named := columnList(columns)
 	if n.sendAsOne {
 		if err := m.Set(n.prop, rows); err != nil {
 			return err
 		}
+		m.Data["columns"] = named
 		out.Send(0, m)
 		return nil
 	}
@@ -440,6 +444,7 @@ func (n *csvNode) parse(text string, m *engine.Msg, out node.Emitter) error {
 		if err := cp.Set(n.prop, row); err != nil {
 			return err
 		}
+		cp.Data["columns"] = named
 		cp.Data[engine.PropParts] = partsInfo{
 			ID: seqID, Index: i, Count: len(rows),
 		}.toMap()
@@ -492,9 +497,10 @@ func (n *csvNode) render(value any, m *engine.Msg, out node.Emitter) error {
 	if _, reset := m.Data["reset"]; reset {
 		n.wroteHeader = false
 	}
+	// The node's own columns come first. Only a node with none takes them from msg.columns (Node-RED's
+	// 70-CSV.js reads node.template and falls back to msg.columns when that is empty).
 	columns := n.columns
-	if list, ok := m.Data["columns"].(string); ok && strings.TrimSpace(list) != "" {
-		columns = columns[:0:0]
+	if list, ok := m.Data["columns"].(string); ok && len(columns) == 0 && strings.TrimSpace(list) != "" {
 		for _, c := range strings.Split(list, ",") {
 			columns = append(columns, strings.Trim(strings.TrimSpace(c), `"`))
 		}
@@ -538,8 +544,25 @@ func (n *csvNode) render(value any, m *engine.Msg, out node.Emitter) error {
 	if err := m.Set(n.prop, b.String()); err != nil {
 		return err
 	}
+	m.Data["columns"] = columnList(columns)
 	out.Send(0, m)
 	return nil
+}
+
+// columnList is the text Node-RED puts in msg.columns: the names joined with commas, a name that holds a
+// comma in double quotes, and a column with no name left out.
+func columnList(columns []string) string {
+	parts := make([]string, 0, len(columns))
+	for _, c := range columns {
+		switch {
+		case c == "":
+		case strings.Contains(c, ","):
+			parts = append(parts, `"`+c+`"`)
+		default:
+			parts = append(parts, c)
+		}
+	}
+	return strings.Join(parts, ",")
 }
 
 func csvField(v any) string {

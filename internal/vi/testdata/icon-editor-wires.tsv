@@ -1,0 +1,425 @@
+.github/actions/missing-in-project/MissingInProject.vi	28
+.github/actions/missing-in-project/MissingInProjectCLI.vi	29
+.github/actions/missing-in-project/Test Missing Classes.vi	15
+.github/actions/missing-in-project/Test Missing Libraries.vi	15
+.github/actions/missing-in-project/Test Missing PPLs.vi	15
+.github/actions/missing-in-project/Test Missing VIs.vi	25
+Test/Templates/Many Layers.vi	0
+Test/Templates/Polymorphic Template.vi	0
+Test/Templates/Pyramid Icon Template.vi	0
+Test/Templates/VI Template.vi	0
+Test/Unit Tests/Editor Position/Adjust Position.vi	6
+Test/Unit Tests/Editor Position/Assert Windows Bounds.vi	9
+Test/Unit Tests/Editor Position/Backup INI Data.vi	11
+Test/Unit Tests/Editor Position/INI Position Removed.vi	20
+Test/Unit Tests/Editor Position/INI Use Position Size.vi	10
+Test/Unit Tests/Editor Position/Invalid INI Read.vi	15
+Test/Unit Tests/Editor Position/Position Invalid Test.vi	12
+Test/Unit Tests/Editor Position/Position Out of Bounds Test.vi	65
+Test/Unit Tests/Editor Position/Position Set Test.vi	12
+Test/Unit Tests/Editor Position/Restore INI Data.vi	23
+Test/Unit Tests/Editor Position/Size Test.vi	25
+Test/Unit Tests/Editor Position/Standard INI Write Read.vi	13
+Test/Unit Tests/Editor Position/Test Position INI.vi	12
+Test/Unit Tests/Editor Position/Test Window Position.vi	18
+Test/Unit Tests/History Tests/Initial States.vi	22
+Test/Unit Tests/History Tests/Test Add Clears Redo.vi	26
+Test/Unit Tests/History Tests/Test Add and Undo All.vi	16
+Test/Unit Tests/History Tests/Test Overflow.vi	28
+Test/Unit Tests/History Tests/Test Undo Flag.vi	22
+Test/Unit Tests/History Tests/Undo States.vi	23
+Test/Unit Tests/INI Settings/Default Settings.vi	11
+Test/Unit Tests/INI Settings/Remove Icon Editor Settings.vi	26
+Test/Unit Tests/INI Settings/Test INI Settings.vi	12
+Test/Unit Tests/INI Settings/Write and Read Settings.vi	11
+Test/Unit Tests/Library Icon Data/Check Library Icon Data.vi	10
+Test/Unit Tests/Library Icon Data/Check Library Tag.vi	26
+Test/Unit Tests/Library Icon Data/Close Library.vi	10
+Test/Unit Tests/Library Icon Data/Get Save Versions.vi	7
+Test/Unit Tests/Library Icon Data/Open Library.vi	24
+Test/Unit Tests/Library Icon Data/Save Library for Previous.vi	14
+Test/Unit Tests/Library Icon Data/Test Library Icon Tag.vi	21
+Test/Unit Tests/Library Icon Data/Test Write Read Library Icon Data.vi	20
+Test/Unit Tests/Library Icon Data/Write Library Data.vi	12
+Test/Unit Tests/Text-Based VI Icon Tests/Test Split Text into Words.vi	14
+Tooling/Build Actions/Pre Build Icon Editor PPL.vi	0
+Tooling/Force Icon Editor to Unload.vi	17
+Tooling/Install to LVAddons.vi	56
+Tooling/Remove Icon Editor Settings.vi	27
+Tooling/Set Debug Flag.vi	29
+Tooling/Set Run Icon Editor from Source.vi	12
+Tooling/Unset Run Icon Editor from Source.vi	7
+Tooling/deployment/VIP_Post-Install Custom Action.vi	22
+Tooling/deployment/VIP_Post-Uninstall Custom Action.vi	14
+Tooling/deployment/VIP_Pre-Install Custom Action.vi	32
+Tooling/deployment/VIP_Pre-Uninstall Custom Action.vi	31
+Tooling/support/API Paths.vi	8
+Tooling/support/PPL Paths.vi	9
+Tooling/support/Set Path in Launcher.vi	21
+resource/plugins/NIIconEditor/Body Text/Apply Body Text.vi	13
+resource/plugins/NIIconEditor/Class/Ants/GET/GET_AntsLine.vi	10
+resource/plugins/NIIconEditor/Class/Ants/GET/GET_DelayRestartTL.vi	10
+resource/plugins/NIIconEditor/Class/Ants/GET/GET_DelayTL.vi	10
+resource/plugins/NIIconEditor/Class/Ants/GET/GET_Notifier.vi	10
+resource/plugins/NIIconEditor/Class/Ants/GET/GET_Picture.vi	10
+resource/plugins/NIIconEditor/Class/Ants/Initialization/Ants Initialization.vi	18
+resource/plugins/NIIconEditor/Class/Ants/Misc/CheckBoundsAndIncrement.vi	14
+resource/plugins/NIIconEditor/Class/Ants/Misc/FireAntsEvent.vi	41
+resource/plugins/NIIconEditor/Class/Ants/Misc/InsideBoundaries.vi	11
+resource/plugins/NIIconEditor/Class/Ants/Misc/RunningAnts.vi	80
+resource/plugins/NIIconEditor/Class/FakedArray/GET/GET_ActiveData.vi	34
+resource/plugins/NIIconEditor/Class/FakedArray/GET/GET_AllData.vi	10
+resource/plugins/NIIconEditor/Class/FakedArray/GET/GET_Icon.vi	19
+resource/plugins/NIIconEditor/Class/FakedArray/GET/GET_RowsCols.vi	12
+resource/plugins/NIIconEditor/Class/FakedArray/GET/GET_Scrollbar Position.vi	10
+resource/plugins/NIIconEditor/Class/FakedArray/GET/GET_SupportData.vi	17
+resource/plugins/NIIconEditor/Class/FakedArray/Initialization/Initialize FakedArray.vi	63
+resource/plugins/NIIconEditor/Class/FakedArray/Initialization/ResetColor.vi	22
+resource/plugins/NIIconEditor/Class/FakedArray/Initialization/SetActiveData_LoadedFromVI.vi	208
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/ArrowUpDown.vi	49
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/Ensure Visible.vi	53
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/Get Cluster Label Number.vi	20
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/Get Pointer From Label.vi	9
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/GetReference.vi	18
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/Layer_Get Active Clusters.vi	69
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/Layer_Set Active Data BG Color.vi	28
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/Process Template Graphics.vi	39
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/Set active Layer programmatically.vi	44
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/SetActiveGraphic.vi	48
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/Templates_Set Active Data BG Color.vi	25
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/UpdateScrollbar.vi	26
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/UpdateSelectedData.vi	47
+resource/plugins/NIIconEditor/Class/FakedArray/Misc/UpdateVisibleData.vi	159
+resource/plugins/NIIconEditor/Class/FakedArray/SET/SET_ActiveData.vi	11
+resource/plugins/NIIconEditor/Class/FakedArray/SET/SET_Data.vi	11
+resource/plugins/NIIconEditor/Class/FakedArray/SET/SET_ScrollbarPosition.vi	11
+resource/plugins/NIIconEditor/Class/FakedArray/ToMoreSpecificClass/ClusterRef_2_DisplayTemplatesRef.vi	10
+resource/plugins/NIIconEditor/Class/Icon Library/GET/GET_ActiveGlyph.vi	10
+resource/plugins/NIIconEditor/Class/Icon Library/GET/GET_Glyphs [].vi	10
+resource/plugins/NIIconEditor/Class/Icon Library/Initialization/Glyphs Initialization.vi	43
+resource/plugins/NIIconEditor/Class/Icon Library/Misc/FilterGlyphs.vi	19
+resource/plugins/NIIconEditor/Class/Icon Library/Misc/SearchGlyphs.vi	35
+resource/plugins/NIIconEditor/Class/Icon Library/SET/SET_ActiveGlyph.vi	11
+resource/plugins/NIIconEditor/Class/Icon Library/SET/SET_Glyphs [].vi	11
+resource/plugins/NIIconEditor/Class/Settings/GET/GET_3rd party Templates.vi	10
+resource/plugins/NIIconEditor/Class/Settings/GET/GET_Save_Layers_with_VI.vi	10
+resource/plugins/NIIconEditor/Class/Settings/GET/GET_Show.vi	3
+resource/plugins/NIIconEditor/Class/Settings/GET/GET_Text.vi	10
+resource/plugins/NIIconEditor/Class/Settings/Initialization/Settings Initialization.vi	24
+resource/plugins/NIIconEditor/Class/Settings/SET/SET_3rdPartyTemplates.vi	11
+resource/plugins/NIIconEditor/Class/Settings/SET/SET_SaveLayersWithVI.vi	11
+resource/plugins/NIIconEditor/Class/Settings/SET/SET_Show.vi	8
+resource/plugins/NIIconEditor/Class/Settings/SET/SET_Text.vi	11
+resource/plugins/NIIconEditor/Class/Tools/Circle.vi	27
+resource/plugins/NIIconEditor/Class/Tools/Dropper.vi	55
+resource/plugins/NIIconEditor/Class/Tools/Eraser.vi	78
+resource/plugins/NIIconEditor/Class/Tools/Fill.vi	79
+resource/plugins/NIIconEditor/Class/Tools/GET/GET_ActiveTool.vi	10
+resource/plugins/NIIconEditor/Class/Tools/Line.vi	18
+resource/plugins/NIIconEditor/Class/Tools/Misc/DoubleClick.vi	51
+resource/plugins/NIIconEditor/Class/Tools/Move.vi	35
+resource/plugins/NIIconEditor/Class/Tools/Pen.vi	23
+resource/plugins/NIIconEditor/Class/Tools/Rectangle.vi	27
+resource/plugins/NIIconEditor/Class/Tools/SET/SET_ActiveTool.vi	11
+resource/plugins/NIIconEditor/Class/Tools/Selection.vi	15
+resource/plugins/NIIconEditor/Delete Icon Editor Source Files.vi	15
+resource/plugins/NIIconEditor/Editor Position/Read Editor Position from INI.vi	18
+resource/plugins/NIIconEditor/Editor Position/Save Editor Position to INI.vi	10
+resource/plugins/NIIconEditor/Editor Position/Set Editor Position.vi	58
+resource/plugins/NIIconEditor/Get Callers of Icon Editor Packed Library.vi	5
+resource/plugins/NIIconEditor/Get Callers of Icon Editor Source Files.vi	5
+resource/plugins/NIIconEditor/Get Icon Editor Source Paths.vi	7
+resource/plugins/NIIconEditor/Global Variables/Data.vi	0
+resource/plugins/NIIconEditor/History/Add Data to History.vi	31
+resource/plugins/NIIconEditor/History/Build State.vi	35
+resource/plugins/NIIconEditor/History/History/Add State.vi	27
+resource/plugins/NIIconEditor/History/History/Check for Changes.vi	16
+resource/plugins/NIIconEditor/History/History/Clear Undo Flag.vi	4
+resource/plugins/NIIconEditor/History/History/Get Current State.vi	6
+resource/plugins/NIIconEditor/History/History/Initialize.vi	17
+resource/plugins/NIIconEditor/History/History/Redo.vi	27
+resource/plugins/NIIconEditor/History/History/Set Menu Items.vi	11
+resource/plugins/NIIconEditor/History/History/Set Undo Flag.vi	4
+resource/plugins/NIIconEditor/History/History/Undo.vi	27
+resource/plugins/NIIconEditor/History/Set Undo Flag.vi	8
+resource/plugins/NIIconEditor/History/Set to State.vi	142
+resource/plugins/NIIconEditor/History/Unflatten State.vi	5
+resource/plugins/NIIconEditor/INI/Read Data From LabVIEW INI.vi	154
+resource/plugins/NIIconEditor/INI/Write Data to LabVIEW INI.vi	62
+resource/plugins/NIIconEditor/Launch Icon Editor From String.vi	27
+resource/plugins/NIIconEditor/Miscellaneous/AssessRectangle.vi	21
+resource/plugins/NIIconEditor/Miscellaneous/Buffer for lossless tracking.vi	91
+resource/plugins/NIIconEditor/Miscellaneous/CalculateAntsRect.vi	8
+resource/plugins/NIIconEditor/Miscellaneous/Classes Initialization.vi	39
+resource/plugins/NIIconEditor/Miscellaneous/Clipboard/IE Read from Clipboard.vi	39
+resource/plugins/NIIconEditor/Miscellaneous/Clipboard/IE Write to Clipboard.vi	39
+resource/plugins/NIIconEditor/Miscellaneous/Connector Pane Initialization.vi	75
+resource/plugins/NIIconEditor/Miscellaneous/CoordinatesCorrection.vi	8
+resource/plugins/NIIconEditor/Miscellaneous/Create new class icon user layers.vi	16
+resource/plugins/NIIconEditor/Miscellaneous/Create new layer_LayerName_Picture.vi	28
+resource/plugins/NIIconEditor/Miscellaneous/DealWithScrollbars.vi	76
+resource/plugins/NIIconEditor/Miscellaneous/Def FP Updates/Defer_FP_Updates.vi	8
+resource/plugins/NIIconEditor/Miscellaneous/Draw/Const Temp Coordinate 2 points.vi	1
+resource/plugins/NIIconEditor/Miscellaneous/Draw/Const Temp Coordinate 4 points.vi	1
+resource/plugins/NIIconEditor/Miscellaneous/Draw/DrawIcon.vi	31
+resource/plugins/NIIconEditor/Miscellaneous/Draw/IsCoordinateConstant.vi	3
+resource/plugins/NIIconEditor/Miscellaneous/Draw/Origin_or_TempCoordinate.vi	5
+resource/plugins/NIIconEditor/Miscellaneous/Draw/PixelValue.vi	19
+resource/plugins/NIIconEditor/Miscellaneous/Extract LV Icon Data.vi	12
+resource/plugins/NIIconEditor/Miscellaneous/Finalize Movement.vi	37
+resource/plugins/NIIconEditor/Miscellaneous/Finalize Text.vi	26
+resource/plugins/NIIconEditor/Miscellaneous/Flip color refs.vi	13
+resource/plugins/NIIconEditor/Miscellaneous/Font/Populate Font ComboBox.vi	63
+resource/plugins/NIIconEditor/Miscellaneous/Get Monochrome Icon from Caller.vi	39
+resource/plugins/NIIconEditor/Miscellaneous/GetComparisonResult4Graphis.vi	22
+resource/plugins/NIIconEditor/Miscellaneous/Glyphs/Glyph_MouseDown.vi	108
+resource/plugins/NIIconEditor/Miscellaneous/Glyphs/Populate Graphics.vi	18
+resource/plugins/NIIconEditor/Miscellaneous/Glyphs/Prepare Glyphs for Display.vi	14
+resource/plugins/NIIconEditor/Miscellaneous/Glyphs/SET_Glyph.vi	53
+resource/plugins/NIIconEditor/Miscellaneous/Glyphs/SET_ToolGraphic.vi	106
+resource/plugins/NIIconEditor/Miscellaneous/Glyphs/TemporaryGlyphView.vi	33
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/BuildCategories.vi	47
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/ChangeRefreshGraphicsState.vi	10
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/CorruptIconErrorMessage.vi	0
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/Filter Graphics by File Name.vi	17
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/Filter Graphics by Folder Name.vi	30
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/Launch Dynamically Load Graphics.vi	38
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/LoadGraphics.vi	134
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/LoadTemplates.vi	27
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/Populate Tree with Categories.vi	39
+resource/plugins/NIIconEditor/Miscellaneous/Graphics/Pull data from disc.vi	65
+resource/plugins/NIIconEditor/Miscellaneous/IEGlyphFolderConstant.vi	7
+resource/plugins/NIIconEditor/Miscellaneous/IETemplateLibraryFolderConstant.vi	9
+resource/plugins/NIIconEditor/Miscellaneous/IETemplateVIFolderConstant.vi	9
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Add new Layer.vi	35
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Alignment Value Change.vi	10
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Call Keep IE in Memory.vi	13
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Change Behavior IE window.vi	4
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Change Mouse Cursor.vi	4
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Clear User Layers.vi	16
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Delete Selected Layers.vi	14
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Escape.vi	38
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Get Icon Editor Context.vi	15
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/IE Save dialog build path.vi	40
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Icon Editor Help.vi	4
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Icon Editor Init Refs.vi	67
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Icon Editor Properties Help.vi	4
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Icon Initialization.vi	96
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Keep IE in Memory.vi	0
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/LayerCluster_ValueChange.vi	61
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/MenuSelection(User).vi	504
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Mouse Down_Glyphs.vi	11
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Mouse Down_Templates.vi	16
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Mouse Down_Tree.vi	15
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Mouse Down_User Layers.vi	51
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/MouseDown.vi	178
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/MouseDown_Body Text.vi	17
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/MouseMove.vi	279
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/PictureControl_MouseUp.vi	119
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Reset layer template selection.vi	72
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/RotateFlip.vi	39
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Save Graphic Overwrite.vi	13
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Save Graphic.vi	293
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Template_MouseDown.vi	60
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Update glyph path string.vi	13
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/UpdateLayerView_ScrollbarChanged.vi	28
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/Value Change_Top or Bottom Layer.vi	28
+resource/plugins/NIIconEditor/Miscellaneous/Icon Editor/populate tree.vi	90
+resource/plugins/NIIconEditor/Miscellaneous/ImageDataToIconPreview.vi	17
+resource/plugins/NIIconEditor/Miscellaneous/IsAntsRectValid.vi	12
+resource/plugins/NIIconEditor/Miscellaneous/Key Down Up/Key Down Up Layers.vi	80
+resource/plugins/NIIconEditor/Miscellaneous/Key Down Up/KeyDown.vi	688
+resource/plugins/NIIconEditor/Miscellaneous/Key Down Up/KeyUp.vi	50
+resource/plugins/NIIconEditor/Miscellaneous/Key Down Up/Move Selected Layers.vi	52
+resource/plugins/NIIconEditor/Miscellaneous/Key Down Up/Process Active Data Shift Key.vi	78
+resource/plugins/NIIconEditor/Miscellaneous/Launch_VI_Asynchronously.vi	17
+resource/plugins/NIIconEditor/Miscellaneous/Layer/DeleteLayer.vi	93
+resource/plugins/NIIconEditor/Miscellaneous/Layer/DeselectLayer.vi	20
+resource/plugins/NIIconEditor/Miscellaneous/Layer/LayerGraphicManipulation.vi	60
+resource/plugins/NIIconEditor/Miscellaneous/Layer/Separate Selected Layers.vi	21
+resource/plugins/NIIconEditor/Miscellaneous/Layer/Split_Layers.vi	26
+resource/plugins/NIIconEditor/Miscellaneous/Layer/ViewLayer.vi	37
+resource/plugins/NIIconEditor/Miscellaneous/ListGlyphsAndTemplates.vi	43
+resource/plugins/NIIconEditor/Miscellaneous/Load Glyph from File.vi	60
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Export_Clipboard.vi	60
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Flatten Icon.vi	27
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Flatten Layers.vi	27
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Get Color Icon from Caller.vi	51
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Import_Clipboard.vi	21
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Load.vi	13
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Read Data from Caller.vi	139
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Read Glyphs from File.vi	20
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Reset Layer VI.vi	44
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Return MutationCode Folder.vi	15
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Unflatten Icon.vi	28
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Unflatten Layers.vi	28
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Write Data to Caller.vi	48
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Write Glyphs to File.vi	19
+resource/plugins/NIIconEditor/Miscellaneous/Load Unload/Write INI Tokens and VI Tags.vi	90
+resource/plugins/NIIconEditor/Miscellaneous/Magic Active Layer Constant.vi	1
+resource/plugins/NIIconEditor/Miscellaneous/Menubar/EnableDisable Combine Layers.vi	22
+resource/plugins/NIIconEditor/Miscellaneous/Menubar/ShowTerminals.vi	23
+resource/plugins/NIIconEditor/Miscellaneous/MoveLayers.vi	80
+resource/plugins/NIIconEditor/Miscellaneous/PrepareData4HTML.vi	38
+resource/plugins/NIIconEditor/Miscellaneous/PrepareTemporaryView.vi	20
+resource/plugins/NIIconEditor/Miscellaneous/Process Temporary View Layers.vi	130
+resource/plugins/NIIconEditor/Miscellaneous/Remove invalid characters.vi	10
+resource/plugins/NIIconEditor/Miscellaneous/SetCursor.vi	26
+resource/plugins/NIIconEditor/Miscellaneous/Settings Init.vi	40
+resource/plugins/NIIconEditor/Miscellaneous/Settings Requested Path.vi	4
+resource/plugins/NIIconEditor/Miscellaneous/Settings Shutdown.vi	27
+resource/plugins/NIIconEditor/Miscellaneous/Specify Path Enum.vi	9
+resource/plugins/NIIconEditor/Miscellaneous/Tools/Get Color Not In Image.vi	30
+resource/plugins/NIIconEditor/Miscellaneous/Tools/Mouse Down.vi	87
+resource/plugins/NIIconEditor/Miscellaneous/Tools/Selection_PrepareIcon.vi	41
+resource/plugins/NIIconEditor/Miscellaneous/Tools/Selection_SetNewData.vi	51
+resource/plugins/NIIconEditor/Miscellaneous/Tools/Value Change_Tools.vi	16
+resource/plugins/NIIconEditor/Miscellaneous/Tools/ValueSignalingTool.vi	5
+resource/plugins/NIIconEditor/Miscellaneous/Tools/VisibleTextMarker.vi	24
+resource/plugins/NIIconEditor/Miscellaneous/Tools/WriteText.vi	81
+resource/plugins/NIIconEditor/Miscellaneous/Truncate string.vi	38
+resource/plugins/NIIconEditor/Miscellaneous/User Events/Initialization_UserEvents.vi	43
+resource/plugins/NIIconEditor/Miscellaneous/Write Error to File.vi	9
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/Analyze XML stream.vi	22
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/Check whether installed.vi	20
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/Download iconlibrary files.vi	47
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/ExtractDataFromXML.vi	187
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/GET HTTP.vi	50
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/IconlibraryStuffInProgress.vi	69
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/Install Glyphs.vi	28
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/Manual User Input.vi	33
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/ResolveURLbyUsingInfoCode.vi	171
+resource/plugins/NIIconEditor/Miscellaneous/ni.com_iconlibrary/ni.com_iconlibrary.vi	155
+resource/plugins/NIIconEditor/Support/ApplyLibIconOverlayToVIIcon.vi	80
+resource/plugins/NIIconEditor/Support/Call Keep ApplyLib in Memory.vi	19
+resource/plugins/NIIconEditor/Support/Create or Substitute NI_Layer layer.vi	40
+resource/plugins/NIIconEditor/Support/DefaultIconGlyphData.vi	56
+resource/plugins/NIIconEditor/Support/Get 32x32 Image Data.vi	5
+resource/plugins/NIIconEditor/Support/Get VI Library.vi	10
+resource/plugins/NIIconEditor/Support/GetLibIconForVIIconOverlay.vi	33
+resource/plugins/NIIconEditor/Support/GetLibIconForVIIconOverlayFromVI.vi	14
+resource/plugins/NIIconEditor/Support/GetOffsetRWIcon.vi	50
+resource/plugins/NIIconEditor/Support/IE_Open Help Link.vi	23
+resource/plugins/NIIconEditor/Support/IE_Resolve Symbolic Paths.vi	3
+resource/plugins/NIIconEditor/Support/Icon Editor First Call.vi	89
+resource/plugins/NIIconEditor/Support/Keep ApplyLib in Memory.vi	3
+resource/plugins/NIIconEditor/User Dialogs/IconEditorSettings.vi	64
+resource/plugins/NIIconEditor/User Dialogs/SubVIs/Center Dialog on Caller.vi	31
+resource/plugins/NIIconEditor/User Dialogs/SubVIs/Initialize_IconEditorSettings_Tree.vi	15
+resource/plugins/NIIconEditor/User Dialogs/Verify Cancel.vi	30
+resource/plugins/SAMPLE_lv_icon.vi	6
+resource/plugins/lv_icon.vi	804
+resource/plugins/lv_icon_launcher.vi	17
+vi.lib/LabVIEW Icon API/Examples/Advanced Generate LV Icon.vi	74
+vi.lib/LabVIEW Icon API/Examples/Basic Generate LV Icon Template Layer.vi	27
+vi.lib/LabVIEW Icon API/Examples/Basic Generate LV Icon Text Layer.vi	22
+vi.lib/LabVIEW Icon API/Examples/Modify VI Icon Template Layer.vi	26
+vi.lib/LabVIEW Icon API/Examples/Modify VI Icon Text Layer.vi	26
+vi.lib/LabVIEW Icon API/Generate LV Icon Template Layer.vi	46
+vi.lib/LabVIEW Icon API/Generate LV Icon Text Layer.vi	45
+vi.lib/LabVIEW Icon API/Generate LV Icon User Layers.vi	31
+vi.lib/LabVIEW Icon API/Get Flattened Image.vi	20
+vi.lib/LabVIEW Icon API/Get Library Icon.vi	18
+vi.lib/LabVIEW Icon API/Get VI Icon.vi	18
+vi.lib/LabVIEW Icon API/Launch Icon Editor.vi	16
+vi.lib/LabVIEW Icon API/Set Library Icon.vi	19
+vi.lib/LabVIEW Icon API/Set Text Icon/Adjust Text to Fit Rectangle.vi	65
+vi.lib/LabVIEW Icon API/Set Text Icon/Calculate Number of Text Rows.vi	9
+vi.lib/LabVIEW Icon API/Set Text Icon/Configure Named Icons.vi	11
+vi.lib/LabVIEW Icon API/Set Text Icon/Does the Text Fit.vi	13
+vi.lib/LabVIEW Icon API/Set Text Icon/Filter Words.vi	32
+vi.lib/LabVIEW Icon API/Set Text Icon/Generate Non Text Layer(s).vi	30
+vi.lib/LabVIEW Icon API/Set Text Icon/Generate Pretty Icon Text Layer.vi	27
+vi.lib/LabVIEW Icon API/Set Text Icon/Group 1-Character Tokens.vi	30
+vi.lib/LabVIEW Icon API/Set Text Icon/Qualify Library Icon Core.vi	92
+vi.lib/LabVIEW Icon API/Set Text Icon/Read 1D Strings From Config.vi	8
+vi.lib/LabVIEW Icon API/Set Text Icon/Read 2D Strings From Config.vi	11
+vi.lib/LabVIEW Icon API/Set Text Icon/Set Icon.vi	76
+vi.lib/LabVIEW Icon API/Set Text Icon/Split First and Other Strings.vi	7
+vi.lib/LabVIEW Icon API/Set Text Icon/Split Text Into Words.vi	144
+vi.lib/LabVIEW Icon API/Set Text Icon/User Visible Strings.vi	0
+vi.lib/LabVIEW Icon API/Set VI Icon.vi	19
+vi.lib/LabVIEW Icon API/Support/Apply Transparency.vi	10
+vi.lib/LabVIEW Icon API/Support/Create Icon Framework.vi	8
+vi.lib/LabVIEW Icon API/Support/Draw Template Glyph.vi	12
+vi.lib/LabVIEW Icon API/Support/Generate Border User Layer.vi	7
+vi.lib/LabVIEW Icon API/Support/Get Data from Icon Class.vi	53
+vi.lib/LabVIEW Icon API/Support/Get Icon Class from Data.vi	22
+vi.lib/LabVIEW Icon API/Support/Populate Body Text Data.vi	17
+vi.lib/LabVIEW Icon API/Support/Rotate Flip Layer.vi	49
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon Framework/Apply Body Text.vi	19
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon Framework/BodyTextCoordinates.vi	58
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon Framework/CreateBodyText.vi	23
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon Framework/GET_BodyText.vi	13
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon Framework/GET_Path.vi	10
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon Framework/SET_BodyText.vi	11
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon Framework/SET_Path.vi	11
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/CreateNewLayer.vi	49
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/DeleteLayer.vi	17
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/GET_All User Layers.vi	10
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/GET_IconTextClass.vi	10
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/GET_LayersLocked_ActiveLayer.vi	15
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/GET_TemplateClass.vi	10
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/GET_UserLayers.vi	19
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/Get_Active User Layer.vi	15
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/SET_ActiveLayer.vi	55
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/SET_IconTextClass.vi	11
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/SET_Locked_ActiveLayer.vi	13
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/SET_TemplateClass.vi	11
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Icon/SET_UserLayers.vi	4
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Layer/GET_LayerData.vi	14
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Layer/GET_Origin.vi	10
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Layer/SET_LayerType.vi	11
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Layer/SET_Layer_Data.vi	23
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Layer/SET_Origin.vi	7
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Layer/Substitute Layer.vi	18
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Layer/UpdateLayerData.vi	42
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Load_Unload/GET Data.vi	10
+vi.lib/LabVIEW Icon API/lv_icon/Classes/Load_Unload/SET Data.vi	11
+vi.lib/LabVIEW Icon API/lv_icon/Support/Adjust temporary rotate and flip rectangle.vi	20
+vi.lib/LabVIEW Icon API/lv_icon/Support/Apply Opacity.vi	54
+vi.lib/LabVIEW Icon API/lv_icon/Support/Apply Transparency.vi	6
+vi.lib/LabVIEW Icon API/lv_icon/Support/ApplyLVClassIconOverlayToVIIcon.vi	13
+vi.lib/LabVIEW Icon API/lv_icon/Support/Average Grayscale of Line.vi	28
+vi.lib/LabVIEW Icon API/lv_icon/Support/Calculate Body Text Position.vi	122
+vi.lib/LabVIEW Icon API/lv_icon/Support/Check Color.vi	12
+vi.lib/LabVIEW Icon API/lv_icon/Support/Create Color Array.vi	10
+vi.lib/LabVIEW Icon API/lv_icon/Support/Create Icon Layer.vi	38
+vi.lib/LabVIEW Icon API/lv_icon/Support/Create Layer from Image.vi	14
+vi.lib/LabVIEW Icon API/lv_icon/Support/Create default LV Icon Data.vi	29
+vi.lib/LabVIEW Icon API/lv_icon/Support/Create default Layer.vi	12
+vi.lib/LabVIEW Icon API/lv_icon/Support/Deserialize Picture Control Data.vi	14
+vi.lib/LabVIEW Icon API/lv_icon/Support/Draw Layers.vi	61
+vi.lib/LabVIEW Icon API/lv_icon/Support/Draw Picture based on Origin.vi	72
+vi.lib/LabVIEW Icon API/lv_icon/Support/Extract Data.vi	141
+vi.lib/LabVIEW Icon API/lv_icon/Support/Extract Default Icon Data.vi	11
+vi.lib/LabVIEW Icon API/lv_icon/Support/Extract Icon Data.vi	37
+vi.lib/LabVIEW Icon API/lv_icon/Support/Fill.vi	31
+vi.lib/LabVIEW Icon API/lv_icon/Support/FilterEmptyLayerIcons.vi	41
+vi.lib/LabVIEW Icon API/lv_icon/Support/Find BG Color Peak.vi	27
+vi.lib/LabVIEW Icon API/lv_icon/Support/Find Neighbours.vi	48
+vi.lib/LabVIEW Icon API/lv_icon/Support/Find Start and Endpoint Body Text.vi	105
+vi.lib/LabVIEW Icon API/lv_icon/Support/Flatten Load & Unload.vi	27
+vi.lib/LabVIEW Icon API/lv_icon/Support/Flood Glyph.vi	33
+vi.lib/LabVIEW Icon API/lv_icon/Support/Get Grayscale Value.vi	12
+vi.lib/LabVIEW Icon API/lv_icon/Support/Get Image Data.vi	19
+vi.lib/LabVIEW Icon API/lv_icon/Support/Get LV Glyph Path.vi	36
+vi.lib/LabVIEW Icon API/lv_icon/Support/Get SubPicture Coordinate.vi	7
+vi.lib/LabVIEW Icon API/lv_icon/Support/Get SubPicture Coordinates.vi	9
+vi.lib/LabVIEW Icon API/lv_icon/Support/Get_VI_Icon.vi	12
+vi.lib/LabVIEW Icon API/lv_icon/Support/Join Layers.vi	27
+vi.lib/LabVIEW Icon API/lv_icon/Support/LabVIEW Fonts.vi	10
+vi.lib/LabVIEW Icon API/lv_icon/Support/Magic Transparent Color Constant.vi	1
+vi.lib/LabVIEW Icon API/lv_icon/Support/Read Icon Data from Library.vi	17
+vi.lib/LabVIEW Icon API/lv_icon/Support/Read Icon Data from VI.vi	10
+vi.lib/LabVIEW Icon API/lv_icon/Support/Remove Duplicates from Color Array.vi	15
+vi.lib/LabVIEW Icon API/lv_icon/Support/Remove Icon Data from VI.vi	5
+vi.lib/LabVIEW Icon API/lv_icon/Support/Replace Color.vi	152
+vi.lib/LabVIEW Icon API/lv_icon/Support/Restore original Coordinates.vi	12
+vi.lib/LabVIEW Icon API/lv_icon/Support/Return MutationCode Folder.vi	6
+vi.lib/LabVIEW Icon API/lv_icon/Support/Rotate Flip Image.vi	39
+vi.lib/LabVIEW Icon API/lv_icon/Support/Serialize Icon Data.vi	17
+vi.lib/LabVIEW Icon API/lv_icon/Support/Text.vi	20
+vi.lib/LabVIEW Icon API/lv_icon/Support/Unflatten Load & Unload.vi	27
+vi.lib/LabVIEW Icon API/lv_icon/Support/Write Icon Data to Library.vi	11
+vi.lib/LabVIEW Icon API/lv_icon/Support/Write Icon Data to VI.vi	7

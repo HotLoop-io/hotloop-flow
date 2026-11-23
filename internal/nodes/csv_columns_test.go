@@ -22,3 +22,44 @@ func TestCSVWithNoColumnsAndNoHeaderNamesThemColN(t *testing.T) {
 		t.Errorf("rows = %v, want %v", got, want)
 	}
 }
+
+// Node-RED's CSV node says which columns it used in msg.columns, on parsing and on rendering, and a flow
+// from its library relies on it: the parse names the columns, a Change adds one, and the render writes the
+// header from them (Node-RED 5.0.10 70-CSV.js, run on the same flow by the oracle).
+func TestCSVSaysItsColumnsInMsgColumnsOnParseAndRender(t *testing.T) {
+	in := build(t, "csv", `{"sep":",","hdrin":true,"hdrout":"","multi":"one","temp":"","strings":true}`, newTestServices())
+	e, err := send(t, in, msg(t, `{"payload":"Station,Month,Consumption\nRio,January,4000"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := e.on(0)[0]
+	if row.Data["columns"] != "Station,Month,Consumption" {
+		t.Fatalf("columns after parse = %v", row.Data["columns"])
+	}
+	row.Data["columns"] = row.Data["columns"].(string) + ",PartsProduced"
+	row.Set("payload.PartsProduced", 400.0)
+	out := build(t, "csv", `{"sep":",","hdrin":"","hdrout":"all","multi":"one","temp":"","ret":"\\n"}`, newTestServices())
+	e, err = send(t, out, row)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := e.on(0)[0]
+	if got, want := res.Payload(), "Station,Month,Consumption,PartsProduced\nRio,January,4000,400\n"; got != want {
+		t.Errorf("csv = %q, want %q", got, want)
+	}
+	if res.Data["columns"] != "Station,Month,Consumption,PartsProduced" {
+		t.Errorf("columns after render = %v", res.Data["columns"])
+	}
+}
+
+// A node that lists its own columns keeps them: msg.columns names them only for a node that lists none.
+func TestCSVOwnColumnsComeBeforeMsgColumns(t *testing.T) {
+	n := build(t, "csv", `{"sep":",","hdrout":"all","multi":"one","temp":"b,a"}`, newTestServices())
+	e, err := send(t, n, msg(t, `{"payload":{"a":1,"b":2,"c":3},"columns":"c"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.on(0)[0].Payload(); got != "b,a\n2,1\n" {
+		t.Errorf("csv = %q", got)
+	}
+}

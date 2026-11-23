@@ -74,3 +74,11 @@ A file that is not a VI, or is cut short, is refused with the reason.
 The VIs in `internal/vi/testdata` (seven of them) are from
 [ni/labview-icon-editor](https://github.com/ni/labview-icon-editor) (MIT), saved by
 LabVIEW 20.0. They are NI's, with their license beside them.
+
+All 425 VIs of that repository are read as well. For each one the number of wires the reader gives equals the
+number of signal objects pylabview finds in the VI's block diagram (`internal/vi/testdata/icon-editor-wires.tsv`
+holds the 425 counts, made by running pylabview's `readRSRC -x` on each file and counting `class="signal"`),
+every wire has a source and ends on a terminal a node owns, no file is refused and none stops the reader, and the
+diagram each one imports as compiles in the diagram engine with no problem but the LabVIEW nodes it names. The
+corpus is 25 MB, so it is not in this repository: `HOTLOOP_LABVIEW_CORPUS=<a checkout of ni/labview-icon-editor>
+go test ./internal/diagram -run EveryVIOfNIs` runs it (4823 nodes and 5162 top level wires between them).

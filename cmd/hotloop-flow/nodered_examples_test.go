@@ -23,13 +23,33 @@ import (
 // output does not depend on a clock are listed there; the rest are the known
 // gaps in docs/node-red-types.md.
 func TestNodeREDExampleFlowsGiveWhatNodeREDGives(t *testing.T) {
+	holdFlowToNodeRED(t, "../../testdata/nodered/oracle.json", "../../testdata/nodered/examples", false)
+}
+
+// The same comparison for flows published in the Node-RED flow library (flows.nodered.org), which carries
+// no license that lets this repository keep a copy: they are fetched, run through
+// testdata/nodered/oracle/oracle.js and kept outside the repository. HOTLOOP_NODERED_LIBRARY is the folder
+// holding the flow files, with oracle.json beside them.
+func TestPublishedLibraryFlowsGiveWhatNodeREDGives(t *testing.T) {
+	dir := os.Getenv("HOTLOOP_NODERED_LIBRARY")
+	if dir == "" {
+		t.Skip("HOTLOOP_NODERED_LIBRARY is not set")
+	}
+	holdFlowToNodeRED(t, filepath.Join(dir, "oracle.json"), dir, true)
+}
+
+// whole says the Debug nodes show what they are given whole. A Debug node cuts a long message at its Length
+// setting (1000) in what the sidebar shows, and Flow cuts the message's text where Node-RED cuts each string
+// and each long array inside it, so a long message shows differently in the two sidebars, which is a
+// matter of the display and not of what the flow does. The library flows run with the cut off.
+func holdFlowToNodeRED(t *testing.T, oracleFile, examplesDir string, whole bool) {
 	var oracle struct {
 		Outputs map[string][]string `json:"outputs"`
 		// Gaps are example flows Flow does not yet give Node-RED's output for. Each is
 		// still run and compared, and the list is what is left to fix.
 		Gaps []string `json:"gaps"`
 	}
-	raw, err := os.ReadFile("../../testdata/nodered/oracle.json")
+	raw, err := os.ReadFile(oracleFile)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,18 +90,26 @@ func TestNodeREDExampleFlowsGiveWhatNodeREDGives(t *testing.T) {
 		}
 		sort.Strings(want)
 		t.Run(name, func(t *testing.T) {
-			src, err := os.ReadFile(filepath.Join("../../testdata/nodered/examples", name))
+			src, err := os.ReadFile(filepath.Join(examplesDir, name))
 			if err != nil {
 				t.Fatal(err)
+			}
+			if whole {
+				src = debugWithoutCut(src)
 			}
 			flows, err := engine.ParseFlows(withTabForLooseNodes(src))
 			if err != nil {
 				t.Fatal(err)
 			}
 			app, rec := newApp(t)
-			if _, err := app.deploy(context.Background(), api.DeployRequest{Flows: flows}); err != nil {
+			res, err := app.deploy(context.Background(), api.DeployRequest{Flows: flows})
+			if err != nil {
 				t.Fatal(err)
 			}
+			// A node that cannot be built (a Function with a syntax error) is a line Node-RED
+			// logs, which its debug sidebar shows and the oracle records as "[error]". Flow tells
+			// the editor which node is broken, which is the same report.
+			failures := len(res.Failures)
 			for _, id := range flows.Order {
 				if n := flows.Nodes[id]; n != nil && n.Type == "inject" {
 					if err := app.currentRuntime().Inject(id, engine.NewMsg()); err != nil {
@@ -107,6 +135,9 @@ func TestNodeREDExampleFlowsGiveWhatNodeREDGives(t *testing.T) {
 					}
 				}
 				rec.mu.Unlock()
+				for i := 0; i < failures; i++ {
+					out = append(out, errorLine)
+				}
 				sort.Strings(out)
 				return out
 			}
@@ -220,6 +251,21 @@ func withTabForLooseNodes(raw []byte) []byte {
 	}
 	if loose {
 		d = append([]map[string]any{{"id": "imported-tab", "type": "tab", "label": "Imported"}}, d...)
+	}
+	out, _ := json.Marshal(d)
+	return out
+}
+
+// debugWithoutCut sets every Debug node's Length to 0, which shows a message whole.
+func debugWithoutCut(raw []byte) []byte {
+	var d []map[string]any
+	if json.Unmarshal(raw, &d) != nil {
+		return raw
+	}
+	for _, n := range d {
+		if n["type"] == "debug" {
+			n["maxLength"] = 0
+		}
 	}
 	out, _ := json.Marshal(d)
 	return out

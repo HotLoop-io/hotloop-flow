@@ -106,7 +106,7 @@ func Compile(name, body, onStart, onStop string, limits Limits) (*Program, error
 		fnWord = "async function"
 	}
 
-	main, err := goja.Compile(name, "("+fnWord+"(msg, node, context, flow, global, env, util){"+body+"\n})", true)
+	main, err := goja.Compile(name, wrap(fnWord, "msg, node, context, flow, global, env, util", "msg, node", body), true)
 	if err != nil {
 		return nil, fmt.Errorf("compiling function: %w", cleanCompileError(err))
 	}
@@ -114,7 +114,7 @@ func Compile(name, body, onStart, onStop string, limits Limits) (*Program, error
 
 	if strings.TrimSpace(onStart) != "" {
 		prog, err := goja.Compile(name+":onStart",
-			"("+fnWord+"(node, context, flow, global, env, util){"+onStart+"\n})", true)
+			wrap(fnWord, "node, context, flow, global, env, util", "node", onStart), true)
 		if err != nil {
 			return nil, fmt.Errorf("compiling setup code: %w", cleanCompileError(err))
 		}
@@ -122,7 +122,7 @@ func Compile(name, body, onStart, onStop string, limits Limits) (*Program, error
 	}
 	if strings.TrimSpace(onStop) != "" {
 		prog, err := goja.Compile(name+":onStop",
-			"("+fnWord+"(node, context, flow, global, env, util){"+onStop+"\n})", true)
+			wrap(fnWord, "node, context, flow, global, env, util", "node", onStop), true)
 		if err != nil {
 			return nil, fmt.Errorf("compiling cleanup code: %w", cleanCompileError(err))
 		}
@@ -131,13 +131,25 @@ func Compile(name, body, onStart, onStop string, limits Limits) (*Program, error
 	return p, nil
 }
 
+// wrap is the function a body runs in. The sandbox's names (context, flow, global, env, util) are
+// parameters of an outer function and the body runs in an inner one that takes only the names Node-RED
+// gives a Function node as function arguments (msg, and node), so the body can declare its own
+// "const context" or "let flow", which Node-RED lets it do because there those names are globals of the
+// sandbox. Declaring msg or node again is a syntax error here as it is in Node-RED. Everything stays on
+// one line, so a syntax error's line and column are the user's.
+func wrap(fnWord, outer, inner, body string) string {
+	return "(" + fnWord + "(" + outer + "){return (" + fnWord + "(" + inner + "){" + body + "\n})(" + inner + ")})"
+}
+
 // cleanCompileError strips the wrapper from a syntax error's reported position
 // so the message points at the user's code rather than at generated text they
 // never wrote.
 func cleanCompileError(err error) error {
 	msg := err.Error()
-	msg = strings.ReplaceAll(msg, "(function(msg, node, context, flow, global, env, util){", "")
-	msg = strings.ReplaceAll(msg, "(function(node, context, flow, global, env, util){", "")
+	for _, w := range []string{"function", "async function"} {
+		msg = strings.ReplaceAll(msg, "("+w+"(msg, node, context, flow, global, env, util){return ("+w+"(msg, node){", "")
+		msg = strings.ReplaceAll(msg, "("+w+"(node, context, flow, global, env, util){return ("+w+"(node){", "")
+	}
 	return errors.New(msg)
 }
 
