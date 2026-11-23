@@ -135,7 +135,8 @@ jobs:
           for ARCH in "${PLAT[@]}"; do
             GOT=$(podman run --rm "localhost/hotloop-flow:$ARCH" version)
             echo "$ARCH: $GOT"
-            test "$GOT" = "$TAG" || { echo "::error::$ARCH reports '$GOT', not '$TAG'"; exit 1; }
+            # The version command prints the tag, then the commit the image was built from.
+            [[ "$GOT" =~ ^${TAG//./\\.}\ \(commit\ [0-9a-f]{40}\)$ ]] || { echo "::error::$ARCH reports '$GOT', not '$TAG (commit <sha>)'"; exit 1; }
           done
 
       - name: Push X.Y.Z, X.Y and X
