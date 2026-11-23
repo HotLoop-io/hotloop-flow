@@ -412,3 +412,31 @@ func TestAGlobalOneFunctionMakesIsNotSeenByAnother(t *testing.T) {
 		}
 	}
 }
+
+// Node-RED's sandbox names (context, flow, global, env, util) are globals there, so a Function node may
+// declare one of its own with const or let. A published library flow does (const context = JSON.stringify
+// (...)) and it failed to compile here, which dropped the whole flow's output. msg and node are function
+// arguments in Node-RED and stay so.
+func TestABodyMayDeclareItsOwnContextFlowGlobalEnvAndUtil(t *testing.T) {
+	p := compile(t, `
+		const context = "c", flow = "f";
+		let global = "g";
+		var env = "e", util = "u";
+		return {payload: [context, flow, global, env, util].join("")};`, Limits{})
+	res, err := run(t, p, nil, 1, newServices())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := payloadOf(t, res.ByPort[0][0]); got != "cfgeu" {
+		t.Fatalf("payload = %v", got)
+	}
+	if _, err := Compile("test", "const msg = 1; return msg;", "", "", Limits{}); err == nil {
+		t.Error("declaring msg again compiled, and in Node-RED it is a syntax error")
+	}
+	// The sandbox's own names still work when the body does not shadow them.
+	p = compile(t, `flow.set("k", 5); return {payload: flow.get("k")};`, Limits{})
+	res, err = run(t, p, nil, 1, newServices())
+	if err != nil || payloadOf(t, res.ByPort[0][0]) != 5.0 {
+		t.Fatalf("flow context: %v %v", res, err)
+	}
+}
