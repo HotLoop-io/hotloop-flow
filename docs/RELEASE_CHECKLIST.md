@@ -127,7 +127,9 @@ diff:
   default.
 - **Anything that behaves differently,** including a change that is deliberate.
   Read each commit for it.
-- **What isn't proven.** If it only ran in a lab, say so.
+- **No caveats.** The notes are public copy, so they say what Flow does and
+  nothing about what wasn't tested or how the release was built. What isn't
+  proven goes on the release's bead and in its evidence, where the team reads it.
 - **A change to NOTICE or the licenses,** because it ships inside the image.
 
 Check the body before anybody else sees it:
