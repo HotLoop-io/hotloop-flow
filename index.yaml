@@ -14,8 +14,43 @@ entries:
       catalog.cattle.io/requests-cpu: 10m
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
+    appVersion: 2.17.1
+    created: "2026-11-24T00:46:17.699511119Z"
+    description: HotLoop Flow, a visual flow engine for the plant floor. One static
+      Go binary.
+    digest: 0c03ca867dd9166fc066f64ca2ec3bff94d5628cb76001aa638c0c6f784355ad
+    home: https://github.com/HotLoop-io/hotloop-flow
+    icon: https://raw.githubusercontent.com/HotLoop-io/hotloop-flow/main/docs/icon.png
+    keywords:
+    - industrial
+    - flow
+    - automation
+    - iot
+    maintainers:
+    - email: helpdesk@fireballz.ai
+      name: HotLoop LLC
+    name: hotloop-flow
+    sources:
+    - https://github.com/HotLoop-io/hotloop-flow
+    type: application
+    urls:
+    - https://hotloop.io/hotloop-flow/hotloop-flow-2.17.1.tgz
+    version: 2.17.1
+  - annotations:
+      artifacthub.io/license: LicenseRef-HotLoop-Source-1.0
+      catalog.cattle.io/arch: amd64,arm64
+      catalog.cattle.io/categories: Forge Industrial,Automation,Flow
+      catalog.cattle.io/certified: partner
+      catalog.cattle.io/display-name: HotLoop Flow
+      catalog.cattle.io/kube-version: '>=1.24.0-0'
+      catalog.cattle.io/namespace: default
+      catalog.cattle.io/os: linux
+      catalog.cattle.io/release-name: hotloop-flow
+      catalog.cattle.io/requests-cpu: 10m
+      catalog.cattle.io/requests-memory: 64Mi
+    apiVersion: v2
     appVersion: 2.16.8
-    created: "2026-11-22T19:40:51.464319172Z"
+    created: "2026-11-24T00:46:17.697647065Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 9235962a997eec8d1f320cdc49f5482978786791bc62fd19f0a0233dcc29bc0d
@@ -50,7 +85,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.16.7
-    created: "2026-11-22T19:40:51.462311954Z"
+    created: "2026-11-24T00:46:17.696279567Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 4e29964788bd79865ab5fb826259880ba8738fe32377586ee41b91bbaa0a881e
@@ -85,7 +120,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.16.6
-    created: "2026-11-22T19:40:51.461335492Z"
+    created: "2026-11-24T00:46:17.694960539Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 3eb7a4b43796dc2db761e977192997523d806a743f88d8fbba3c7f6e1ea475d3
@@ -120,7 +155,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.16.5
-    created: "2026-11-22T19:40:51.460334056Z"
+    created: "2026-11-24T00:46:17.693644257Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 99a428badde74d50d3a6ad4d730989118141cec4b215238b6c47d757d185ba6e
@@ -155,7 +190,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.16.4
-    created: "2026-11-22T19:40:51.45930494Z"
+    created: "2026-11-24T00:46:17.692225923Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 028b5661b246793f0ca42653a5c9171508df348f2ba22353bb1642c0b738f960
@@ -190,7 +225,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.16.3
-    created: "2026-11-22T19:40:51.458224105Z"
+    created: "2026-11-24T00:46:17.68974394Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 42ba45c51ba5769a0515cbf52ed92485d0c96452dcee23251718250ea999dab9
@@ -225,7 +260,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.16.2
-    created: "2026-11-22T19:40:51.45637697Z"
+    created: "2026-11-24T00:46:17.688377073Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 3419bf9c8bbe17a6d7c98d9c9f7cddd19418728e6221e0ecc990bd31b83e6cd1
@@ -260,7 +295,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.16.1
-    created: "2026-11-22T19:40:51.45534847Z"
+    created: "2026-11-24T00:46:17.686988145Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: aec8fba8caf03584a8e33acec342bd66c8c84dc59d3b6337942328d7bc1e5763
@@ -295,7 +330,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.16.0
-    created: "2026-11-22T19:40:51.454328036Z"
+    created: "2026-11-24T00:46:17.685568219Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 1d57f9d60bea56c33e307120001f8e750c3125eb247a39a58c44de82aa85ad96
@@ -330,7 +365,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.15.1
-    created: "2026-11-22T19:40:51.453319729Z"
+    created: "2026-11-24T00:46:17.684076037Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 33e211b8c2e225a43b86090bc1e66a584485b8422467e203f7898c424cd845e0
@@ -365,7 +400,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.15.0
-    created: "2026-11-22T19:40:51.452231017Z"
+    created: "2026-11-24T00:46:17.681706797Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: dbacde64a8c47dba9fe9081f07d0e22fbb09fda0f31607f39aaae86aae440211
@@ -400,7 +435,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.14.1
-    created: "2026-11-22T19:40:51.450489395Z"
+    created: "2026-11-24T00:46:17.680421542Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 92921077bb9cad84bd2abde343bec79821cb7a4621e85f049bdfd994c1eddb05
@@ -435,7 +470,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.14.0
-    created: "2026-11-22T19:40:51.449558154Z"
+    created: "2026-11-24T00:46:17.679154572Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 0cfb35440834df5924977ce187d79416e0008a0dfe3a9c86edf0c4855ba41e9b
@@ -470,7 +505,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.13.1
-    created: "2026-11-22T19:40:51.448596487Z"
+    created: "2026-11-24T00:46:17.677873205Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: a3735e99f44de014a49b552f25fccc3cc90b7aa032d03c155ab3ff7dead5b642
@@ -505,7 +540,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.13.0
-    created: "2026-11-22T19:40:51.447625268Z"
+    created: "2026-11-24T00:46:17.676504785Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 8b80174095906c13f360bb41fba90a55d128367cc87913438f2341124a04d1ba
@@ -539,7 +574,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.12.1
-    created: "2026-11-22T19:40:51.44664273Z"
+    created: "2026-11-24T00:46:17.67519213Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 2a57cde1205c4a43b26acce65ffdc7aee08145bb3edce5491988faed2944395c
@@ -573,7 +608,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.12.0
-    created: "2026-11-22T19:40:51.445299995Z"
+    created: "2026-11-24T00:46:17.672726006Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 90281b94d3922a66d374d9a34005fc185603f9182620337d1ffbdefb098768c7
@@ -607,7 +642,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.11.1
-    created: "2026-11-22T19:40:51.443935199Z"
+    created: "2026-11-24T00:46:17.671401138Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: a6befd6eb3083205cad6aa96c60e0a729681f422eb238c2513189d322873fe2d
@@ -641,7 +676,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.11.0
-    created: "2026-11-22T19:40:51.442926303Z"
+    created: "2026-11-24T00:46:17.670082982Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: e61c83d70650351d4f64e7f5b125c50387428a5e651a0e57524150b368b8bf5e
@@ -675,7 +710,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.10.2
-    created: "2026-11-22T19:40:51.441884109Z"
+    created: "2026-11-24T00:46:17.668736944Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 951d8b83754e1f658f048ba8eefc686bca7dfbc5a6081071eba7ca514b68f152
@@ -709,7 +744,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.10.1
-    created: "2026-11-22T19:40:51.440930169Z"
+    created: "2026-11-24T00:46:17.667331064Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: f5e12c189377173aab74db842b9cf4ad0daf4f40207e2f1401944e073c1543d9
@@ -743,7 +778,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.10.0
-    created: "2026-11-22T19:40:51.43979949Z"
+    created: "2026-11-24T00:46:17.664592235Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 4c9363eea158c83dfbbae2cc8e0cb609cddab53655d50a8789166b0ce96e19e9
@@ -777,7 +812,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.9.1
-    created: "2026-11-22T19:40:51.481081796Z"
+    created: "2026-11-24T00:46:17.714958177Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 7599a0b243c63e82b966a6be0eb8e88471dc0f25c5194fe046af8313428ccb9e
@@ -811,7 +846,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.9.0
-    created: "2026-11-22T19:40:51.480125506Z"
+    created: "2026-11-24T00:46:17.713688862Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 612d2964f120b7f6e2c1595d6b0a4936fc51c080e8a5079ff40acd0956c5aeec
@@ -845,7 +880,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.8.1
-    created: "2026-11-22T19:40:51.479081644Z"
+    created: "2026-11-24T00:46:17.712459663Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 073c28c577a16894799f49596c8a8312e088a080afbffb3cd946edf8d6eb7ad2
@@ -879,7 +914,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.8.0
-    created: "2026-11-22T19:40:51.477505527Z"
+    created: "2026-11-24T00:46:17.711224763Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 014b35596f646553a6f5ab53f483e9c28fd72c88db3926cf6463d2fdf40ddf44
@@ -913,7 +948,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.7.1
-    created: "2026-11-22T19:40:51.47522857Z"
+    created: "2026-11-24T00:46:17.709961339Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: fc239ad584c5e969ff1df6301d762cd50bbae6de925e6aba09df7b7d74d74607
@@ -947,7 +982,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.7.0
-    created: "2026-11-22T19:40:51.473747668Z"
+    created: "2026-11-24T00:46:17.708628025Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: c53555038d6e2a9e9ec3d6ea03b34f2f134f35cf687fc079b5000d0bcc60be86
@@ -981,7 +1016,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.6.0
-    created: "2026-11-22T19:40:51.472328056Z"
+    created: "2026-11-24T00:46:17.70604668Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: bec5f5a380b5d1bbe11b0f2a7c7f6a77c543428a112b3335ec32cff2f166b436
@@ -1015,7 +1050,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.5.0
-    created: "2026-11-22T19:40:51.47088574Z"
+    created: "2026-11-24T00:46:17.704852335Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 8fb6cef7a470caf18808e6e052f49289232ea2411f44e16b0af122e5b876fd3a
@@ -1049,7 +1084,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.4.0
-    created: "2026-11-22T19:40:51.469421396Z"
+    created: "2026-11-24T00:46:17.70365744Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 6ad4d6d6233eace48c01495d1f4e65f262f8fe37ab419d7792fb9dee85899462
@@ -1083,7 +1118,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.3.0
-    created: "2026-11-22T19:40:51.467910774Z"
+    created: "2026-11-24T00:46:17.702426948Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 9c1d1580c9c7df3f9e70492306dfaa07b6e9866a5809228c84b241c7290de2eb
@@ -1117,7 +1152,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.2.0
-    created: "2026-11-22T19:40:51.466239019Z"
+    created: "2026-11-24T00:46:17.701192008Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 1ad8c6a6d1566e973f54a73b50c2cc65a349fb6ab45c3744c834edb1a44f3c7a
@@ -1151,7 +1186,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.1.0
-    created: "2026-11-22T19:40:51.437611822Z"
+    created: "2026-11-24T00:46:17.663117186Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: 85a3f48b5d291a82cc9d449f6c479208c8fd07e0b5bac6870453eae885a2ed8a
@@ -1185,7 +1220,7 @@ entries:
       catalog.cattle.io/requests-memory: 64Mi
     apiVersion: v2
     appVersion: 2.0.5
-    created: "2026-11-22T19:40:51.436962824Z"
+    created: "2026-11-24T00:46:17.662153283Z"
     description: HotLoop Flow, a visual flow engine for the plant floor. One static
       Go binary.
     digest: ce3a9f3b4319fd72d47582fa60cbb500f41c028a5ee850fb19d53156c35afba3
@@ -1222,7 +1257,7 @@ entries:
       embernet.ai/vendor: HotLoop
     apiVersion: v2
     appVersion: 2.0.4
-    created: "2026-11-22T19:40:51.43630969Z"
+    created: "2026-11-24T00:46:17.661228894Z"
     description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
     digest: 92a65da1d4a1644dc80b78ddf8cb79fad9ca4d161a0c514e94f174ca68edc038
     home: https://github.com/HotLoop-io/hotloop-flow
@@ -1259,7 +1294,7 @@ entries:
       embernet.ai/vendor: HotLoop
     apiVersion: v2
     appVersion: 2.0.3
-    created: "2026-11-22T19:40:51.435573702Z"
+    created: "2026-11-24T00:46:17.660181925Z"
     description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
     digest: 3170339030c95e34eecf07d2e274d125182d87cfd591a7323cd8e52617ae57e4
     home: https://github.com/HotLoop-io/hotloop-flow
@@ -1296,7 +1331,7 @@ entries:
       embernet.ai/vendor: HotLoop
     apiVersion: v2
     appVersion: 2.0.2
-    created: "2026-11-22T19:40:51.434914465Z"
+    created: "2026-11-24T00:46:17.659121732Z"
     description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
     digest: 25d5c0b9b7564f5a77255d08d9c614badb4528ebfa6f80a0b219149409616a73
     home: https://github.com/HotLoop-io/hotloop-flow
@@ -1333,7 +1368,7 @@ entries:
       embernet.ai/vendor: HotLoop
     apiVersion: v2
     appVersion: 2.0.1
-    created: "2026-11-22T19:40:51.434213669Z"
+    created: "2026-11-24T00:46:17.658096864Z"
     description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
     digest: a98a2a06e5c3f10ea49dcc8ea067569a7ec7e860849e109c6d9afcaddda627bc
     home: https://github.com/HotLoop-io/hotloop-flow
@@ -1370,7 +1405,7 @@ entries:
       embernet.ai/vendor: HotLoop
     apiVersion: v2
     appVersion: 2.0.0
-    created: "2026-11-22T19:40:51.433522333Z"
+    created: "2026-11-24T00:46:17.657150854Z"
     description: HotLoop Flow. A flow engine, Node-RED's idea, one static Go binary.
     digest: c0a41abb543e5da13516fd36f815ff7129cdcf352d3ea0cb0ad4e5cb5eb4126a
     home: https://github.com/HotLoop-io/hotloop-flow
@@ -1391,4 +1426,4 @@ entries:
     urls:
     - https://hotloop.io/hotloop-flow/hotloop-flow-2.0.0.tgz
     version: 2.0.0
-generated: "2026-11-22T19:40:51.432530897Z"
+generated: "2026-11-24T00:46:17.655966429Z"
